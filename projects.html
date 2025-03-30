@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sardor Nodirov - Portfolio</title>
+  <!-- Using a modern, code-like font from Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Navigation Bar -->
+  <nav>
+    <div class="hamburger-menu">
+      <div class="bar1"></div>
+      <div class="bar2"></div>
+      <div class="bar3"></div>
+    </div>
+    <ul class="nav-links">
+        <li><a href="./index.html">home</a></li>
+        <li><a class="current-link" href="./projects.html">projects</a></li>
+        <li><a href="./uses.html">uses</a></li>
+        <li><a href="#resume">resume</a></li>
+        <li><a class="inactive-link">blog (coming soon)</a></li>
+    </ul>
+  </nav>
+
+  <!-- Main Content Container -->
+  <div class="container">
+    <!-- Home Section -->
+    <section id="home" class="fade-in">
+      <h1>Projects<span class="cursor">_</span></h1>
+      <div class="about">
+        <h2>About</h2>
+        <p>Hi, I'm Sardor Nodirov. I'm passionate about minimalist design, coding, and modern web development. I love creating sleek, efficient, and beautiful digital experiences.</p>
+      </div>
+      <div class="today">
+        <h2>Today</h2>
+        <p>Today, I'm exploring new ideas in web design and development. Check back soon for updates!</p>
+      </div>
+    </section>
+
+  <script>
+    document.querySelector('.hamburger-menu').addEventListener('click', function() {
+      this.classList.toggle('change');
+      document.querySelector('.nav-links').classList.toggle('nav-active');
+    });
+    
+    // Close menu when clicking on links
+    document.querySelectorAll('.nav-links li').forEach(link => {
+      link.addEventListener('click', function() {
+        document.querySelector('.hamburger-menu').classList.remove('change');
+        document.querySelector('.nav-links').classList.remove('nav-active');
+      });
+    });
+  </script>
+</body>
+</html>

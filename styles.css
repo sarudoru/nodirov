@@ -1,0 +1,223 @@
+/* Basic reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: 'inter', monospace;
+    color: #333;
+    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+    padding: 0 3rem;
+  }
+
+  /* Navigation styles */
+  nav {
+    position: relative;
+    z-index: 1000;
+  }
+
+  .nav-links {
+    list-style: none;
+    display: flex;
+    padding: 1rem 0;
+    max-width: 700px;
+    margin: 30px auto 0 auto;
+  }
+
+  nav ul li {
+    margin-right: 1.5rem;
+    position: relative;
+  }
+
+  nav ul li a {
+    text-decoration: none;
+    color: gray;
+    font-size: 1rem;
+    transition: color 0.3s ease, transform 0.3s ease;
+  }
+
+  nav ul li a:hover {
+    color: black;
+    text-decoration: underline;
+    text-decoration-color: black;
+    text-decoration-style: solid;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 5px;
+    animation:cubic-bezier(1, 0, 0, 1);
+
+  }
+
+  /* Hamburger menu styles */
+  .hamburger-menu {
+    display: none;
+    cursor: pointer;
+    position: absolute;
+    top: 55px;
+    right: 0;
+    z-index: 1001;
+  }
+  
+  .bar1, .bar2, .bar3 {
+    width: 20px;
+    height: 2px;
+    background-color: #333;
+    margin: 5px 0;
+    transition: 0.4s;
+  }
+  
+  /* Hamburger animation */
+  .change .bar1 {
+    transform: rotate(-45deg) translate(-7px, 4px);
+  }
+  
+  .change .bar2 {
+    opacity: 0;
+  }
+  
+  .change .bar3 {
+    transform: rotate(45deg) translate(-6px, -3px);
+  }
+
+  /* Mobile styles */
+  @media screen and (max-width: 768px) {
+    .hamburger-menu {
+      display: block;
+    }
+    
+    .nav-links {
+      position: absolute;
+      background-color: #fff;
+      width: 100%;
+      padding-top: 50px;
+      right: 0;
+      flex-direction: column;
+      align-items: left;
+      max-height: 0;
+      overflow: hidden;
+      margin-top: 0;
+      opacity: 0;
+    }
+    
+    .nav-active {
+      max-height: 300px;
+      padding-bottom: 20px;
+      opacity: 100%;
+    }
+    
+    nav ul li {
+      margin: 10px 0;
+      opacity: 0;
+      animation: navLinkFade 0.5s ease forwards;
+      animation-delay: 0.2s;
+    }
+    
+    nav ul li:nth-child(2) { animation-delay: 0.3s; }
+    nav ul li:nth-child(3) { animation-delay: 0.4s; }
+    nav ul li:nth-child(4) { animation-delay: 0.5s; }
+    nav ul li:nth-child(5) { animation-delay: 0.6s; }
+    
+    @keyframes navLinkFade {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  }
+
+  .container {
+    max-width: 700px;
+    margin: 0 auto 0 auto;
+  }
+
+  section {
+    padding: 2rem 0;
+    margin-bottom: 2rem;
+    border-bottom: 1px solid #eaeaea;
+  }
+
+  section:last-of-type {
+    border-bottom: none;
+  }
+
+  /* Home section header */
+  h1 {
+    font-size: 2.5rem;
+    position: relative;
+    display: inline-block;
+  }
+
+  /* Blinking cursor */
+  .cursor {
+    font-weight: 500;
+    animation: blink 1s step-start infinite;
+    color: royalblue;
+  }
+
+  .inactive-link {
+    color: lightgray;
+    text-decoration: none;
+  }
+
+  .current-link {
+    color: black;
+    text-decoration: underline;
+    text-decoration-color:royalblue;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 5px;
+    text-decoration-style: double;
+  }
+
+  @keyframes blink {
+    50% { opacity: 0; }
+  }
+
+  h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    margin-top: 2rem;
+  }
+
+  p {
+    font-size: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  /* Projects links styling */
+  .projects a {
+    display: inline-block;
+    margin: 0.5rem;
+    text-decoration: none;
+    color: #007acc;
+    border-bottom: 1px solid transparent;
+    transition: border-bottom 0.3s ease;
+  }
+
+  .projects a:hover {
+    border-bottom: 1px solid #007acc;
+  }
+
+  /* Fade-in animation for sections */
+  .fade-in {
+    opacity: 0;
+    transform: translateY(20px);
+    animation: fadeIn 1s forwards;
+  }
+
+  @keyframes fadeIn {
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
