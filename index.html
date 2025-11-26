@@ -1,67 +1,414 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Sardor Nodirov - Portfolio</title>
-  <!-- Using a modern, code-like font from Google Fonts -->
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css" />
+  <meta name="description" content="Sardor Nodirov - Full-Stack AI Engineer & Creative Technologist">
+  <title>Sardor Nodirov</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..800&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
+  
+  <style>
+    /* --- THEME VARIABLES --- */
+    :root {
+      /* Dark Mode (Default) */
+      --bg: #050505;
+      --text: #e0e0e0;
+      --text-muted: #888888;
+      --accent: #ffffff;
+      --card-bg: rgba(20, 20, 20, 0.6);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --dot-color: rgba(255, 255, 255, 0.15);
+      --ascii-color: rgb(0, 0, 0);
+      --shadow: 0 20px 40px -10px rgba(0,0,0,0.5);
+      --btn-hover: rgba(255,255,255,0.1);
+    }
+
+    [data-theme="light"] {
+      --bg: #f4f4f5;
+      --text: #18181b;
+      --text-muted: #52525b;
+      --accent: #000000;
+      --card-bg: rgba(255, 255, 255, 0.6);
+      --card-border: rgba(0, 0, 0, 0.06);
+      --dot-color: rgba(0, 0, 0, 0.1);
+      --ascii-color: rgba(0, 0, 0, 0.08);
+      --shadow: 0 20px 40px -10px rgba(0,0,0,0.08);
+      --btn-hover: rgba(0,0,0,0.05);
+    }
+
+    /* --- RESET & BASE --- */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Space Grotesk', sans-serif;
+      line-height: 1.6;
+      transition: background-color 0.4s ease, color 0.4s ease;
+      overflow-x: hidden;
+      min-height: 100vh;
+      position: relative;
+    }
+
+    /* --- BACKGROUND ANIMATION (DOT WAVE) --- */
+    .bg-grid {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      z-index: -1;
+      background-image: radial-gradient(var(--dot-color) 1px, transparent 1px);
+      background-size: 30px 30px;
+      mask-image: linear-gradient(135deg, transparent 20%, black 50%, transparent 80%);
+      -webkit-mask-image: linear-gradient(135deg, transparent 20%, black 50%, transparent 80%);
+      mask-size: 200% 200%;
+      -webkit-mask-size: 200% 200%;
+      animation: wave 10s infinite linear;
+      opacity: 0.8;
+      pointer-events: none;
+    }
+
+    @keyframes wave {
+      0% { mask-position: 100% 0%; -webkit-mask-position: 100% 0%; }
+      100% { mask-position: 0% 100%; -webkit-mask-position: 0% 100%; }
+    }
+
+    /* --- ASCII ART --- */
+    .ascii-art {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px; /* Adjusted for density */
+      line-height: 10px;
+      color: var(--ascii-color);
+      white-space: pre;
+      position: fixed;
+      bottom: 100px;
+      right: 0;
+      z-index: -1;
+      pointer-events: none;
+      user-select: none;
+      transform: scale(2);
+      transition: color 0.4s ease;
+    }
+
+    /* --- LAYOUT --- */
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 140px 24px 80px;
+      position: relative;
+    }
+
+    /* --- TYPOGRAPHY --- */
+    h1 {
+      font-size: 4rem;
+      font-weight: 500;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      margin-bottom: 24px;
+      color: var(--accent);
+    }
+    
+    h2 {
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+      margin-top: 80px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    
+    h2::after {
+      content: '';
+      height: 1px;
+      flex-grow: 1;
+      background: var(--card-border);
+    }
+
+    p { font-size: 1.1rem; color: var(--text-muted); max-width: 600px; }
+    
+    .mono { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; }
+
+    /* --- NAV --- */
+    nav {
+      position: fixed;
+      top: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
+      display: flex;
+      gap: 8px;
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      padding: 8px 16px;
+      border-radius: 99px;
+      border: 1px solid var(--card-border);
+      box-shadow: 0 10px 20px -5px rgba(0,0,0,0.1);
+    }
+
+    .nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      padding: 8px 16px;
+      border-radius: 99px;
+      transition: all 0.2s ease;
+      font-weight: 500;
+    }
+
+    .nav-link:hover, .nav-link.active {
+      color: var(--bg);
+      background: var(--text);
+    }
+
+    .theme-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text);
+      padding: 8px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-left: 8px;
+      transition: background 0.2s;
+    }
+    
+    .theme-toggle:hover { background: var(--btn-hover); }
+
+    /* --- CARDS --- */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      padding: 32px;
+      border-radius: 16px;
+      margin-bottom: 24px;
+      transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease;
+      position: relative;
+      overflow: hidden;
+      text-decoration: none;
+      display: block;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow);
+      border-color: var(--text-muted);
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      color: var(--text);
+      margin-bottom: 8px;
+      font-weight: 500;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card-role {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      opacity: 0.8;
+    }
+
+    .card-body {
+      font-size: 1rem;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+
+    .tags { display: flex; gap: 8px; flex-wrap: wrap; }
+    
+    .tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 4px;
+      background: var(--btn-hover);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+    }
+
+    /* --- FOOTER --- */
+    footer {
+      margin-top: 120px;
+      border-top: 1px solid var(--card-border);
+      padding-top: 40px;
+      display: flex;
+      justify-content: space-between;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    
+    .footer-links a { color: var(--text); margin-left: 24px; text-decoration: none; }
+    
+    /* --- RESPONSIVE --- */
+    @media (max-width: 768px) {
+      h1 { font-size: 2.5rem; }
+      .ascii-art { display: none; } /* Hide ASCII on mobile to prevent overflow */
+      .container { padding-top: 120px; }
+      nav { width: 90%; justify-content: space-between; }
+    }
+  </style>
 </head>
 <body>
-  <!-- Navigation Bar -->
+
+  <div class="bg-grid"></div>
+  
+  <div class="ascii-art">
+⠀⠀⠀⠀⠀⠀⠀⠀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⣼⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⣸⣿⣿⣷⣤⣴⣦⣀⣠⣶⡶⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⢠⣄⡀⠀⣼⣿⣿⣿⣿⡿⣿⣿⣿⣿⣿⣿⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠘⣿⣿⣿⣿⣿⣿⣿⡾⢛⠋⡛⠻⣿⣿⣿⣿⣧⣴⣶⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⢸⣿⣿⣿⣿⣽⡏⠰⡈⢆⢡⣷⢀⠻⣿⣿⣿⣿⣇⡀⢀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⢻⣿⣿⣿⣻⣿⠄⢣⠘⡄⢺⡏⢄⢣⡌⠻⣿⣿⣿⣿⣿⣿⣷⣶⣶⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣿⣿⣷⣶⣦⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⣀⣸⣿⣿⣿⣿⣿⡏⢄⠣⢌⣹⠇⡌⣼⢇⠱⡈⠿⣿⣿⣿⡿⠿⠛⠛⠛⠛⠛⠛⠛⠿⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠹⢿⣿⣿⣿⣷⣿⣿⣦⠑⣂⡿⠰⡐⡿⢈⠆⡑⢢⢙⡿⢉⠐⡠⠑⣈⠂⠥⠘⡀⢃⠰⠀⡌⠙⠯⣉⢩⣿⣿⣿⣿⣿⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠈⠹⣿⣿⣿⣽⣿⣷⣜⠏⡰⢱⡟⡠⢊⠔⣡⡿⢁⠂⡡⠄⢡⠠⠌⢠⠁⠒⡈⠄⡡⢀⠃⠤⣹⣿⣿⣿⣿⣿⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠈⣻⣿⣿⣿⣿⣿⣷⣤⠹⢇⠰⡁⢎⣾⠁⠂⡔⠠⠘⡀⢂⠌⠄⠌⠡⡐⢈⡐⠄⢊⣼⣿⣿⣿⣿⣿⡃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠙⠛⠛⢻⣿⣿⣯⣿⣿⣷⣌⠢⠑⢬⡇⠌⠡⠠⠑⢂⢁⢢⡈⠌⡐⠡⠠⢁⡐⠈⢼⣿⣿⣿⣿⡿⢁⢻⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠈⣻⣿⣿⣿⣿⣿⣧⣍⢾⠃⠌⢂⡁⢎⣶⣿⣯⣭⡘⠰⡡⢁⠂⠤⢉⠈⠿⣿⣿⠟⢀⠂⠄⠛⣧⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⡿⡙⢹⣿⣿⣿⣿⣿⣿⠈⠔⠂⢤⣿⣿⣿⣿⣿⣅⠀⠹⠄⡘⢀⢂⠡⠂⢄⠠⢈⠄⠊⠌⡐⢉⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⢰⡇⡇⣾⣿⣿⡿⣿⣿⣿⡈⠄⢃⠘⣿⣿⣿⣿⣿⣿⠀⢠⠃⠄⠃⠄⡂⢉⠄⢂⠡⢈⠌⡐⢈⠄⡘⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇⣓⡘⠿⣿⢷⠙⠛⣻⠡⢈⠄⢊⡘⢿⢿⠿⠟⠃⢠⠞⣨⠐⡉⡐⢈⠤⠈⡄⢂⡁⢂⠌⠄⡂⠔⠘⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⣯⠱⢈⠐⠂⢾⣁⣂⣽⣆⠂⣌⣼⠇⠠⢉⠐⡀⠉⠤⢈⠳⠇⡐⠠⢁⠂⡡⠐⡠⠐⠂⠌⡐⠐⡨⠐⠸⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠸⣇⠂⠌⣁⠂⡉⢹⣟⣿⣻⡯⠁⠌⢂⡁⠢⢈⢁⠒⠠⠒⡀⠆⣁⠂⠡⠄⡑⠠⠑⣈⠐⡈⠔⠠⠑⢂⢹⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⣧⠌⣀⠒⡈⡐⠻⣮⡷⠃⠌⢂⠡⠠⠑⣀⠊⠄⡑⠠⢁⠂⠤⢈⠁⠆⡐⠡⠌⣀⠂⠡⠌⢂⠡⢂⠘⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢳⣤⠒⠠⠐⠡⣀⠐⡈⠔⡈⠤⠑⡈⠄⠌⡐⢈⡁⢂⠡⠒⡈⠰⠈⢄⡁⠆⠠⠌⠡⣈⠐⡐⡈⠌⣻⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢷⡈⠅⠒⡀⢂⠁⠆⠰⠀⡅⠂⠌⠒⡈⠄⠰⠈⢄⠡⠐⠡⠌⢠⠐⡈⢡⠈⠔⡀⠒⢠⠐⡈⣿⡃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠠⢁⠂⢿⡆⠌⡁⢺⠇⡁⢊⠐⣄⠉⠄⠃⡄⠊⠌⡐⠌⡀⠆⡁⢂⠌⡐⠠⠉⠄⢂⠁⣾⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠀⠀⠀⠘⣧⠒⡈⠄⢶⢀⠡⡞⡐⠠⢁⣞⠂⢌⠘⢠⠐⣡⡬⠴⢒⠃⡐⡈⠄⢂⠌⠡⠘⡈⠄⢊⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣾⠹⣧⠀⢀⣤⠾⢷⡐⡈⢼⡆⢸⡇⠡⢘⣼⢳⡿⣦⠈⣤⠿⢁⢂⠁⠆⡈⠔⠠⢁⠊⠄⡡⠡⢐⠈⣼⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇⢃⢹⡷⠋⢄⠂⠜⠹⢶⠾⢁⠚⢿⡴⠟⢡⣿⠓⠸⣿⠋⡐⠄⢂⠉⡐⡐⠨⠐⠡⡈⢄⡛⢁⠂⣸⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⢰⠀⡂⠿⠈⢄⡈⢂⡁⢂⠐⠂⡌⠠⠐⡈⠴⣿⢀⠡⠘⣆⠰⢈⠂⢡⠐⣀⠃⠡⢒⡼⠋⡐⠈⣴⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⢿⡀⠆⡁⢂⠡⢂⠐⡠⠐⡈⠄⠃⡄⠡⢁⠂⢼⣿⠀⠂⡅⢂⡐⠂⠌⢤⣒⠠⠬⠓⡉⠄⢒⣠⡿⠛⢶⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⠷⠶⠶⢧⠶⡶⢶⠶⡷⢶⠾⡶⢶⠷⡶⠾⠼⢿⣠⣁⣐⣠⣀⣉⣒⣰⣂⣦⣥⣖⣴⠮⠿⠳⠶⠾⠴⠿⠿⠿⠳⠶⣦⣀⠀⠀⠀⠀⠀⠀⡀⠂
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣦⣶⣼⡟⠃⠀⠀⠀⠀⠀⠃⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠻⠿⠀⠀⠀⠀⠀⠀⠀⠀
+  </div>
+
   <nav>
-    <div class="hamburger-menu">
-      <div class="bar1"></div>
-      <div class="bar2"></div>
-      <div class="bar3"></div>
-    </div>
-    <ul class="nav-links">
-        <li><a class="current-link" href="./index.html">home</a></li>
-        <li><a class="inactive-link">projects (updating...)</a></li>
-        <li><a href="#">uses</a></li>
-        <li><a href="#">resume</a></li> -->
-        <li><a class="inactive-link">blog (coming soon)</a></li>
-    </ul>
+    <a href="#" class="nav-link active">Home</a>
+    <a href="#projects" class="nav-link">Work</a>
+    <a href="Resume 2025.pdf" class="nav-link" target="_blank">Resume ↗</a>
+    <button class="theme-toggle" id="themeBtn">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+    </button>
   </nav>
 
-  <!-- Main Content Container -->
   <div class="container">
-    <!-- Home Section -->
-    <section id="home" class="fade-in">
-      <h1>Sardor Nodirov<span class="cursor">_</span></h1>
-      <p>CS AI student and researcher at Colby College</p>
-      <div class="about">
-        <h2>About</h2>
-        <p>Currently researching human motion generation to make virtual characters feel alive. Reach out at sardor [at] nodirov [dot] com to learn more!</p>
-      </div>
-      <div class="today">
-        <h2>WIP</h2>
-        <p>I am updating this website whenever I find free time between my studies and research. So check back later for more info!</p>
-      </div>
+    
+    <section>
+      <div class="mono" style="margin-bottom: 16px; color: var(--accent);">01 — INTRODUCTION</div>
+      <h1>Sardor Nodirov</h1>
+      <p style="color: var(--text);">
+        CS AI '26 @<span style="color: var(--accent);">Colby College</span>.
+      </p>
+      <p style="margin-top: 16px;">
+        I do real-time generative systems where AI meets Graphics. 
+        Specializing in low-latency avatar pipelines, bone retargeting, and multi-modal synthesis.
+      </p>
     </section>
 
-    <!-- Uses Section
-    <section id="uses" class="fade-in">
-      <h2>Uses</h2>
-      <p>This is where I share the tools, tech, and workflow that power my work.</p>
-    </section> -->
+    <section id="projects">
+      <h2>02 — SELECTED ENGINEERING</h2>
+      
+      <a href="https://github.com/sarudoru" class="card">
+        <div class="card-title">
+          Live Virtual Avatar Engine with Real-time Motion Generation
+          <span class="card-role">RESEARCH / THESIS</span>
+        </div>
+        <div class="card-body">
+          Engineered an end-to-end Python pipeline for real-time generative animation. 
+          Orchestrates LLM tokens, TTS audio, and MoMask motion synthesis concurrently via WebSockets. 
+          Solved root motion drift using inertial blending heuristics for 60 FPS playback.
+        </div>
+        <div class="tags">
+          <span class="tag">Python</span>
+          <span class="tag">WebSocket</span>
+          <span class="tag">VRM</span>
+          <span class="tag">Three.js</span>
+          <span class="tag">Asyncio</span>
+        </div>
+      </a>
 
-    </div>
+      <div class="card">
+        <div class="card-title">
+          Ember AI
+          <span class="card-role">FOUNDING ENGINEER</span>
+        </div>
+        <div class="card-body">
+          Built the backend for a narrated memory experience startup. 
+          Architected a fault-tolerant generation queue using Redis and BullMQ. 
+          Optimized global delivery with Cloudflare R2, cutting egress costs by 50% while achieving <50ms audio-visual sync.
+        </div>
+        <div class="tags">
+          <span class="tag">FastAPI</span>
+          <span class="tag">Redis</span>
+          <span class="tag">React</span>
+          <span class="tag">Cloudflare R2</span>
+        </div>
+      </div>
 
+      <div class="card">
+        <div class="card-title">
+          Conversational Voice Agent
+          <span class="card-role">DAVIS INSTITUTE FOR AI</span>
+        </div>
+        <div class="card-body">
+          Designed a sub-second, full-duplex voice architecture. 
+          Implemented a custom "barge-in" protocol handling raw mulaw streams, allowing users to naturally interrupt the AI without breaking state consistency.
+        </div>
+        <div class="tags">
+          <span class="tag">Azure Speech</span>
+          <span class="tag">Vector Search</span>
+          <span class="tag">Audio Processing</span>
+        </div>
+      </div>
+
+    </section>
+
+    <footer>
+      <span>© 2025 SARDOR NODIROV</span>
+      <div class="footer-links">
+        <a href="https://github.com/sarudoru">GITHUB</a>
+        <a href="https://linkedin.com/in/sardornodirov">LINKEDIN</a>
+        <a href="mailto:sinodi26@colby.edu">EMAIL</a>
+      </div>
+    </footer>
+
+  </div>
 
   <script>
-    document.querySelector('.hamburger-menu').addEventListener('click', function() {
-      this.classList.toggle('change');
-      document.querySelector('.nav-links').classList.toggle('nav-active');
-    });
+    // Theme Toggling Logic
+    const themeBtn = document.getElementById('themeBtn');
+    const html = document.documentElement;
     
-    // Close menu when clicking on links
-    document.querySelectorAll('.nav-links li').forEach(link => {
-      link.addEventListener('click', function() {
-        document.querySelector('.hamburger-menu').classList.remove('change');
-        document.querySelector('.nav-links').classList.remove('nav-active');
-      });
+    // Icons
+    const sunIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>';
+    const moonIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+
+    // Check Local Storage
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    html.setAttribute('data-theme', savedTheme);
+    themeBtn.innerHTML = savedTheme === 'dark' ? sunIcon : moonIcon;
+
+    themeBtn.addEventListener('click', () => {
+      const currentTheme = html.getAttribute('data-theme');
+      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+      
+      html.setAttribute('data-theme', newTheme);
+      localStorage.setItem('theme', newTheme);
+      themeBtn.innerHTML = newTheme === 'dark' ? sunIcon : moonIcon;
     });
   </script>
 </body>

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sardor Nodirov - Portfolio</title>
+  <!-- Using a modern, code-like font from Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Navigation Bar -->
+  <nav>
+    <div class="hamburger-menu">
+      <div class="bar1"></div>
+      <div class="bar2"></div>
+      <div class="bar3"></div>
+    </div>
+    <ul class="nav-links">
+        <li><a class="current-link" href="./index.html">home</a></li>
+        <li><a class="inactive-link">projects (updating...)</a></li>
+        <li><a href="#">uses</a></li>
+        <li><a href="#">resume</a></li> -->
+        <li><a class="inactive-link">blog (coming soon)</a></li>
+    </ul>
+  </nav>
+
+  <!-- Main Content Container -->
+  <div class="container">
+    <!-- Home Section -->
+    <section id="home" class="fade-in">
+      <h1>Sardor Nodirov<span class="cursor">_</span></h1>
+      <p>CS AI student and researcher at Colby College</p>
+      <div class="about">
+        <h2>About</h2>
+        <p>Currently researching human motion generation to make virtual characters feel alive. Reach out at sardor [at] nodirov [dot] com to learn more!</p>
+      </div>
+      <div class="today">
+        <h2>WIP</h2>
+        <p>I am updating this website whenever I find free time between my studies and research. So check back later for more info!</p>
+      </div>
+    </section>
+
+    <!-- Uses Section
+    <section id="uses" class="fade-in">
+      <h2>Uses</h2>
+      <p>This is where I share the tools, tech, and workflow that power my work.</p>
+    </section> -->
+
+    </div>
+
+
+  <script>
+    document.querySelector('.hamburger-menu').addEventListener('click', function() {
+      this.classList.toggle('change');
+      document.querySelector('.nav-links').classList.toggle('nav-active');
+    });
+    
+    // Close menu when clicking on links
+    document.querySelectorAll('.nav-links li').forEach(link => {
+      link.addEventListener('click', function() {
+        document.querySelector('.hamburger-menu').classList.remove('change');
+        document.querySelector('.nav-links').classList.remove('nav-active');
+      });
+    });
+  </script>
+</body>
+</html>
