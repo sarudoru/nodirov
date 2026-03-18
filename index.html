@@ -1,421 +1,556 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Sardor Nodirov - Full-Stack AI Engineer & Creative Technologist">
+  <meta name="description" content="Sardor Nodirov — AI Systems Engineer. I make virtual characters feel alive.">
   <title>Sardor Nodirov</title>
-  
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@100..800&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
-  
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Source+Serif+4:ital,opsz,wght@0,8..60,300..900;1,8..60,300..900&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+
   <style>
-    /* --- THEME VARIABLES --- */
+    /* --- PALETTE --- */
     :root {
-      /* Dark Mode (Default) */
-      --bg: #050505;
-      --text: #e0e0e0;
-      --text-muted: #888888;
-      --accent: #ffffff;
-      --card-bg: rgba(20, 20, 20, 0.6);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --dot-color: rgba(255, 255, 255, 0.15);
-      --ascii-color: rgb(0, 0, 0);
-      --shadow: 0 20px 40px -10px rgba(0,0,0,0.5);
-      --btn-hover: rgba(255,255,255,0.1);
-    }
-
-    [data-theme="light"] {
-      --bg: #f4f4f5;
-      --text: #18181b;
-      --text-muted: #52525b;
-      --accent: #000000;
-      --card-bg: rgba(255, 255, 255, 0.6);
+      --bg: #f4efe6;
+      --bg-subtle: #ece7dd;
+      --text: #2c2520;
+      --text-muted: #8a7e72;
+      --accent: #c45d2c;
+      --accent-hover: #a84a1f;
+      --card-bg: rgba(255, 252, 247, 0.7);
       --card-border: rgba(0, 0, 0, 0.06);
-      --dot-color: rgba(0, 0, 0, 0.1);
-      --ascii-color: rgba(0, 0, 0, 0.08);
-      --shadow: 0 20px 40px -10px rgba(0,0,0,0.08);
-      --btn-hover: rgba(0,0,0,0.05);
+      --card-hover-border: rgba(0, 0, 0, 0.14);
+      --shadow: 0 16px 40px -12px rgba(60, 40, 20, 0.1);
+      --grain-opacity: 0.03;
     }
 
-    /* --- RESET & BASE --- */
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    
+    /* --- RESET --- */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* --- BASE --- */
+    html { scroll-behavior: smooth; }
+
     body {
       background-color: var(--bg);
       color: var(--text);
-      font-family: 'Space Grotesk', sans-serif;
-      line-height: 1.6;
-      transition: background-color 0.4s ease, color 0.4s ease;
+      font-family: 'Source Serif 4', Georgia, serif;
+      font-size: 17px;
+      line-height: 1.65;
+      -webkit-font-smoothing: antialiased;
       overflow-x: hidden;
       min-height: 100vh;
-      position: relative;
     }
 
-    /* --- BACKGROUND ANIMATION (DOT WAVE) --- */
-    .bg-grid {
+    ::selection {
+      background: #dccab3;
+      color: var(--text);
+    }
+
+    /* --- PAPER GRAIN TEXTURE --- */
+    body::before {
+      content: '';
       position: fixed;
-      top: 0; left: 0; width: 100%; height: 100%;
-      z-index: -1;
-      background-image: radial-gradient(var(--dot-color) 1px, transparent 1px);
-      background-size: 30px 30px;
-      mask-image: linear-gradient(135deg, transparent 20%, black 50%, transparent 80%);
-      -webkit-mask-image: linear-gradient(135deg, transparent 20%, black 50%, transparent 80%);
-      mask-size: 200% 200%;
-      -webkit-mask-size: 200% 200%;
-      animation: wave 10s infinite linear;
-      opacity: 0.8;
+      inset: 0;
+      z-index: 0;
       pointer-events: none;
-    }
-
-    @keyframes wave {
-      0% { mask-position: 100% 0%; -webkit-mask-position: 100% 0%; }
-      100% { mask-position: 0% 100%; -webkit-mask-position: 0% 100%; }
-    }
-
-    /* --- ASCII ART --- */
-    .ascii-art {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 10px; /* Adjusted for density */
-      line-height: 10px;
-      color: var(--ascii-color);
-      white-space: pre;
-      position: fixed;
-      bottom: 100px;
-      right: 0;
-      z-index: -1;
-      pointer-events: none;
-      user-select: none;
-      transform: scale(2);
-      transition: color 0.4s ease;
+      opacity: var(--grain-opacity);
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 200px 200px;
     }
 
     /* --- LAYOUT --- */
     .container {
-      max-width: 800px;
+      max-width: 780px;
       margin: 0 auto;
-      padding: 140px 24px 80px;
+      padding: 0 24px;
       position: relative;
+      z-index: 1;
     }
 
-    /* --- TYPOGRAPHY --- */
-    h1 {
-      font-size: 4rem;
-      font-weight: 500;
-      letter-spacing: -0.04em;
-      line-height: 1;
-      margin-bottom: 24px;
-      color: var(--accent);
-    }
-    
-    h2 {
-      font-size: 0.9rem;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--text-muted);
-      margin-bottom: 32px;
-      margin-top: 80px;
+    /* --- NAV --- */
+    nav {
+      position: fixed;
+      top: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 100;
       display: flex;
       align-items: center;
-      gap: 12px;
+      gap: 6px;
+      background: rgba(244, 239, 230, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      padding: 7px 14px;
+      border-radius: 99px;
+      border: 1px solid var(--card-border);
+      box-shadow: 0 4px 20px -4px rgba(60, 40, 20, 0.08);
     }
-    
-    h2::after {
+
+    .nav-link {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-family: 'Source Serif 4', serif;
+      font-size: 0.88rem;
+      padding: 6px 14px;
+      border-radius: 99px;
+      transition: all 0.25s ease;
+      font-weight: 500;
+    }
+
+    .nav-link:hover, .nav-link.active {
+      color: #fff;
+      background: var(--text);
+    }
+
+    /* --- HERO --- */
+    .hero {
+      padding: 160px 0 80px;
+    }
+
+    .hero h1 {
+      font-family: 'Instrument Serif', serif;
+      font-size: 4.2rem;
+      font-weight: 400;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+      color: var(--text);
+      margin-bottom: 20px;
+    }
+
+    .hero h1 .italic {
+      font-style: italic;
+      color: var(--accent);
+    }
+
+    .hero .tagline {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+      font-weight: 400;
+      color: var(--accent);
+      letter-spacing: 0.04em;
+      margin-bottom: 28px;
+      text-transform: uppercase;
+    }
+
+    .hero .bio {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 520px;
+      line-height: 1.7;
+    }
+
+    .hero .bio a {
+      color: var(--text);
+      text-decoration: none;
+      border-bottom: 1.5px solid var(--accent);
+      transition: color 0.2s;
+    }
+
+    .hero .bio a:hover {
+      color: var(--accent);
+    }
+
+    .hero .affiliations {
+      margin-top: 24px;
+      font-size: 1rem;
+      line-height: 1.9;
+      color: var(--text);
+    }
+
+    .hero .affiliations .place {
+      font-weight: 600;
+    }
+
+    .hero .affiliations .role {
+      color: var(--text-muted);
+    }
+
+    .hero .contact-row {
+      margin-top: 28px;
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .hero .contact-row a {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 5px 12px;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      transition: all 0.2s;
+      background: var(--card-bg);
+    }
+
+    .hero .contact-row a:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .contact-email {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      padding: 5px 12px;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      background: var(--card-bg);
+    }
+
+    /* --- INTEREST TAGS --- */
+    .interests {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 24px;
+    }
+
+    .interest-tag {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      padding: 5px 12px;
+      border-radius: 4px;
+      background: var(--bg-subtle);
+      color: var(--text);
+      border: 1px solid var(--card-border);
+      letter-spacing: 0.02em;
+    }
+
+    /* --- SECTION HEADERS --- */
+    .section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--text-muted);
+      margin-bottom: 32px;
+      margin-top: 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .section-label::after {
       content: '';
       height: 1px;
       flex-grow: 1;
       background: var(--card-border);
     }
 
-    p { font-size: 1.1rem; color: var(--text-muted); max-width: 600px; }
-    
-    .mono { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; }
-
-    /* --- NAV --- */
-    nav {
-      position: fixed;
-      top: 32px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 100;
-      display: flex;
-      gap: 8px;
-      background: var(--card-bg);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      padding: 8px 16px;
-      border-radius: 99px;
-      border: 1px solid var(--card-border);
-      box-shadow: 0 10px 20px -5px rgba(0,0,0,0.1);
-    }
-
-    .nav-link {
-      color: var(--text-muted);
-      text-decoration: none;
-      font-size: 0.9rem;
-      padding: 8px 16px;
-      border-radius: 99px;
-      transition: all 0.2s ease;
-      font-weight: 500;
-    }
-
-    .nav-link:hover, .nav-link.active {
-      color: var(--bg);
-      background: var(--text);
-    }
-
-    .theme-toggle {
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: var(--text);
-      padding: 8px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-left: 8px;
-      transition: background 0.2s;
-    }
-    
-    .theme-toggle:hover { background: var(--btn-hover); }
-
     /* --- CARDS --- */
     .card {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
       padding: 32px;
-      border-radius: 16px;
-      margin-bottom: 24px;
-      transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease;
-      position: relative;
-      overflow: hidden;
+      border-radius: 14px;
+      margin-bottom: 20px;
+      transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease, border-color 0.3s ease;
       text-decoration: none;
       display: block;
+      position: relative;
     }
 
     .card:hover {
-      transform: translateY(-4px);
+      transform: translateY(-3px);
       box-shadow: var(--shadow);
-      border-color: var(--text-muted);
+      border-color: var(--card-hover-border);
     }
 
-    .card-title {
-      font-size: 1.25rem;
-      color: var(--text);
-      margin-bottom: 8px;
-      font-weight: 500;
+    .card-top {
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+
+    .card-name {
+      font-family: 'Instrument Serif', serif;
+      font-size: 1.35rem;
+      color: var(--text);
+      font-weight: 400;
+    }
+
+    .card-meta {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      white-space: nowrap;
+      padding-top: 6px;
     }
 
     .card-role {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.8rem;
+      font-style: italic;
+      font-size: 0.95rem;
       color: var(--text-muted);
-      opacity: 0.8;
+      margin-bottom: 14px;
     }
 
     .card-body {
-      font-size: 1rem;
-      color: var(--text-muted);
-      margin-bottom: 24px;
+      font-size: 0.98rem;
+      color: var(--text);
+      line-height: 1.65;
     }
 
-    .tags { display: flex; gap: 8px; flex-wrap: wrap; }
-    
+    .card-body .highlight {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .tags {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
     .tag {
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.75rem;
-      padding: 4px 10px;
-      border-radius: 4px;
-      background: var(--btn-hover);
-      color: var(--text);
+      font-size: 0.7rem;
+      padding: 3px 9px;
+      border-radius: 3px;
+      background: var(--bg-subtle);
+      color: var(--text-muted);
       border: 1px solid var(--card-border);
     }
 
+    /* --- CTA ARROW ON LINK CARDS --- */
+    .card[href] .card-name::after {
+      content: ' \2197';
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      transition: color 0.2s;
+    }
+
+    .card[href]:hover .card-name::after {
+      color: var(--accent);
+    }
+
+    /* --- EDUCATION BLOCK --- */
+    .edu-block {
+      padding: 28px 32px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 14px;
+    }
+
+    .edu-block .school {
+      font-family: 'Instrument Serif', serif;
+      font-size: 1.25rem;
+      color: var(--text);
+    }
+
+    .edu-block .degree {
+      font-style: italic;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-bottom: 12px;
+    }
+
+    .edu-block .edu-detail {
+      font-size: 0.93rem;
+      color: var(--text);
+      line-height: 1.7;
+      margin-bottom: 4px;
+    }
+
+    .edu-block .edu-detail strong {
+      font-weight: 600;
+    }
+
+
     /* --- FOOTER --- */
     footer {
-      margin-top: 120px;
+      margin-top: 100px;
+      padding: 32px 0;
       border-top: 1px solid var(--card-border);
-      padding-top: 40px;
       display: flex;
       justify-content: space-between;
+      align-items: center;
       font-family: 'JetBrains Mono', monospace;
-      font-size: 0.8rem;
+      font-size: 0.75rem;
       color: var(--text-muted);
     }
-    
-    .footer-links a { color: var(--text); margin-left: 24px; text-decoration: none; }
-    
+
+    .footer-links a {
+      color: var(--text-muted);
+      margin-left: 20px;
+      text-decoration: none;
+      transition: color 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .footer-links a:hover {
+      color: var(--accent);
+    }
+
     /* --- RESPONSIVE --- */
-    @media (max-width: 768px) {
-      h1 { font-size: 2.5rem; }
-      .ascii-art { display: none; } /* Hide ASCII on mobile to prevent overflow */
-      .container { padding-top: 120px; }
-      nav { width: 90%; justify-content: space-between; }
+    @media (max-width: 700px) {
+      .hero { padding: 130px 0 60px; }
+      .hero h1 { font-size: 2.6rem; }
+      nav { width: 92%; justify-content: center; }
+      .card-top { flex-direction: column; gap: 2px; }
+      footer { flex-direction: column; gap: 16px; text-align: center; }
+      .footer-links a { margin: 0 10px; }
     }
   </style>
 </head>
 <body>
 
-  <div class="bg-grid"></div>
-  
-  <div class="ascii-art">
-⠀⠀⠀⠀⠀⠀⠀⠀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⣼⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⣸⣿⣿⣷⣤⣴⣦⣀⣠⣶⡶⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⢠⣄⡀⠀⣼⣿⣿⣿⣿⡿⣿⣿⣿⣿⣿⣿⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠘⣿⣿⣿⣿⣿⣿⣿⡾⢛⠋⡛⠻⣿⣿⣿⣿⣧⣴⣶⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⢸⣿⣿⣿⣿⣽⡏⠰⡈⢆⢡⣷⢀⠻⣿⣿⣿⣿⣇⡀⢀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⢻⣿⣿⣿⣻⣿⠄⢣⠘⡄⢺⡏⢄⢣⡌⠻⣿⣿⣿⣿⣿⣿⣷⣶⣶⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣿⣿⣷⣶⣦⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⣀⣸⣿⣿⣿⣿⣿⡏⢄⠣⢌⣹⠇⡌⣼⢇⠱⡈⠿⣿⣿⣿⡿⠿⠛⠛⠛⠛⠛⠛⠛⠿⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠹⢿⣿⣿⣿⣷⣿⣿⣦⠑⣂⡿⠰⡐⡿⢈⠆⡑⢢⢙⡿⢉⠐⡠⠑⣈⠂⠥⠘⡀⢃⠰⠀⡌⠙⠯⣉⢩⣿⣿⣿⣿⣿⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠈⠹⣿⣿⣿⣽⣿⣷⣜⠏⡰⢱⡟⡠⢊⠔⣡⡿⢁⠂⡡⠄⢡⠠⠌⢠⠁⠒⡈⠄⡡⢀⠃⠤⣹⣿⣿⣿⣿⣿⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠈⣻⣿⣿⣿⣿⣿⣷⣤⠹⢇⠰⡁⢎⣾⠁⠂⡔⠠⠘⡀⢂⠌⠄⠌⠡⡐⢈⡐⠄⢊⣼⣿⣿⣿⣿⣿⡃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠙⠛⠛⢻⣿⣿⣯⣿⣿⣷⣌⠢⠑⢬⡇⠌⠡⠠⠑⢂⢁⢢⡈⠌⡐⠡⠠⢁⡐⠈⢼⣿⣿⣿⣿⡿⢁⢻⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠈⣻⣿⣿⣿⣿⣿⣧⣍⢾⠃⠌⢂⡁⢎⣶⣿⣯⣭⡘⠰⡡⢁⠂⠤⢉⠈⠿⣿⣿⠟⢀⠂⠄⠛⣧⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⡿⡙⢹⣿⣿⣿⣿⣿⣿⠈⠔⠂⢤⣿⣿⣿⣿⣿⣅⠀⠹⠄⡘⢀⢂⠡⠂⢄⠠⢈⠄⠊⠌⡐⢉⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⢰⡇⡇⣾⣿⣿⡿⣿⣿⣿⡈⠄⢃⠘⣿⣿⣿⣿⣿⣿⠀⢠⠃⠄⠃⠄⡂⢉⠄⢂⠡⢈⠌⡐⢈⠄⡘⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇⣓⡘⠿⣿⢷⠙⠛⣻⠡⢈⠄⢊⡘⢿⢿⠿⠟⠃⢠⠞⣨⠐⡉⡐⢈⠤⠈⡄⢂⡁⢂⠌⠄⡂⠔⠘⣷⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⣯⠱⢈⠐⠂⢾⣁⣂⣽⣆⠂⣌⣼⠇⠠⢉⠐⡀⠉⠤⢈⠳⠇⡐⠠⢁⠂⡡⠐⡠⠐⠂⠌⡐⠐⡨⠐⠸⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠸⣇⠂⠌⣁⠂⡉⢹⣟⣿⣻⡯⠁⠌⢂⡁⠢⢈⢁⠒⠠⠒⡀⠆⣁⠂⠡⠄⡑⠠⠑⣈⠐⡈⠔⠠⠑⢂⢹⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⣧⠌⣀⠒⡈⡐⠻⣮⡷⠃⠌⢂⠡⠠⠑⣀⠊⠄⡑⠠⢁⠂⠤⢈⠁⠆⡐⠡⠌⣀⠂⠡⠌⢂⠡⢂⠘⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢳⣤⠒⠠⠐⠡⣀⠐⡈⠔⡈⠤⠑⡈⠄⠌⡐⢈⡁⢂⠡⠒⡈⠰⠈⢄⡁⠆⠠⠌⠡⣈⠐⡐⡈⠌⣻⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢷⡈⠅⠒⡀⢂⠁⠆⠰⠀⡅⠂⠌⠒⡈⠄⠰⠈⢄⠡⠐⠡⠌⢠⠐⡈⢡⠈⠔⡀⠒⢠⠐⡈⣿⡃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠠⢁⠂⢿⡆⠌⡁⢺⠇⡁⢊⠐⣄⠉⠄⠃⡄⠊⠌⡐⠌⡀⠆⡁⢂⠌⡐⠠⠉⠄⢂⠁⣾⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠀⠀⠀⠘⣧⠒⡈⠄⢶⢀⠡⡞⡐⠠⢁⣞⠂⢌⠘⢠⠐⣡⡬⠴⢒⠃⡐⡈⠄⢂⠌⠡⠘⡈⠄⢊⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣾⠹⣧⠀⢀⣤⠾⢷⡐⡈⢼⡆⢸⡇⠡⢘⣼⢳⡿⣦⠈⣤⠿⢁⢂⠁⠆⡈⠔⠠⢁⠊⠄⡡⠡⢐⠈⣼⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇⢃⢹⡷⠋⢄⠂⠜⠹⢶⠾⢁⠚⢿⡴⠟⢡⣿⠓⠸⣿⠋⡐⠄⢂⠉⡐⡐⠨⠐⠡⡈⢄⡛⢁⠂⣸⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⢰⠀⡂⠿⠈⢄⡈⢂⡁⢂⠐⠂⡌⠠⠐⡈⠴⣿⢀⠡⠘⣆⠰⢈⠂⢡⠐⣀⠃⠡⢒⡼⠋⡐⠈⣴⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⢿⡀⠆⡁⢂⠡⢂⠐⡠⠐⡈⠄⠃⡄⠡⢁⠂⢼⣿⠀⠂⡅⢂⡐⠂⠌⢤⣒⠠⠬⠓⡉⠄⢒⣠⡿⠛⢶⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⠷⠶⠶⢧⠶⡶⢶⠶⡷⢶⠾⡶⢶⠷⡶⠾⠼⢿⣠⣁⣐⣠⣀⣉⣒⣰⣂⣦⣥⣖⣴⠮⠿⠳⠶⠾⠴⠿⠿⠿⠳⠶⣦⣀⠀⠀⠀⠀⠀⠀⡀⠂
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣤⣦⣶⣼⡟⠃⠀⠀⠀⠀⠀⠃⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠻⠿⠀⠀⠀⠀⠀⠀⠀⠀
-  </div>
-
   <nav>
     <a href="#" class="nav-link active">Home</a>
-    <a href="#projects" class="nav-link">Work</a>
-    <a href="Sardor_Nodirov_Resume.pdf" class="nav-link" target="_blank">Resume ↗</a>
-    <button class="theme-toggle" id="themeBtn">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-    </button>
+    <a href="#work" class="nav-link">Work</a>
+    <a href="Sardor_Nodirov_Resume.pdf" class="nav-link" target="_blank">Resume</a>
   </nav>
 
   <div class="container">
-    
-    <section>
-      <h1>Sardor Nodirov</h1>
-      <div class="mono" style="margin-bottom: 10px; color: var(--accent);">I make virtual characters feel alive</div>
-      <p style="color: var(--text);">
-        Computer Science AI @<span style="color: var(--accent);"> Colby College '26</span><br>
-        NLP & EE @<span style="color: var(--accent);"> The University of Edinburgh '25</span><br>
-        Research Assistant @<span style="color: var(--accent);"> Davis Institute for AI</span>
+
+    <!-- HERO -->
+    <section class="hero">
+      <div class="tagline">AI Systems Engineer</div>
+      <h1>Sardor<br><span class="italic">Nodirov</span></h1>
+      <p class="bio">
+        Building real-time AI systems at the intersection of language, motion, and expression.
+        Currently shipping <a href="https://lapwing.live">Lapwing</a> &mdash; an interactive character platform where 3D avatars think, speak, move, and emote in real time.
       </p>
-      <p style="margin-top: 16px;">
-        <br>
-        Interested in <span class="tag">motion generation</span> <span class="tag">multimodal LLMs</span> <span class="tag">real-time systems</span><br>
-        Open to AI engineering and research roles/internships/collaborations<br><br>
-        Email me at sardor /at/ nodirov /dot/ com<br>
-        or find me on X: <a href="https://x.com/randen_ai" style="color: var(--accent);">@randen_ai</a>.
-      </p>
+      <div class="affiliations">
+        <span class="role">Founding AI Engineer @</span> <span class="place">Lapwing</span><br>
+        <span class="role">CS &amp; AI Honors @</span> <span class="place">Colby College '26</span><br>
+        <span class="role">NLP &amp; Embedded Systems @</span> <span class="place">University of Edinburgh</span>
+      </div>
+      <div class="interests">
+        <span class="interest-tag">motion generation</span>
+        <span class="interest-tag">multimodal LLMs</span>
+        <span class="interest-tag">real-time systems</span>
+        <span class="interest-tag">facial animation</span>
+      </div>
+      <div class="contact-row">
+        <span class="contact-email">sardor /at/ nodirov /dot/ com</span>
+        <a href="https://linkedin.com/in/sardornodirov">LinkedIn</a>
+        <a href="https://github.com/sarudoru">GitHub</a>
+        <a href="https://x.com/randen_ai">@randen_ai</a>
+      </div>
     </section>
 
-    <section id="projects">
-      <h2>Experience</h2>
-      
-      <a href="https://live.nodirov.com" class="card">
-        <div class="card-title">
-          Virtual Avatar Engine with Real-time Motion Generation
-          <span class="card-role">RESEARCH / THESIS</span>
+    <!-- WORK -->
+    <section id="work">
+      <div class="section-label">Selected Work</div>
+
+      <a href="https://lapwing.live" class="card">
+        <div class="card-top">
+          <span class="card-name">Lapwing</span>
+          <span class="card-meta">Sep 2025 &ndash; Present</span>
         </div>
+        <div class="card-role">Founding AI Engineer</div>
         <div class="card-body">
-          Engineered an end-to-end Python pipeline for real-time generative animation.<br>
-          Orchestrates LLMs, TTS, and MoMask motion synthesis concurrently via WebSockets.<br>
-          Solved root motion drift using inertial blending heuristics for 60 FPS playback.<br>
-          Click for live demo!
+          A real-time AI character platform where 3D avatars think, speak, move, and emote &mdash; all in the browser at 60 FPS.
+          I built the full pipeline from the ground up: an async orchestration layer that parallelizes language, speech, and motion generation,
+          a Three.js retargeting engine for fluid character animation, and a multi-layer facial expression system that composites blinks,
+          emotions, and lip-sync in real time.
+          <br><br>
+          <span class="highlight">200+ users</span> &middot; <span class="highlight">60% latency reduction</span> &middot; <span class="highlight">50% faster cold starts</span>
         </div>
         <div class="tags">
-          <span class="tag">MoMask</span>
+          <span class="tag">Three.js</span>
           <span class="tag">WebSocket</span>
           <span class="tag">VRM</span>
-          <span class="tag">Three.js</span>
+          <span class="tag">MoMask</span>
+          <span class="tag">FastAPI</span>
           <span class="tag">Asyncio</span>
         </div>
       </a>
 
       <div class="card">
-        <div class="card-title">
-          Ember AI
-          <span class="card-role">FOUNDING ENGINEER</span>
+        <div class="card-top">
+          <span class="card-name">Ember AI</span>
+          <span class="card-meta">May 2024 &ndash; Mar 2025</span>
         </div>
+        <div class="card-role">Full-Stack AI Engineer, Contract &middot; San Francisco (Remote)</div>
         <div class="card-body">
-          Built the backend for a narrated memory experience startup.<br>
-          Architected a fault-tolerant generation queue using Redis and BullMQ.<br>
-          Optimized global delivery with Cloudflare R2, cutting egress costs by 50% while achieving <50ms audio-visual sync.
+          First engineering hire at an early-stage startup turning photos into narrated memory experiences.
+          I owned the full product stack &mdash; from the React/Next.js frontend to a FastAPI backend with a distributed
+          Redis job queue handling heavy AI generation workloads. Built a custom Three.js playback engine
+          to keep audio and visuals in tight sync across global clients.
+          <br><br>
+          <span class="highlight">Sub-50ms</span> audio-visual sync &middot; <span class="highlight">40%</span> infrastructure cost reduction
         </div>
         <div class="tags">
+          <span class="tag">React</span>
+          <span class="tag">Next.js</span>
           <span class="tag">FastAPI</span>
           <span class="tag">Redis</span>
-          <span class="tag">Voice Cloning</span>
-          <span class="tag">R2</span>
+          <span class="tag">Cloudflare R2</span>
         </div>
       </div>
 
       <a href="./Sardor_Poster.pdf" class="card">
-        <div class="card-title">
-          Conversational Voice Agent with RAG
-          <span class="card-role">DAVIS INSTITUTE FOR AI</span>
+        <div class="card-top">
+          <span class="card-name">Davis Institute for AI</span>
+          <span class="card-meta">Sep 2023 &ndash; May 2024</span>
         </div>
+        <div class="card-role">AI Research Assistant</div>
         <div class="card-body">
-          Designed a sub-second, full-duplex voice architecture.<br>
-          Implemented a custom "barge-in" protocol handling raw mulaw streams, allowing users to naturally interrupt the AI without breaking state consistency.
+          Built a conversational voice AI for Colby College that answered questions about the institution
+          over the phone in real time. Designed the full-duplex audio pipeline with a custom barge-in protocol
+          so callers could interrupt naturally, and grounded all responses in verified data using a RAG pipeline
+          over 800+ pages of institutional content.
+          <br><br>
+          <span class="highlight">400 daily users</span> &middot; <span class="highlight">85%</span> resolved without human intervention
         </div>
         <div class="tags">
-          <span class="tag">Azure Speech</span>
+          <span class="tag">RAG</span>
           <span class="tag">Vector Search</span>
-          <span class="tag">Audio Processing</span>
+          <span class="tag">Twilio</span>
+          <span class="tag">Azure Speech</span>
+          <span class="tag">WebSockets</span>
         </div>
       </a>
-
     </section>
 
+    <!-- EDUCATION -->
+    <section>
+      <div class="section-label">Education</div>
+      <div class="edu-block" style="margin-bottom: 20px;">
+        <div class="school">Colby College</div>
+        <div class="degree">B.A. Honors in Computer Science, AI Concentration &middot; Expected May 2026 &middot; Waterville, ME</div>
+        <p class="edu-detail"><strong>Thesis:</strong> Real-time Conversational Motion Generation for Virtual Characters</p>
+        <p class="edu-detail"><strong>Presidential Scholar</strong> &middot; GPA: 3.77 &middot; Dean's List</p>
+        <p class="edu-detail"><strong>Founded</strong> Colby AI Society &mdash; grew to 50+ members, secured funding for student ML research</p>
+      </div>
+
+      <div class="section-label">Study Abroad</div>
+
+      <div class="edu-block" style="margin-bottom: 20px;">
+        <div class="school">University of Edinburgh</div>
+        <div class="degree">School of Informatics &middot; Edinburgh, Scotland</div>
+        <p class="edu-detail">Natural Language Processing, Quantum Computing, Embedded Systems</p>
+      </div>
+
+      <div class="edu-block">
+        <div class="school">Temple University Japan</div>
+        <div class="degree">Tokyo, Japan</div>
+        <p class="edu-detail">Computer Graphics</p>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
     <footer>
-      <span>© 2025 SARDOR NODIROV</span>
+      <span>&copy; 2026 Sardor Nodirov</span>
       <div class="footer-links">
-        <a href="https://github.com/sarudoru">GITHUB</a>
-        <a href="https://linkedin.com/in/sardornodirov">LINKEDIN</a>
-        <a href="mailto:sinodi26@colby.edu">EMAIL</a>
+        <a href="https://github.com/sarudoru">GitHub</a>
+        <a href="https://linkedin.com/in/sardornodirov">LinkedIn</a>
+        <span>sardor /at/ nodirov /dot/ com</span>
       </div>
     </footer>
 
   </div>
 
-  <script>
-    // Theme Toggling Logic
-    const themeBtn = document.getElementById('themeBtn');
-    const html = document.documentElement;
-    
-    // Icons
-    const sunIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>';
-    const moonIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
-
-    // Check Local Storage
-    const savedTheme = localStorage.getItem('theme') || 'dark';
-    html.setAttribute('data-theme', savedTheme);
-    themeBtn.innerHTML = savedTheme === 'dark' ? sunIcon : moonIcon;
-
-    themeBtn.addEventListener('click', () => {
-      const currentTheme = html.getAttribute('data-theme');
-      const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-      
-      html.setAttribute('data-theme', newTheme);
-      localStorage.setItem('theme', newTheme);
-      themeBtn.innerHTML = newTheme === 'dark' ? sunIcon : moonIcon;
-    });
-  </script>
 </body>
 </html>
