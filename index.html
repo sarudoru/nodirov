@@ -1,556 +1,328 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Sardor Nodirov — AI Systems Engineer. I make virtual characters feel alive.">
-  <title>Sardor Nodirov</title>
+<meta charset="utf-8">
+<title>Sardor Nodirov — AI Systems Engineer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Sardor Nodirov — AI Systems Engineer building real-time AI systems at the intersection of language, motion, and expression. Founding engineer at Lapwing.">
+<meta name="author" content="Sardor Nodirov">
+<meta name="theme-color" content="#0c0b09">
+<meta name="robots" content="index,follow,max-image-preview:large">
+<link rel="canonical" href="https://nodirov.com/">
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Source+Serif+4:ital,opsz,wght@0,8..60,300..900;1,8..60,300..900&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Sardor Nodirov">
+<meta property="og:title" content="Sardor Nodirov / AI Systems Engineer">
+<meta property="og:description" content="Building real-time AI systems at the intersection of language, motion, and expression. Founder at Lapwing.">
+<meta property="og:url" content="https://nodirov.com/">
+<meta property="og:image" content="https://nodirov.com/assets/bitmap-sardor.png">
+<meta property="og:image:width" content="1781">
+<meta property="og:image:height" content="1777">
+<meta property="og:image:alt" content="Bitmap-dithered portrait of Sardor Nodirov">
+<meta property="og:locale" content="en_US">
 
-  <style>
-    /* --- PALETTE --- */
-    :root {
-      --bg: #f4efe6;
-      --bg-subtle: #ece7dd;
-      --text: #2c2520;
-      --text-muted: #8a7e72;
-      --accent: #c45d2c;
-      --accent-hover: #a84a1f;
-      --card-bg: rgba(255, 252, 247, 0.7);
-      --card-border: rgba(0, 0, 0, 0.06);
-      --card-hover-border: rgba(0, 0, 0, 0.14);
-      --shadow: 0 16px 40px -12px rgba(60, 40, 20, 0.1);
-      --grain-opacity: 0.03;
-    }
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@randen_ai">
+<meta name="twitter:creator" content="@randen_ai">
+<meta name="twitter:title" content="Sardor Nodirov — AI Systems Engineer">
+<meta name="twitter:description" content="Building real-time AI systems at the intersection of language, motion, and expression.">
+<meta name="twitter:image" content="https://nodirov.com/assets/bitmap-sardor.png">
 
-    /* --- RESET --- */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+<link rel="icon" href="assets/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
+<link rel="apple-touch-icon" sizes="180x180" href="assets/favicon-180.png">
 
-    /* --- BASE --- */
-    html { scroll-behavior: smooth; }
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Person",
+  "name": "Sardor Nodirov",
+  "url": "https://nodirov.com",
+  "image": "https://nodirov.com/assets/bitmap-sardor.png",
+  "jobTitle": "AI Systems Engineer",
+  "worksFor": { "@type": "Organization", "name": "Lapwing" },
+  "alumniOf": [
+    { "@type": "CollegeOrUniversity", "name": "Colby College" },
+    { "@type": "CollegeOrUniversity", "name": "University of Edinburgh" },
+    { "@type": "CollegeOrUniversity", "name": "Temple University Japan" }
+  ],
+  "sameAs": [
+    "https://linkedin.com/in/sardornodirov",
+    "https://github.com/sarudoru",
+    "https://x.com/randen_ai"
+  ]
+}
+</script>
 
-    body {
-      background-color: var(--bg);
-      color: var(--text);
-      font-family: 'Source Serif 4', Georgia, serif;
-      font-size: 17px;
-      line-height: 1.65;
-      -webkit-font-smoothing: antialiased;
-      overflow-x: hidden;
-      min-height: 100vh;
-    }
+<style>
+@font-face {
+  font-family: "Funnel Sans";
+  font-style: normal;
+  font-weight: 300 800;
+  font-display: swap;
+  src: url("assets/fonts/funnel-sans.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Instrument Serif";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("assets/fonts/instrument-serif.woff2") format("woff2");
+}
 
-    ::selection {
-      background: #dccab3;
-      color: var(--text);
-    }
+:root {
+  --bg: #000000;
+  --fg: #ece6d4;
+  --fg-soft: #c9c2ad;
+  --fg-mute: #8a836d;
+  --link-rule: #4a4234;
+}
 
-    /* --- PAPER GRAIN TEXTURE --- */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
-      opacity: var(--grain-opacity);
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-      background-size: 200px 200px;
-    }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--fg); }
+body {
+  font-family: "Funnel Sans", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.65;
+  letter-spacing: 0.012em;
+  -webkit-font-smoothing: antialiased;
+  position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
 
-    /* --- LAYOUT --- */
-    .container {
-      max-width: 780px;
-      margin: 0 auto;
-      padding: 0 24px;
-      position: relative;
-      z-index: 1;
-    }
-
-    /* --- NAV --- */
-    nav {
-      position: fixed;
-      top: 28px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 100;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      background: rgba(244, 239, 230, 0.85);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-      padding: 7px 14px;
-      border-radius: 99px;
-      border: 1px solid var(--card-border);
-      box-shadow: 0 4px 20px -4px rgba(60, 40, 20, 0.08);
-    }
-
-    .nav-link {
-      color: var(--text-muted);
-      text-decoration: none;
-      font-family: 'Source Serif 4', serif;
-      font-size: 0.88rem;
-      padding: 6px 14px;
-      border-radius: 99px;
-      transition: all 0.25s ease;
-      font-weight: 500;
-    }
-
-    .nav-link:hover, .nav-link.active {
-      color: #fff;
-      background: var(--text);
-    }
-
-    /* --- HERO --- */
-    .hero {
-      padding: 160px 0 80px;
-    }
-
-    .hero h1 {
-      font-family: 'Instrument Serif', serif;
-      font-size: 4.2rem;
-      font-weight: 400;
-      line-height: 1.05;
-      letter-spacing: -0.03em;
-      color: var(--text);
-      margin-bottom: 20px;
-    }
-
-    .hero h1 .italic {
-      font-style: italic;
-      color: var(--accent);
-    }
-
-    .hero .tagline {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.82rem;
-      font-weight: 400;
-      color: var(--accent);
-      letter-spacing: 0.04em;
-      margin-bottom: 28px;
-      text-transform: uppercase;
-    }
-
-    .hero .bio {
-      font-size: 1.15rem;
-      color: var(--text-muted);
-      max-width: 520px;
-      line-height: 1.7;
-    }
-
-    .hero .bio a {
-      color: var(--text);
-      text-decoration: none;
-      border-bottom: 1.5px solid var(--accent);
-      transition: color 0.2s;
-    }
-
-    .hero .bio a:hover {
-      color: var(--accent);
-    }
-
-    .hero .affiliations {
-      margin-top: 24px;
-      font-size: 1rem;
-      line-height: 1.9;
-      color: var(--text);
-    }
-
-    .hero .affiliations .place {
-      font-weight: 600;
-    }
-
-    .hero .affiliations .role {
-      color: var(--text-muted);
-    }
-
-    .hero .contact-row {
-      margin-top: 28px;
-      display: flex;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-
-    .hero .contact-row a {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      text-decoration: none;
-      padding: 5px 12px;
-      border: 1px solid var(--card-border);
-      border-radius: 6px;
-      transition: all 0.2s;
-      background: var(--card-bg);
-    }
-
-    .hero .contact-row a:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .contact-email {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.78rem;
-      color: var(--text-muted);
-      padding: 5px 12px;
-      border: 1px solid var(--card-border);
-      border-radius: 6px;
-      background: var(--card-bg);
-    }
-
-    /* --- INTEREST TAGS --- */
-    .interests {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 24px;
-    }
-
-    .interest-tag {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.75rem;
-      padding: 5px 12px;
-      border-radius: 4px;
-      background: var(--bg-subtle);
-      color: var(--text);
-      border: 1px solid var(--card-border);
-      letter-spacing: 0.02em;
-    }
-
-    /* --- SECTION HEADERS --- */
-    .section-label {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
-      color: var(--text-muted);
-      margin-bottom: 32px;
-      margin-top: 20px;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
-
-    .section-label::after {
-      content: '';
-      height: 1px;
-      flex-grow: 1;
-      background: var(--card-border);
-    }
-
-    /* --- CARDS --- */
-    .card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      padding: 32px;
-      border-radius: 14px;
-      margin-bottom: 20px;
-      transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease, border-color 0.3s ease;
-      text-decoration: none;
-      display: block;
-      position: relative;
-    }
-
-    .card:hover {
-      transform: translateY(-3px);
-      box-shadow: var(--shadow);
-      border-color: var(--card-hover-border);
-    }
-
-    .card-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 12px;
-      margin-bottom: 4px;
-    }
-
-    .card-name {
-      font-family: 'Instrument Serif', serif;
-      font-size: 1.35rem;
-      color: var(--text);
-      font-weight: 400;
-    }
-
-    .card-meta {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.72rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      white-space: nowrap;
-      padding-top: 6px;
-    }
-
-    .card-role {
-      font-style: italic;
-      font-size: 0.95rem;
-      color: var(--text-muted);
-      margin-bottom: 14px;
-    }
-
-    .card-body {
-      font-size: 0.98rem;
-      color: var(--text);
-      line-height: 1.65;
-    }
-
-    .card-body .highlight {
-      color: var(--accent);
-      font-weight: 600;
-    }
-
-    .tags {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      margin-top: 16px;
-    }
-
-    .tag {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.7rem;
-      padding: 3px 9px;
-      border-radius: 3px;
-      background: var(--bg-subtle);
-      color: var(--text-muted);
-      border: 1px solid var(--card-border);
-    }
-
-    /* --- CTA ARROW ON LINK CARDS --- */
-    .card[href] .card-name::after {
-      content: ' \2197';
-      font-size: 0.9rem;
-      color: var(--text-muted);
-      transition: color 0.2s;
-    }
-
-    .card[href]:hover .card-name::after {
-      color: var(--accent);
-    }
-
-    /* --- EDUCATION BLOCK --- */
-    .edu-block {
-      padding: 28px 32px;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 14px;
-    }
-
-    .edu-block .school {
-      font-family: 'Instrument Serif', serif;
-      font-size: 1.25rem;
-      color: var(--text);
-    }
-
-    .edu-block .degree {
-      font-style: italic;
-      color: var(--text-muted);
-      font-size: 0.95rem;
-      margin-bottom: 12px;
-    }
-
-    .edu-block .edu-detail {
-      font-size: 0.93rem;
-      color: var(--text);
-      line-height: 1.7;
-      margin-bottom: 4px;
-    }
-
-    .edu-block .edu-detail strong {
-      font-weight: 600;
-    }
+/* Layer 0: warm blurred glow blobs — feels like phosphor monitor bloom */
 
 
-    /* --- FOOTER --- */
-    footer {
-      margin-top: 100px;
-      padding: 32px 0;
-      border-top: 1px solid var(--card-border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.75rem;
-      color: var(--text-muted);
-    }
+/* Layer 1: ASCII Game-of-Life canvas */
+.gol {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.22;
+  mix-blend-mode: screen;
+}
 
-    .footer-links a {
-      color: var(--text-muted);
-      margin-left: 20px;
-      text-decoration: none;
-      transition: color 0.2s;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
+/* Layer 2: heavy grain — visible film texture */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.45;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='260' height='260'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
 
-    .footer-links a:hover {
-      color: var(--accent);
-    }
+/* Layer 3: coarser noise speckles + faint scanlines */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0.18;
+  mix-blend-mode: screen;
+  background-image:
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='320'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.55' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 0.95  0 0 0 0 0.85  0 0 0 1 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
 
-    /* --- RESPONSIVE --- */
-    @media (max-width: 700px) {
-      .hero { padding: 130px 0 60px; }
-      .hero h1 { font-size: 2.6rem; }
-      nav { width: 92%; justify-content: center; }
-      .card-top { flex-direction: column; gap: 2px; }
-      footer { flex-direction: column; gap: 16px; text-align: center; }
-      .footer-links a { margin: 0 10px; }
-    }
-  </style>
+main {
+  position: relative;
+  z-index: 4;
+  width: 65%;
+  max-width: 720px;
+  min-width: 300px;
+  margin: 7vh auto 12vh;
+  padding: 0 16px;
+}
+
+.hero {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0 0 4rem;
+
+}
+
+h1 {
+  font-family: "Instrument Serif", Georgia, serif;
+  font-weight: 400;
+  font-size: 48px;
+  line-height: 1;
+  letter-spacing: 0.005em;
+  color: var(--fg);
+}
+
+.about {
+  font-family: "Instrument Serif", Georgia, serif;
+  margin: 1.75rem 0 0;
+  font-size: 23px;
+  line-height: 1.5;
+  letter-spacing: 0.005em;
+  color: var(--fg-soft);
+}
+.about a {
+  color: var(--fg);
+  text-decoration: none;
+  border-bottom: 1px solid var(--fg);
+}
+
+section { margin-top: 4rem; }
+h2 {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+  margin-bottom: 1.25rem;
+}
+section p { margin-top: 0.7rem; color: var(--fg-soft); letter-spacing: 0.015em; }
+section a {
+  color: var(--fg);
+  text-decoration: none;
+  border-bottom: 1px solid var(--link-rule);
+  transition: border-color .15s;
+}
+section a:hover { border-bottom-color: var(--fg); }
+
+@media (max-width: 720px) {
+  main { width: 86%; margin-top: 4vh; }
+  h1 { font-size: 34px; }
+  .about { font-size: 19px; }
+  .hero { margin-bottom: 3rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gol, .glow { animation: none; }
+}
+</style>
 </head>
 <body>
+<div class="glow" aria-hidden="true"></div>
+<canvas class="gol" id="gol" aria-hidden="true"></canvas>
 
-  <nav>
-    <a href="#" class="nav-link active">Home</a>
-    <a href="#work" class="nav-link">Work</a>
-    <a href="Sardor_Nodirov_Resume.pdf" class="nav-link" target="_blank">Resume</a>
-  </nav>
+<main>
+  <h1>sardor nodirov</h1>
 
-  <div class="container">
+  <p class="about">
+    ai systems engineer. <br>currently building <a href="https://lapwing.live">real-time ai companions</a>.
+  </p>
 
-    <!-- HERO -->
-    <section class="hero">
-      <div class="tagline">AI Systems Engineer</div>
-      <h1>Sardor<br><span class="italic">Nodirov</span></h1>
-      <p class="bio">
-        Building real-time AI systems at the intersection of language, motion, and expression.
-        Currently shipping <a href="https://lapwing.live">Lapwing</a> &mdash; an interactive character platform where 3D avatars think, speak, move, and emote in real time.
-      </p>
-      <div class="affiliations">
-        <span class="role">Founding AI Engineer @</span> <span class="place">Lapwing</span><br>
-        <span class="role">CS &amp; AI Honors @</span> <span class="place">Colby College '26</span><br>
-        <span class="role">NLP &amp; Embedded Systems @</span> <span class="place">University of Edinburgh</span>
-      </div>
-      <div class="interests">
-        <span class="interest-tag">motion generation</span>
-        <span class="interest-tag">multimodal LLMs</span>
-        <span class="interest-tag">real-time systems</span>
-        <span class="interest-tag">facial animation</span>
-      </div>
-      <div class="contact-row">
-        <span class="contact-email">sardor /at/ nodirov /dot/ com</span>
-        <a href="https://linkedin.com/in/sardornodirov">LinkedIn</a>
-        <a href="https://github.com/sarudoru">GitHub</a>
-        <a href="https://x.com/randen_ai">@randen_ai</a>
-      </div>
-    </section>
+  <section>
+    <h2>work</h2>
+    <p><a href="https://lapwing.live">lapwing.live</a> — founder · 2025 - now</p>
+    <p>ember ai — first eng hire / full-stack ai · 2024</p>
+    <p><a href="Sardor_Poster.pdf">davis institute for ai</a> — research assistant · 2023</p>
+  </section>
 
-    <!-- WORK -->
-    <section id="work">
-      <div class="section-label">Selected Work</div>
+  <section>
+    <h2>education</h2>
+    <p>colby college - b.a. honors · cs: ai · 2026</p>
+    <p>university of edinburgh - study abroad · nlp & embedded sys · 2025</p>
+    <p>temple university japan - study abroad · computer graphics · 2024</p>
+  </section>
 
-      <a href="https://lapwing.live" class="card">
-        <div class="card-top">
-          <span class="card-name">Lapwing</span>
-          <span class="card-meta">Sep 2025 &ndash; Present</span>
-        </div>
-        <div class="card-role">Founding AI Engineer</div>
-        <div class="card-body">
-          A real-time AI character platform where 3D avatars think, speak, move, and emote &mdash; all in the browser at 60 FPS.
-          I built the full pipeline from the ground up: an async orchestration layer that parallelizes language, speech, and motion generation,
-          a Three.js retargeting engine for fluid character animation, and a multi-layer facial expression system that composites blinks,
-          emotions, and lip-sync in real time.
-          <br><br>
-          <span class="highlight">200+ users</span> &middot; <span class="highlight">60% latency reduction</span> &middot; <span class="highlight">50% faster cold starts</span>
-        </div>
-        <div class="tags">
-          <span class="tag">Three.js</span>
-          <span class="tag">WebSocket</span>
-          <span class="tag">VRM</span>
-          <span class="tag">MoMask</span>
-          <span class="tag">FastAPI</span>
-          <span class="tag">Asyncio</span>
-        </div>
-      </a>
+  <section>
+    <h2>Contact</h2>
+    <p>sardor (at) nodirov (dot) com</a></p>
+    <p><a href="https://linkedin.com/in/sardornodirov">LinkedIn</a> · <a href="https://x.com/nodirov_com">X</a> · <a href="https://github.com/sarudoru">GitHub</a> · <a href="Sardor_Nodirov_Resume.pdf">Résumé</a></p>
+  </section>
+</main>
 
-      <div class="card">
-        <div class="card-top">
-          <span class="card-name">Ember AI</span>
-          <span class="card-meta">May 2024 &ndash; Mar 2025</span>
-        </div>
-        <div class="card-role">Full-Stack AI Engineer, Contract &middot; San Francisco (Remote)</div>
-        <div class="card-body">
-          First engineering hire at an early-stage startup turning photos into narrated memory experiences.
-          I owned the full product stack &mdash; from the React/Next.js frontend to a FastAPI backend with a distributed
-          Redis job queue handling heavy AI generation workloads. Built a custom Three.js playback engine
-          to keep audio and visuals in tight sync across global clients.
-          <br><br>
-          <span class="highlight">Sub-50ms</span> audio-visual sync &middot; <span class="highlight">40%</span> infrastructure cost reduction
-        </div>
-        <div class="tags">
-          <span class="tag">React</span>
-          <span class="tag">Next.js</span>
-          <span class="tag">FastAPI</span>
-          <span class="tag">Redis</span>
-          <span class="tag">Cloudflare R2</span>
-        </div>
-      </div>
+<script>
+(function () {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  var canvas = document.getElementById("gol");
+  if (!canvas || !canvas.getContext) return;
+  var ctx = canvas.getContext("2d");
+  var CELL = 16;
+  var cols, rows, grid, age;
 
-      <a href="./Sardor_Poster.pdf" class="card">
-        <div class="card-top">
-          <span class="card-name">Davis Institute for AI</span>
-          <span class="card-meta">Sep 2023 &ndash; May 2024</span>
-        </div>
-        <div class="card-role">AI Research Assistant</div>
-        <div class="card-body">
-          Built a conversational voice AI for Colby College that answered questions about the institution
-          over the phone in real time. Designed the full-duplex audio pipeline with a custom barge-in protocol
-          so callers could interrupt naturally, and grounded all responses in verified data using a RAG pipeline
-          over 800+ pages of institutional content.
-          <br><br>
-          <span class="highlight">400 daily users</span> &middot; <span class="highlight">85%</span> resolved without human intervention
-        </div>
-        <div class="tags">
-          <span class="tag">RAG</span>
-          <span class="tag">Vector Search</span>
-          <span class="tag">Twilio</span>
-          <span class="tag">Azure Speech</span>
-          <span class="tag">WebSockets</span>
-        </div>
-      </a>
-    </section>
+  function resize() {
+    canvas.width = innerWidth;
+    canvas.height = innerHeight;
+    cols = Math.ceil(innerWidth / CELL);
+    rows = Math.ceil(innerHeight / CELL);
+    grid = new Uint8Array(cols * rows);
+    age = new Uint8Array(cols * rows);
+    for (var i = 0; i < grid.length; i++) {
+      if (Math.random() < 0.20) grid[i] = 1;
+    }
+    ctx.font = (CELL - 2) + 'px "Funnel Sans", ui-monospace, monospace';
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "#ece6d4";
+  }
 
-    <!-- EDUCATION -->
-    <section>
-      <div class="section-label">Education</div>
-      <div class="edu-block" style="margin-bottom: 20px;">
-        <div class="school">Colby College</div>
-        <div class="degree">B.A. Honors in Computer Science, AI Concentration &middot; Expected May 2026 &middot; Waterville, ME</div>
-        <p class="edu-detail"><strong>Thesis:</strong> Real-time Conversational Motion Generation for Virtual Characters</p>
-        <p class="edu-detail"><strong>Presidential Scholar</strong> &middot; GPA: 3.77 &middot; Dean's List</p>
-        <p class="edu-detail"><strong>Founded</strong> Colby AI Society &mdash; grew to 50+ members, secured funding for student ML research</p>
-      </div>
+  function step() {
+    var next = new Uint8Array(cols * rows);
+    for (var y = 0; y < rows; y++) {
+      for (var x = 0; x < cols; x++) {
+        var i = y * cols + x;
+        var n = 0;
+        for (var dy = -1; dy <= 1; dy++) {
+          for (var dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            var nx = (x + dx + cols) % cols;
+            var ny = (y + dy + rows) % rows;
+            n += grid[ny * cols + nx];
+          }
+        }
+        var alive = grid[i];
+        var live = (alive && (n === 2 || n === 3)) || (!alive && n === 3) ? 1 : 0;
+        if (!live && Math.random() < 0.0011) live = 1;  // spontaneous birth
+        next[i] = live;
+        if (live && alive) age[i] = age[i] < 60 ? age[i] + 1 : 60;
+        else if (live) age[i] = 1;
+        else age[i] = 0;
+      }
+    }
+    grid = next;
+  }
 
-      <div class="section-label">Study Abroad</div>
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (var y = 0; y < rows; y++) {
+      for (var x = 0; x < cols; x++) {
+        var i = y * cols + x;
+        if (!grid[i]) continue;
+        var ch;
+        if (age[i] < 2) ch = ".";
+        else if (age[i] < 8) ch = "·";
+        else ch = ":";
+        ctx.fillText(ch, x * CELL + 2, y * CELL + 1);
+      }
+    }
+  }
 
-      <div class="edu-block" style="margin-bottom: 20px;">
-        <div class="school">University of Edinburgh</div>
-        <div class="degree">School of Informatics &middot; Edinburgh, Scotland</div>
-        <p class="edu-detail">Natural Language Processing, Quantum Computing, Embedded Systems</p>
-      </div>
+  var last = 0;
+  var paused = false;
+  function tick(t) {
+    if (!paused && t - last > 700) {  // ~1.4 fps — slow, meditative
+      step();
+      draw();
+      last = t;
+    }
+    requestAnimationFrame(tick);
+  }
 
-      <div class="edu-block">
-        <div class="school">Temple University Japan</div>
-        <div class="degree">Tokyo, Japan</div>
-        <p class="edu-detail">Computer Graphics</p>
-      </div>
-    </section>
+  document.addEventListener("visibilitychange", function () {
+    paused = document.hidden;
+  });
 
-    <!-- FOOTER -->
-    <footer>
-      <span>&copy; 2026 Sardor Nodirov</span>
-      <div class="footer-links">
-        <a href="https://github.com/sarudoru">GitHub</a>
-        <a href="https://linkedin.com/in/sardornodirov">LinkedIn</a>
-        <span>sardor /at/ nodirov /dot/ com</span>
-      </div>
-    </footer>
+  var resizeTimer;
+  addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(resize, 200);
+  });
 
-  </div>
-
+  resize();
+  requestAnimationFrame(tick);
+})();
+</script>
 </body>
 </html>
