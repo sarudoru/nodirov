@@ -1,0 +1,32 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&display=swap");
+
+:root {
+  color-scheme: light;
+  background: #fff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #fff;
+  overscroll-behavior: none;
+}
+
+body {
+  touch-action: none;
+}
+
+#field {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  background: #fff;
+  cursor: crosshair;
+}
