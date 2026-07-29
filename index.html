@@ -2,14 +2,102 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Glyph Field / Prototype</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Sardor Nodirov</title>
+    <meta name="description" content="Personal site of Sardor Nodirov — a fixed-viewport glyph field where characters are the substrate and content is their state.">
+    <meta property="og:title" content="Sardor Nodirov">
+    <meta property="og:description" content="A glyph-native personal site. Nothing here moves; the cells only change.">
+    <meta property="og:type" content="website">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='white'/%3E%3Ctext x='8' y='12.5' font-family='monospace' font-size='13' text-anchor='middle' fill='%23161616'%3E%E2%96%9A%3C/text%3E%3C/svg%3E">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="style.css">
+    <script>document.documentElement.classList.add("js");</script>
   </head>
   <body>
-    <canvas id="field"></canvas>
-    <script src="glyph.js" defer></script>
+    <canvas id="field" aria-hidden="true"></canvas>
+
+    <div id="scroller" tabindex="-1">
+      <main id="article">
+        <header id="hero">
+          <h1>Sardor Nodirov</h1>
+          <!-- TODO(sardor): adjust the tagline to taste -->
+          <p class="tagline">builds software with care</p>
+          <p class="hint">scroll — the page will not move, only change</p>
+        </header>
+
+        <p class="interstitial">the glyph is the pixel</p>
+
+        <section id="about">
+          <h2>About</h2>
+          <!-- TODO(sardor): personalize — where you are, what you care about -->
+          <p>I am an engineer and founder. I like small systems with strict
+          internal laws, interfaces that explain themselves, and software that
+          respects the person using it.</p>
+          <p>Right now most of my time goes into
+          <a href="https://heyaristotle.com">Aristotle</a>. Before that I spent
+          years building, breaking, and rebuilding things on the web.</p>
+        </section>
+
+        <p class="interstitial">nothing here moves · the cells only change</p>
+
+        <section id="work">
+          <h2>Work</h2>
+          <ul>
+            <li><a href="https://heyaristotle.com">Aristotle</a> — what I am
+            building now. <!-- TODO(sardor): one honest line about Aristotle --></li>
+            <li>This site — a character grid pretending to be a page. Every
+            mark you see, including these words, is a cell state.</li>
+            <!-- TODO(sardor): add past projects as <li> entries -->
+          </ul>
+        </section>
+
+        <section id="notes">
+          <h2>Notes</h2>
+          <p>Writing will appear here. The field is patient.</p>
+          <!-- TODO(sardor): each note becomes an <a> in a <ul>, or its own page -->
+        </section>
+
+        <p class="interstitial">content is a state · not a layer</p>
+
+        <section id="experiments">
+          <h2>Experiments</h2>
+          <p>The field obeys one law: cells change, nothing moves. These
+          demonstrations bend that law until it almost breaks.</p>
+          <ul class="triggers">
+            <li><a href="#experiments" data-experiment="train">run the night train</a></li>
+            <li><a href="#experiments" data-experiment="butterfly">release the butterfly</a></li>
+            <li><a href="#experiments" data-experiment="gravity">let go of these letters</a></li>
+          </ul>
+          <p class="hint">the butterfly stays, repairs broken glyphs, and is fond of idle cursors</p>
+        </section>
+
+        <section id="contact">
+          <h2>Contact</h2>
+          <ul>
+            <li>mail — <a href="mailto:sardor@heyaristotle.com">sardor@heyaristotle.com</a></li>
+            <!-- TODO(sardor): uncomment and fill in real handles
+            <li>github — <a href="https://github.com/YOURHANDLE">YOURHANDLE</a></li>
+            <li>x — <a href="https://x.com/YOURHANDLE">@YOURHANDLE</a></li>
+            -->
+          </ul>
+        </section>
+
+        <section id="colophon">
+          <h2>Colophon</h2>
+          <p>This page has no scrollbar and never scrolls. The viewport is a
+          fixed grid of character cells; a longer document passes through it
+          the way tape passes a read head. Set in
+          <a href="morph.html">IBM Plex Mono</a>, drawn on one canvas, written
+          as one plain HTML document underneath — select, search, and view
+          source as usual.</p>
+          <p>No frameworks, no tracking, no images. Only glyphs.</p>
+        </section>
+
+        <p class="interstitial">end · begin again</p>
+      </main>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
   </body>
 </html>
