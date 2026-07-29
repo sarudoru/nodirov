@@ -115,10 +115,9 @@ function runExperiment(name) {
 }
 
 function onScroll() {
-  const row = Math.round(scroller.scrollTop / metrics.cellH);
   const before = field.camera();
-  if (row !== before) {
-    field.setCamera(row, !reducedMotion.matches);
+  field.setScroll(scroller.scrollTop);
+  if (field.camera() !== before) {
     entities.onCameraMove();
     updateHud();
   }
@@ -127,10 +126,11 @@ function onScroll() {
 }
 
 function onScrollSettled() {
-  const target = field.camera() * metrics.cellH;
+  // settle the roll onto a whole row; smooth so the last fraction pours home
+  const target = Math.round(scroller.scrollTop / metrics.cellH) * metrics.cellH;
   if (Math.abs(scroller.scrollTop - target) > 1 &&
       target <= scroller.scrollHeight - scroller.clientHeight) {
-    scroller.scrollTo({ top: target, behavior: "instant" });
+    scroller.scrollTo({ top: target, behavior: reducedMotion.matches ? "instant" : "smooth" });
   }
   const section = currentSection();
   const hash = section.id ? `#${section.id}` : " ";
@@ -158,6 +158,7 @@ function onResize() {
         scroller.scrollTop = (section.row + anchor.offset) * metrics.cellH;
       }
     }
+    field.setScroll(scroller.scrollTop);
   }, 140);
 }
 
@@ -222,7 +223,7 @@ async function boot() {
   }
   if (startRow > 0) {
     scroller.scrollTop = startRow * metrics.cellH;
-    field.setCamera(startRow, false);
+    field.setScroll(scroller.scrollTop);
     updateHud();
   } else {
     field.crystallize();

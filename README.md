@@ -35,11 +35,20 @@ morph.html/.css       typeface studies (linked from the colophon)
 
 The document lives in a real scroll container with the scrollbar hidden.
 Native scrolling (momentum, keyboard, find-in-page, anchors, history) drives
-a camera: `cameraRow = round(scrollTop / cellHeight)`. The canvas paints
-every visible mark; a transparent, grid-aligned copy of the text sits above
-it so selection, links, and focus stay native. The HTML article is the
-single source of truth — the typesetter compiles it into both layers at
-every column count.
+the camera. The canvas paints every visible mark; a transparent,
+grid-aligned copy of the text sits above it so selection, links, and focus
+stay native. The HTML article is the single source of truth — the
+typesetter compiles it into both layers at every column count.
+
+### The trick that makes it feel like one substrate
+
+The fractional scroll offset is the transition: each cell draws the glyph
+of its world row at alpha `1 − frac` and the glyph of the next row at
+`frac`, ambient noise included (ambient is hashed per *world* cell, so it
+rolls with the document). Scrolling literally pours the fabric through the
+grid — reversible, tied to the finger, never on a timer. Time-based
+animation exists only for transformations (crystallizing, condensation
+along the `· : +` density ramp, cousin shimmer), never for navigation.
 
 ### Content
 

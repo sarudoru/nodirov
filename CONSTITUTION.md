@@ -14,20 +14,24 @@ to the cell it sits under.
 
 ## II. Nothing moves; cells change
 
-The page never scrolls. A logical document of character rows passes through
-the fixed viewport the way tape passes a read head: navigation changes which
-world row each screen cell displays. Apparent motion of any kind — scrolling,
-falling letters, a train, a butterfly — is always a cell that stops being one
-character and a neighbor that starts.
+The page never scrolls. The whole fabric — content *and* ambient murmur —
+is anchored to one logical document that rolls through the viewport
+aperture. During navigation every cell blends between the glyph it holds
+and the glyph arriving from the neighboring row, and the blend phase is
+tied **directly to scroll position**, never to a clock: ink pours from row
+to row under the reader's finger, reverses when they reverse, and settles
+onto whole rows when they stop. No pixel ever moves; no transition plays
+on its own schedule.
 
 ## III. Cells have four states
 
-1. **Ambient** — uncommitted murmur. Lowercase and digits at ≤6% ink.
-   Mutates rarely (single cells, sub-second intervals). Never demands
-   attention.
-2. **Transitional** — a cell changing state scrambles briefly through an
-   unambiguous uppercase alphabet (~140ms, three stages). Transitions
-   cascade in reading order, never simultaneously.
+1. **Ambient** — uncommitted murmur, anchored to the document (it rolls
+   with the content — it is the same material). Lowercase and digits at
+   ~7% ink, denser in a halo around committed text: the field thickens
+   toward meaning. It breathes in a slow coherent wave and mutates rarely.
+2. **Transitional** — matter forming or dissolving climbs an ink-density
+   ramp (`·` `:` `+` → glyph). Never random scramble: transitions read as
+   condensation, not noise. Typographic shimmer uses a glyph's own cousins.
 3. **Committed** — content. Full ink, calm, and *settled*: committed text
    never animates at rest. Reading is sacred.
 4. **Hole** — a committed cell whose glyph has been taken (e.g. by gravity).

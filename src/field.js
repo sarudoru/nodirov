@@ -1,21 +1,24 @@
-// The field: a screen-fixed grid of character cells and the single place
-// anything is ever painted. World content, ambient murmur, transitions,
-// pointer disturbances, entities — all of it resolves to cell states here.
+// The field: a fixed grid of character cells — the only place anything is
+// ever painted. One fabric of glyphs, anchored to the document, rolls
+// through the viewport aperture. No pixel ever moves: each cell blends
+// between the glyph it holds and the glyph arriving from the next row,
+// with the blend phase tied directly to scroll position.
 //
-// Law: cells change; nothing moves.
+// Transitions never scramble. Matter here condenses and dissolves along an
+// ink-density ramp (· : + letter); typographic shimmer uses a glyph's own
+// cousins. Law: cells change, nothing moves.
 
-import { AMBIENT, SCRAMBLE, cousinsFor } from "./glyphs.js";
+import { AMBIENT, RAMP, cousinsFor } from "./glyphs.js";
 
 const INK = "#161616";
-const INK_FAINT = "rgba(22, 22, 22, 0.40)";
-const INK_AMBIENT = "rgba(22, 22, 22, 0.055)";
-const INK_TRACE_MID = "rgba(22, 22, 22, 0.30)";
-const INK_TRACE_LOW = "rgba(22, 22, 22, 0.10)";
-const UNDERLINE = "rgba(22, 22, 22, 0.22)";
-const UNDERLINE_HOT = "rgba(22, 22, 22, 0.85)";
+const ALPHA_TEXT = 1.0;
+const ALPHA_FAINT = 0.42;
+const ALPHA_AMBIENT = 0.07;
+const ALPHA_UNDERLINE = 0.25;
+const ALPHA_UNDERLINE_HOT = 0.85;
 
-const TRACE_DURATION = 140;
-const TRACE_STEP = 28;
+const TRACE_DURATION = 180;
+const TRACE_STEP = 60;
 
 // cell kinds
 export const K_AMBIENT = 0;
@@ -24,12 +27,12 @@ export const K_FAINT = 2;
 export const K_LINK = 3;
 export const K_HOLE = 4;
 
-// trace modes
-const T_TRANSITION = 0;
-const T_SHIMMER = 1;
-const T_COUSIN = 2;
+const KIND_ALPHA = [ALPHA_AMBIENT, ALPHA_TEXT, ALPHA_FAINT, ALPHA_TEXT, 0];
 
-const KIND_INK = [INK_AMBIENT, INK, INK_FAINT, INK, INK];
+// trace modes
+const T_CONDENSE = 0;
+const T_COUSIN = 1;
+const T_SHIMMER = 2;
 
 export function createField(canvas) {
   const context = canvas.getContext("2d", { alpha: false });
@@ -46,7 +49,7 @@ export function createField(canvas) {
     return i;
   }
   const ambientTokens = Array.from(AMBIENT, tokenOf);
-  const scrambleTokens = Array.from(SCRAMBLE, tokenOf);
+  const rampTokens = Array.from(RAMP, tokenOf);
 
   const randomPool = new Uint32Array(512);
   let randomAt = randomPool.length;
@@ -64,23 +67,33 @@ export function createField(canvas) {
   let cols = 0;
   let rows = 0;
   let xOffset = 0;
-  let camera = 0;
+  let camera = 0; // integer world row of the top view row
+  let frac = 0; // sub-row scroll phase in [0, 1)
   let worldRows = 0;
-  let world = new Map(); // row -> [{col, chars, kind, linkId}]
   let reducedMotion = false;
+  let lastScrollAt = 0;
 
-  let ambient = new Uint16Array(0);
+  // dense per-world-row buffers (only rows that hold content)
+  let worldData = new Map(); // row -> {chars, kinds, links}
+  let haloRows = []; // row -> Float32Array | undefined
+  const mutations = new Map(); // worldRow * 512 + col -> ambient token
+  const mutationOrder = [];
+
+  let masks = new Set(); // worldRow * 512 + col
+
+  // view-anchored buffers for the current integer camera
   let cellChar = new Uint16Array(0);
   let cellKind = new Uint8Array(0);
   let cellLink = new Int16Array(0);
+
+  // idle-time transformation traces (view-anchored; cancelled by scroll)
   let tStart = new Float64Array(0);
   let tFrom = new Uint16Array(0);
-  let tFromKind = new Uint8Array(0);
+  let tFromAlpha = new Float32Array(0);
   let tSeed = new Uint32Array(0);
   let tMode = new Uint8Array(0);
 
-  let overlay = new Map(); // screenIndex -> {ch, ink}
-  let masks = new Set(); // "worldRow:col"
+  let overlay = new Map(); // view index -> {ch, ink}
   let hud = "";
   let hoveredLink = -1;
 
@@ -90,87 +103,98 @@ export function createField(canvas) {
   let lastPointerCell = -1;
 
   const glitches = new Map(); // "row:col" -> {row, col}
-  let glitchTimer = 0;
 
   let frame = 0;
   let ambientTimer = 0;
+  let glitchTimer = 0;
+  let breathTimer = 0;
 
-  function index(row, col) {
-    return row * cols + col;
+  const maskKey = (row, col) => row * 512 + col;
+
+  function ambientTokenAt(worldRow, col) {
+    const m = mutations.get(maskKey(worldRow, col));
+    if (m !== undefined) return m;
+    let h = Math.imul(worldRow + 1, 2654435761) ^ Math.imul(col + 1, 40503);
+    h ^= h >>> 13;
+    return ambientTokens[(h >>> 0) % ambientTokens.length];
   }
 
-  function alloc() {
-    const n = cols * rows;
-    ambient = new Uint16Array(n);
-    cellChar = new Uint16Array(n);
-    cellKind = new Uint8Array(n);
-    cellLink = new Int16Array(n).fill(-1);
-    tStart = new Float64Array(n);
-    tFrom = new Uint16Array(n);
-    tFromKind = new Uint8Array(n);
-    tSeed = new Uint32Array(n);
-    tMode = new Uint8Array(n);
-    overlay = new Map();
-    pointerCells = [];
-    pointerTokens = new Map();
-    lastPointerCell = -1;
-    for (let i = 0; i < n; i += 1) {
-      ambient[i] = ambientTokens[rnd() % ambientTokens.length];
+  function ambientAlphaAt(worldRow, col, now) {
+    const halo = haloRows[worldRow] ? haloRows[worldRow][col] : 0;
+    let a = ALPHA_AMBIENT * (1 + halo);
+    if (!reducedMotion) {
+      a *= 0.8 + 0.2 * Math.sin(now * 0.00042 + worldRow * 0.31 + col * 0.11);
     }
+    return a;
   }
 
-  function compose(animate, delayPerRow = 4) {
-    const now = performance.now();
+  function vignette(row) {
+    if (row === 0 || row === rows - 1) return 0.5;
+    if (row === 1 || row === rows - 2) return 0.82;
+    return 1;
+  }
+
+  // resolve what a world cell holds: [token, alpha, linkId, isHole]
+  function resolveWorld(worldRow, col, now, out) {
+    const data = worldData.get(worldRow);
+    if (data && col < data.chars.length) {
+      const token = data.chars[col];
+      if (token !== 0) {
+        if (masks.size > 0 && masks.has(maskKey(worldRow, col))) {
+          out.token = 0;
+          out.alpha = 0;
+          out.link = -1;
+          return;
+        }
+        out.token = token;
+        out.alpha = KIND_ALPHA[data.kinds[col]];
+        out.link = data.links[col];
+        return;
+      }
+      out.link = data.links[col]; // spaces inside links keep the underline
+    } else {
+      out.link = -1;
+    }
+    out.token = ambientTokenAt(worldRow, col);
+    out.alpha = ambientAlphaAt(worldRow, col, now);
+  }
+
+  function composeView() {
+    const n = cols * rows;
+    if (cellChar.length !== n) {
+      cellChar = new Uint16Array(n);
+      cellKind = new Uint8Array(n);
+      cellLink = new Int16Array(n).fill(-1);
+      tStart = new Float64Array(n);
+      tFrom = new Uint16Array(n);
+      tFromAlpha = new Float32Array(n);
+      tSeed = new Uint32Array(n);
+      tMode = new Uint8Array(n);
+    } else {
+      tStart.fill(0); // scroll cancels idle shimmer
+    }
     for (let row = 0; row < rows; row += 1) {
       const worldRow = camera + row;
-      const segments = world.get(worldRow);
-      const base = row * cols;
-
+      const data = worldData.get(worldRow);
+      const inRange = data && data.chars.length >= cols;
       for (let col = 0; col < cols; col += 1) {
-        const i = base + col;
-        commitCell(i, ambient[i], K_AMBIENT, -1, animate, now, row * delayPerRow);
-      }
-      if (!segments) continue;
-
-      for (const segment of segments) {
-        const chars = segment.chars;
-        for (let k = 0; k < chars.length; k += 1) {
-          const col = segment.col + k;
-          if (col < 0 || col >= cols) continue;
-          const i = base + col;
-          const ch = chars[k];
-          const masked = masks.size > 0 && masks.has(worldRow + ":" + col);
-          if (masked) {
-            commitCell(i, 0, K_HOLE, segment.linkId, animate, now, row * delayPerRow);
-          } else if (ch === " ") {
-            commitCell(i, ambient[i], K_AMBIENT, segment.linkId, animate, now, row * delayPerRow);
-          } else {
-            commitCell(i, tokenOf(ch), segment.kind, segment.linkId, animate, now, row * delayPerRow);
-          }
+        const i = row * cols + col;
+        const token = inRange ? data.chars[col] : 0;
+        if (token !== 0 && !(masks.size > 0 && masks.has(maskKey(worldRow, col)))) {
+          cellChar[i] = token;
+          cellKind[i] = data.kinds[col];
+          cellLink[i] = data.links[col];
+        } else {
+          cellChar[i] = ambientTokenAt(worldRow, col);
+          cellKind[i] = K_AMBIENT;
+          cellLink[i] = inRange ? data.links[col] : -1;
         }
       }
     }
-    scheduleDraw();
   }
 
-  function commitCell(i, token, kind, linkId, animate, now, delay) {
-    const prevToken = cellChar[i];
-    const prevKind = cellKind[i];
-    if (animate && !reducedMotion &&
-        (prevKind !== K_AMBIENT || kind !== K_AMBIENT) &&
-        (prevKind !== kind || prevToken !== token)) {
-      tStart[i] = now + delay;
-      tFrom[i] = prevToken;
-      tFromKind[i] = prevKind;
-      tSeed[i] = rnd();
-      tMode[i] = T_TRANSITION;
-    } else if (!animate) {
-      tStart[i] = 0;
-    }
-    cellChar[i] = token;
-    cellKind[i] = kind;
-    cellLink[i] = linkId;
-  }
+  const cellA = { token: 0, alpha: 0, link: -1 };
+  const cellB = { token: 0, alpha: 0, link: -1 };
 
   function draw() {
     frame = 0;
@@ -180,101 +204,137 @@ export function createField(canvas) {
     context.font = metrics.font;
     context.textAlign = "center";
     context.textBaseline = "middle";
+    context.fillStyle = INK;
 
+    const ef = frac * frac * (3 - 2 * frac); // smoothstep blend phase
+    const blending = ef > 0.004;
     let active = false;
 
     for (let row = 0; row < rows; row += 1) {
       const y = row * metrics.cellH + metrics.cellH / 2;
+      const vig = vignette(row);
+      const worldA = camera + row;
+
       for (let col = 0; col < cols; col += 1) {
         const i = row * cols + col;
-        let token = cellChar[i];
-        let ink = KIND_INK[cellKind[i]];
+        const x = xOffset + col * metrics.cellW + metrics.cellW / 2;
 
         const over = overlay.get(i);
         if (over) {
           if (over.ch !== " ") {
             context.fillStyle = over.ink;
-            context.fillText(over.ch, xOffset + col * metrics.cellW + metrics.cellW / 2, y);
+            context.globalAlpha = 1;
+            context.fillText(over.ch, x, y);
+            context.fillStyle = INK;
           }
           continue;
         }
 
         if (pointerTokens.has(i)) {
-          token = pointerTokens.get(i);
-          ink = INK_TRACE_MID;
-        } else if (tStart[i] !== 0) {
+          context.globalAlpha = 0.32 * vig;
+          context.fillText(palette[pointerTokens.get(i)], x, y);
+          continue;
+        }
+
+        // idle transformation traces (never during the roll)
+        if (!blending && tStart[i] !== 0) {
           const elapsed = now - tStart[i];
-          if (elapsed < 0) {
-            // trace scheduled but not begun: hold the previous state
+          if (elapsed >= TRACE_DURATION) {
+            tStart[i] = 0;
+          } else {
             active = true;
-            token = tFrom[i];
-            ink = KIND_INK[tFromKind[i]];
-          } else if (elapsed < TRACE_DURATION) {
-            active = true;
-            const stage = Math.floor(elapsed / TRACE_STEP);
-            if (stage === 0 && tMode[i] !== T_SHIMMER) {
+            const target = cellChar[i];
+            const targetAlpha = KIND_ALPHA[cellKind[i]] ||
+              ambientAlphaAt(worldA, col, now);
+            let token = target;
+            let alpha = targetAlpha;
+            if (elapsed < 0) {
               token = tFrom[i];
-              ink = tFromKind[i] === K_AMBIENT ? INK_TRACE_LOW : KIND_INK[tFromKind[i]];
-            } else if (stage < 3) {
-              if (tMode[i] === T_COUSIN) {
-                const family = cousinsFor(palette[cellChar[i]]);
-                if (family) {
+              alpha = tFromAlpha[i];
+            } else {
+              const stage = Math.floor(elapsed / TRACE_STEP);
+              if (tMode[i] === T_CONDENSE) {
+                token = rampTokens[Math.min(stage, rampTokens.length - 1)];
+                alpha = 0.3 + 0.25 * stage;
+              } else if (tMode[i] === T_COUSIN) {
+                const family = cousinsFor(palette[target]);
+                if (family && stage < 2) {
                   token = tokenOf(family[(tSeed[i] + stage) % family.length]);
-                  ink = INK;
-                } else {
-                  token = scrambleTokens[(tSeed[i] + stage * 17) % scrambleTokens.length];
-                  ink = INK_TRACE_MID;
+                  alpha = targetAlpha;
                 }
-              } else {
-                token = scrambleTokens[(tSeed[i] + stage * 17) % scrambleTokens.length];
-                if (cellKind[i] !== K_AMBIENT) {
-                  ink = INK_TRACE_MID;
-                } else {
-                  ink = stage === 1 ? INK_TRACE_MID : INK_TRACE_LOW;
-                }
+              } else if (tMode[i] === T_SHIMMER) {
+                token = rampTokens[stage === 1 ? 0 : 1];
+                alpha = 0.3;
               }
             }
-          } else {
-            tStart[i] = 0;
+            if (token !== 0 && alpha > 0.015) {
+              context.globalAlpha = Math.min(1, alpha) * vig;
+              context.fillText(palette[token], x, y);
+            }
+            continue;
           }
         }
 
-        if (token === 0) continue; // space or hole
-        context.fillStyle = ink;
-        context.fillText(palette[token], xOffset + col * metrics.cellW + metrics.cellW / 2, y);
+        // the roll: blend this world row with the one arriving beneath it
+        resolveWorld(worldA, col, now, cellA);
+        if (cellA.token !== 0) {
+          const a = cellA.alpha * (blending ? 1 - ef : 1) * vig;
+          if (a > 0.015) {
+            context.globalAlpha = Math.min(1, a);
+            context.fillText(palette[cellA.token], x, y);
+          }
+        }
+        if (blending) {
+          resolveWorld(worldA + 1, col, now, cellB);
+          if (cellB.token !== 0) {
+            const a = cellB.alpha * ef * vig;
+            if (a > 0.015) {
+              context.globalAlpha = Math.min(1, a);
+              context.fillText(palette[cellB.token], x, y);
+            }
+          }
+        }
       }
     }
 
-    drawUnderlines();
+    drawUnderlines(ef);
     drawHud();
+    context.globalAlpha = 1;
 
-    if (active) scheduleDraw();
+    if (active || now - lastScrollAt < 220) scheduleDraw();
   }
 
-  function drawUnderlines() {
+  function underlineRunsFor(worldRow, y, alpha) {
+    const data = worldData.get(worldRow);
+    if (!data || data.links.length < cols || alpha < 0.02) return;
+    let col = 0;
+    while (col < cols) {
+      const id = data.links[col];
+      if (id === -1 || (masks.size > 0 && masks.has(maskKey(worldRow, col)))) {
+        col += 1;
+        continue;
+      }
+      let end = col;
+      while (end < cols && data.links[end] === id &&
+             !(masks.size > 0 && masks.has(maskKey(worldRow, end)))) end += 1;
+      context.globalAlpha = alpha * (id === hoveredLink ? ALPHA_UNDERLINE_HOT : ALPHA_UNDERLINE);
+      context.fillRect(xOffset + col * metrics.cellW + 1, y, (end - col) * metrics.cellW - 2, 1);
+      col = end;
+    }
+  }
+
+  function drawUnderlines(ef) {
+    context.fillStyle = INK;
     for (let row = 0; row < rows; row += 1) {
       const y = row * metrics.cellH + metrics.cellH - 3;
-      let col = 0;
-      while (col < cols) {
-        const i = row * cols + col;
-        const id = cellLink[i];
-        if (id === -1 || cellKind[i] === K_HOLE) {
-          col += 1;
-          continue;
-        }
-        let end = col;
-        while (end < cols && cellLink[row * cols + end] === id &&
-               cellKind[row * cols + end] !== K_HOLE) end += 1;
-        context.fillStyle = id === hoveredLink ? UNDERLINE_HOT : UNDERLINE;
-        context.fillRect(xOffset + col * metrics.cellW + 1, y, (end - col) * metrics.cellW - 2, 1);
-        col = end;
-      }
+      underlineRunsFor(camera + row, y, 1 - ef);
+      if (ef > 0.004) underlineRunsFor(camera + row + 1, y, ef);
     }
   }
 
   function drawHud() {
     if (!hud) return;
-    context.fillStyle = INK_FAINT;
+    context.globalAlpha = ALPHA_FAINT;
     const row = rows - 2;
     const start = cols - hud.length - 2;
     const y = row * metrics.cellH + metrics.cellH / 2;
@@ -291,13 +351,15 @@ export function createField(canvas) {
   }
 
   function mutateAmbient() {
-    if (document.visibilityState !== "visible" || ambient.length === 0 || reducedMotion) return;
-    const i = rnd() % ambient.length;
-    if (cellKind[i] !== K_AMBIENT || overlay.has(i) || tStart[i] !== 0) return;
-    let next = ambientTokens[rnd() % ambientTokens.length];
-    if (next === ambient[i]) next = ambientTokens[rnd() % ambientTokens.length];
-    ambient[i] = next;
-    cellChar[i] = next;
+    if (document.visibilityState !== "visible" || reducedMotion || rows === 0) return;
+    const row = camera + (rnd() % rows);
+    const col = rnd() % cols;
+    const data = worldData.get(row);
+    if (data && data.chars[col] !== 0) return;
+    const key = maskKey(row, col);
+    mutations.set(key, ambientTokens[rnd() % ambientTokens.length]);
+    mutationOrder.push(key);
+    if (mutationOrder.length > 600) mutations.delete(mutationOrder.shift());
     scheduleDraw();
   }
 
@@ -306,15 +368,18 @@ export function createField(canvas) {
     const all = [...glitches.values()];
     const g = all[rnd() % all.length];
     const row = g.row - camera;
-    if (row < 0 || row >= rows) return;
-    const i = index(row, g.col);
-    if (cellKind[i] === K_AMBIENT || tStart[i] !== 0) return;
-    tStart[i] = performance.now();
-    tFrom[i] = cellChar[i];
-    tFromKind[i] = cellKind[i];
-    tSeed[i] = rnd();
-    tMode[i] = T_COUSIN;
+    if (row < 1 || row >= rows - 1) return;
+    startTrace(row * cols + g.col, T_COUSIN, 0);
     scheduleDraw();
+  }
+
+  function startTrace(i, mode, delay) {
+    if (reducedMotion) return;
+    tStart[i] = performance.now() + delay;
+    tFrom[i] = cellChar[i];
+    tFromAlpha[i] = KIND_ALPHA[cellKind[i]] || ALPHA_AMBIENT;
+    tSeed[i] = rnd();
+    tMode[i] = mode;
   }
 
   return {
@@ -330,40 +395,80 @@ export function createField(canvas) {
       cols = Math.max(10, Math.floor(w / metrics.cellW));
       rows = Math.max(6, Math.ceil(h / metrics.cellH));
       xOffset = Math.floor((w - cols * metrics.cellW) / 2);
-      alloc();
-      compose(false);
+      cellChar = new Uint16Array(0); // force realloc on next compose
+      composeView();
+      scheduleDraw();
     },
 
     setWorld(lines, totalRows) {
-      world = new Map();
+      worldData = new Map();
+      haloRows = new Array(totalRows);
       glitches.clear();
-      for (const line of lines) {
-        let segments = world.get(line.row);
-        if (!segments) world.set(line.row, (segments = []));
-        segments.push({ col: line.col, chars: line.text, kind: line.kind, linkId: line.linkId ?? -1 });
-      }
+      mutations.clear();
+      mutationOrder.length = 0;
       worldRows = totalRows;
-      compose(false);
+
+      for (const line of lines) {
+        let data = worldData.get(line.row);
+        if (!data) {
+          data = {
+            chars: new Uint16Array(cols),
+            kinds: new Uint8Array(cols),
+            links: new Int16Array(cols).fill(-1),
+          };
+          worldData.set(line.row, data);
+        }
+        for (let k = 0; k < line.text.length; k += 1) {
+          const col = line.col + k;
+          if (col < 0 || col >= cols) continue;
+          const ch = line.text[k];
+          if (line.linkId !== undefined && line.linkId >= 0) data.links[col] = line.linkId;
+          if (ch === " ") continue;
+          data.chars[col] = tokenOf(ch);
+          data.kinds[col] = line.kind;
+
+          // the field thickens toward meaning: splat a halo around content
+          if (line.kind === K_TEXT || line.kind === K_LINK) {
+            for (let dr = -2; dr <= 2; dr += 1) {
+              const hr = line.row + dr;
+              if (hr < 0 || hr >= totalRows) continue;
+              let halo = haloRows[hr];
+              if (!halo) halo = haloRows[hr] = new Float32Array(cols);
+              for (let dc = -3; dc <= 3; dc += 1) {
+                const hc = col + dc;
+                if (hc < 0 || hc >= cols) continue;
+                const w = 1 - (Math.abs(dr) / 3 + Math.abs(dc) / 4) / 2;
+                if (w > 0) halo[hc] = Math.min(1.3, halo[hc] + w * 0.28);
+              }
+            }
+          }
+        }
+      }
+      composeView();
+      scheduleDraw();
     },
 
-    setCamera(row, animate = true, delayPerRow = 4) {
-      const next = Math.max(0, Math.min(row, Math.max(0, worldRows - 1)));
-      if (next === camera) return;
-      camera = next;
-      compose(animate, delayPerRow);
+    // scroll position in pixels drives the roll phase directly
+    setScroll(scrollTopPx) {
+      const rowFloat = Math.max(0, scrollTopPx / metrics.cellH);
+      const nextCamera = Math.min(Math.floor(rowFloat), Math.max(0, worldRows - 1));
+      frac = Math.min(0.999, Math.max(0, rowFloat - nextCamera));
+      lastScrollAt = performance.now();
+      if (nextCamera !== camera) {
+        camera = nextCamera;
+        composeView();
+      }
+      scheduleDraw();
     },
 
     crystallize() {
-      const now = performance.now();
       for (let row = 0; row < rows; row += 1) {
         for (let col = 0; col < cols; col += 1) {
           const i = row * cols + col;
-          if (cellKind[i] === K_AMBIENT || reducedMotion) continue;
-          tStart[i] = now + row * 14 + col * 1.6;
-          tFrom[i] = ambient[i];
-          tFromKind[i] = K_AMBIENT;
-          tSeed[i] = rnd();
-          tMode[i] = T_TRANSITION;
+          if (cellKind[i] === K_AMBIENT) continue;
+          startTrace(i, T_CONDENSE, row * 16 + col * 1.4);
+          tFrom[i] = 0; // condense out of nothing
+          tFromAlpha[i] = 0;
         }
       }
       scheduleDraw();
@@ -373,7 +478,7 @@ export function createField(canvas) {
       const col = Math.floor((x - xOffset) / metrics.cellW);
       const row = Math.floor(y / metrics.cellH);
       if (row < 0 || row >= rows || col < 0 || col >= cols) return;
-      const center = index(row, col);
+      const center = row * cols + col;
       if (center === lastPointerCell) return;
       lastPointerCell = center;
       window.clearTimeout(pointerTimer);
@@ -385,9 +490,9 @@ export function createField(canvas) {
           const r = row + dr;
           const c = col + dc;
           if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
-          const i = index(r, c);
+          const i = r * cols + c;
           if (cellKind[i] !== K_AMBIENT || overlay.has(i)) continue;
-          pointerTokens.set(i, scrambleTokens[rnd() % scrambleTokens.length]);
+          pointerTokens.set(i, rampTokens[rnd() % rampTokens.length]);
           pointerCells.push(i);
         }
       }
@@ -404,21 +509,17 @@ export function createField(canvas) {
       if (reducedMotion) return;
       const originCol = (x - xOffset) / metrics.cellW;
       const originRow = y / metrics.cellH;
-      const now = performance.now();
       const aspect = metrics.cellH / metrics.cellW;
+      const now = performance.now();
       for (let row = 0; row < rows; row += 1) {
         for (let col = 0; col < cols; col += 1) {
           const dc = (col + 0.5 - originCol) / aspect;
           const dr = row + 0.5 - originRow;
           const dist = Math.sqrt(dc * dc + dr * dr);
           if (dist > 7) continue;
-          const i = index(row, col);
+          const i = row * cols + col;
           if (tStart[i] !== 0 && now - tStart[i] < TRACE_DURATION) continue;
-          tStart[i] = now + dist * 34;
-          tFrom[i] = cellChar[i];
-          tFromKind[i] = cellKind[i];
-          tSeed[i] = rnd();
-          tMode[i] = T_SHIMMER;
+          startTrace(i, T_SHIMMER, dist * 36);
         }
       }
       scheduleDraw();
@@ -427,15 +528,10 @@ export function createField(canvas) {
     hoverLink(linkId, on) {
       hoveredLink = on ? linkId : -1;
       if (on && !reducedMotion) {
-        const now = performance.now();
         let k = 0;
         for (let i = 0; i < cellLink.length; i += 1) {
           if (cellLink[i] !== linkId || cellKind[i] === K_AMBIENT) continue;
-          tStart[i] = now + k * 16;
-          tFrom[i] = cellChar[i];
-          tFromKind[i] = cellKind[i];
-          tSeed[i] = rnd();
-          tMode[i] = T_COUSIN;
+          startTrace(i, T_COUSIN, k * 18);
           k += 1;
         }
       }
@@ -460,12 +556,7 @@ export function createField(canvas) {
       glitches.delete(worldRow + ":" + col);
       const row = worldRow - camera;
       if (row < 0 || row >= rows) return;
-      const i = index(row, col);
-      tStart[i] = performance.now();
-      tFrom[i] = cellChar[i];
-      tFromKind[i] = cellKind[i];
-      tSeed[i] = rnd();
-      tMode[i] = T_COUSIN;
+      startTrace(row * cols + col, T_COUSIN, 0);
       scheduleDraw();
     },
 
@@ -473,14 +564,31 @@ export function createField(canvas) {
       overlay.clear();
       for (const cell of cells) {
         if (cell.row < 0 || cell.row >= rows || cell.col < 0 || cell.col >= cols) continue;
-        overlay.set(index(cell.row, cell.col), { ch: cell.ch, ink: cell.ink ?? INK });
+        overlay.set(cell.row * cols + cell.col, { ch: cell.ch, ink: cell.ink ?? INK });
       }
       scheduleDraw();
     },
 
-    setMasks(keys, animate = false) {
-      masks = keys ?? new Set();
-      compose(animate, 8);
+    setMasks(cells, restoreAnimate = false) {
+      const previous = masks;
+      masks = new Set();
+      if (cells) {
+        for (const cell of cells) masks.add(maskKey(cell.worldRow, cell.col));
+      }
+      composeView();
+      if (!cells && restoreAnimate && previous.size > 0) {
+        for (const key of previous) {
+          const worldRow = Math.floor(key / 512);
+          const col = key % 512;
+          const row = worldRow - camera;
+          if (row < 0 || row >= rows) continue;
+          const i = row * cols + col;
+          startTrace(i, T_CONDENSE, rnd() % 500);
+          tFrom[i] = 0;
+          tFromAlpha[i] = 0;
+        }
+      }
+      scheduleDraw();
     },
 
     setHud(text) {
@@ -492,13 +600,16 @@ export function createField(canvas) {
     committedCellsInWorldRows(fromRow, toRow) {
       const out = [];
       for (let worldRow = fromRow; worldRow <= toRow; worldRow += 1) {
-        const segments = world.get(worldRow);
-        if (!segments) continue;
-        for (const segment of segments) {
-          for (let k = 0; k < segment.chars.length; k += 1) {
-            const ch = segment.chars[k];
-            if (ch !== " ") out.push({ worldRow, col: segment.col + k, ch, faint: segment.kind === K_FAINT });
-          }
+        const data = worldData.get(worldRow);
+        if (!data) continue;
+        for (let col = 0; col < cols; col += 1) {
+          if (data.chars[col] === 0) continue;
+          out.push({
+            worldRow,
+            col,
+            ch: palette[data.chars[col]],
+            faint: data.kinds[col] === K_FAINT,
+          });
         }
       }
       return out;
@@ -511,13 +622,16 @@ export function createField(canvas) {
     camera: () => camera,
     worldRows: () => worldRows,
     xOffset: () => xOffset,
-    metricsRef: () => metrics,
 
     start() {
       window.clearInterval(ambientTimer);
       window.clearInterval(glitchTimer);
-      ambientTimer = window.setInterval(mutateAmbient, 380);
-      glitchTimer = window.setInterval(flickerGlitch, 1700);
+      window.clearInterval(breathTimer);
+      ambientTimer = window.setInterval(mutateAmbient, 420);
+      glitchTimer = window.setInterval(flickerGlitch, 1900);
+      breathTimer = window.setInterval(() => {
+        if (document.visibilityState === "visible" && !reducedMotion) scheduleDraw();
+      }, 170);
     },
   };
 }

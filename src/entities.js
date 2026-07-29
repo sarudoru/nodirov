@@ -218,11 +218,11 @@ export function createEntities(field) {
     const rows = field.rows();
     const all = field.committedCellsInWorldRows(fromWorldRow, toWorldRow);
     const particles = [];
-    const masks = new Set();
+    const maskCells = [];
     for (const cell of all) {
       const screenRow = cell.worldRow - camera;
       if (screenRow < 0 || screenRow >= rows - 1) continue;
-      masks.add(cell.worldRow + ":" + cell.col);
+      maskCells.push({ worldRow: cell.worldRow, col: cell.col });
       particles.push({
         ch: cell.ch,
         col: cell.col,
@@ -235,7 +235,7 @@ export function createEntities(field) {
       });
     }
     if (!particles.length) return;
-    field.setMasks(masks);
+    field.setMasks(maskCells);
     gravity = { particles, pile: new Map(), settledAt: 0, lastTick: 0 };
     ensureLoop();
   }

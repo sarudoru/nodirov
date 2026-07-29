@@ -5,7 +5,9 @@
 
 export const AMBIENT = "0123456789abcdefghijklmnopqrstuvwxyz";
 
-export const SCRAMBLE = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+// Ink-density ramp for condensation/dissolution. Transitions climb or
+// descend this ramp — matter forming, never static.
+export const RAMP = ["·", ":", "+"];
 
 const COUSIN_FAMILIES = [
   "aàáâäāă", "cçćč", "dďđ", "eèéêëē", "gğġ", "iìíîï", "lĺľł",
