@@ -7,7 +7,7 @@
 // The article element is the single source of truth. The field is a renderer.
 
 import { renderBanner, BANNER_ROWS } from "./banner.js";
-import { K_TEXT, K_FAINT, K_LINK } from "./field.js";
+import { K_TEXT, K_FAINT, K_LINK, K_BUTTON } from "./field.js";
 
 // Parse once at boot; the blueprint keeps element references and raw runs so
 // the article can be re-typeset at any column count (resize, zoom).
@@ -53,8 +53,9 @@ export function parseArticle(article) {
           : "p";
         blocks.push({ type, el: child, runs: runsOf(child) });
       } else if (tag === "UL") {
+        const button = child.classList.contains("triggers");
         for (const li of child.children) {
-          blocks.push({ type: "li", el: li, runs: runsOf(li) });
+          blocks.push({ type: "li", el: li, runs: runsOf(li), button });
         }
       }
     }
@@ -306,6 +307,23 @@ export function typeset(blocks, article, ctx) {
 
       case "li": {
         const el = block.el;
+        const buttonA = block.button ? block.runs.find((r) => r.a)?.a : null;
+        if (buttonA) {
+          // a real button, drawn out of cells: box chrome + native <a> label
+          el.textContent = "";
+          const label = block.runs.filter((r) => r.a).map((r) => r.text).join("").trim();
+          const w = Math.min(label.length + 4, contentW);
+          const id = linkIdFor(buttonA);
+          emit(row, left, "┌" + "─".repeat(w - 2) + "┐", K_FAINT, id);
+          emit(row + 1, left, "│", K_FAINT, id);
+          emit(row + 1, left + w - 1, "│", K_FAINT, id);
+          emit(row + 1, left + 2, label, K_BUTTON, id);
+          emit(row + 2, left, "└" + "─".repeat(w - 2) + "┘", K_FAINT, id);
+          if (!buttonA.parentNode) el.appendChild(buttonA);
+          span(buttonA, label, row + 1, left + 2, false);
+          row += 4;
+          break;
+        }
         el.textContent = "";
         span(el, "·", row, left, false, true);
         emit(row, left, "·", K_FAINT);

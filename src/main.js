@@ -114,23 +114,68 @@ function runExperiment(name) {
   }
 }
 
-function onScroll() {
+// Native smooth scrolling is unreliable across environments, and the settle
+// deserves a precise feel anyway: a short ease-out drives scrollTop directly.
+const anim = { raf: 0, target: null, lastWrite: -1 };
+
+// Keep the field in lockstep with the scroller. Called from the scroll event
+// AND directly by the animator — some environments do not emit scroll events
+// for programmatic scrollTop writes.
+function syncFromScroll() {
   const before = field.camera();
   field.setScroll(scroller.scrollTop);
   if (field.camera() !== before) {
     entities.onCameraMove();
     updateHud();
   }
+}
+
+function animateScrollTo(target, duration = 180) {
+  target = Math.max(0, Math.min(target, scroller.scrollHeight - scroller.clientHeight));
+  window.cancelAnimationFrame(anim.raf);
+  anim.target = target;
+  if (reducedMotion.matches || duration === 0) {
+    anim.lastWrite = target;
+    scroller.scrollTop = target;
+    anim.target = null;
+    syncFromScroll();
+    return;
+  }
+  const start = scroller.scrollTop;
+  const dist = target - start;
+  if (Math.abs(dist) < 0.5) {
+    anim.target = null;
+    return;
+  }
+  const t0 = performance.now();
+  const step = (now) => {
+    const p = Math.min(1, (now - t0) / duration);
+    const eased = 1 - Math.pow(1 - p, 3);
+    anim.lastWrite = start + dist * eased;
+    scroller.scrollTop = anim.lastWrite;
+    syncFromScroll();
+    if (p < 1) anim.raf = window.requestAnimationFrame(step);
+    else anim.target = null;
+  };
+  anim.raf = window.requestAnimationFrame(step);
+}
+
+function onScroll() {
+  // a user gesture mid-animation wins immediately
+  if (anim.target !== null && Math.abs(scroller.scrollTop - anim.lastWrite) > 2) {
+    window.cancelAnimationFrame(anim.raf);
+    anim.target = null;
+  }
+  syncFromScroll();
   window.clearTimeout(scrollEndTimer);
   scrollEndTimer = window.setTimeout(onScrollSettled, 160);
 }
 
 function onScrollSettled() {
-  // settle the roll onto a whole row; smooth so the last fraction pours home
-  const target = Math.round(scroller.scrollTop / metrics.cellH) * metrics.cellH;
-  if (Math.abs(scroller.scrollTop - target) > 1 &&
-      target <= scroller.scrollHeight - scroller.clientHeight) {
-    scroller.scrollTo({ top: target, behavior: reducedMotion.matches ? "instant" : "smooth" });
+  // settle the pour onto a whole row
+  if (anim.target === null) {
+    const target = Math.round(scroller.scrollTop / metrics.cellH) * metrics.cellH;
+    if (Math.abs(scroller.scrollTop - target) > 1) animateScrollTo(target, 150);
   }
   const section = currentSection();
   const hash = section.id ? `#${section.id}` : " ";
@@ -170,10 +215,11 @@ function onKey(event) {
   else if (event.key === "ArrowUp") delta = -metrics.cellH;
   else if (event.key === "PageDown" || (event.key === " " && !event.shiftKey)) delta = page;
   else if (event.key === "PageUp" || (event.key === " " && event.shiftKey)) delta = -page;
-  else if (event.key === "Home") { scroller.scrollTo({ top: 0, behavior: "smooth" }); event.preventDefault(); return; }
-  else if (event.key === "End") { scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" }); event.preventDefault(); return; }
+  else if (event.key === "Home") { animateScrollTo(0, 420); event.preventDefault(); return; }
+  else if (event.key === "End") { animateScrollTo(scroller.scrollHeight, 420); event.preventDefault(); return; }
   if (delta !== null) {
-    scroller.scrollBy({ top: delta, behavior: "smooth" });
+    const base = anim.target !== null ? anim.target : scroller.scrollTop;
+    animateScrollTo(base + delta, 200);
     event.preventDefault();
   }
 }
@@ -185,6 +231,7 @@ function onPointerMove(event) {
   const speed = dt > 0 ? Math.hypot(event.clientX - lastPointer.x, event.clientY - lastPointer.y) / dt : 0;
   lastPointer = { x: event.clientX, y: event.clientY, t: now };
   field.pulse(event.clientX, event.clientY);
+  field.shimmerWordAt(event.clientX, event.clientY);
   const col = Math.floor((event.clientX - field.xOffset()) / metrics.cellW);
   const row = Math.floor(event.clientY / metrics.cellH);
   entities.pointer(col, row, speed > 1.4);

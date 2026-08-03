@@ -14,24 +14,26 @@ to the cell it sits under.
 
 ## II. Nothing moves; cells change
 
-The page never scrolls. The whole fabric — content *and* ambient murmur —
-is anchored to one logical document that rolls through the viewport
-aperture. During navigation every cell blends between the glyph it holds
-and the glyph arriving from the neighboring row, and the blend phase is
-tied **directly to scroll position**, never to a clock: ink pours from row
-to row under the reader's finger, reverses when they reverse, and settles
-onto whole rows when they stop. No pixel ever moves; no transition plays
-on its own schedule.
+The page never scrolls. The murmur is **still** — ambient glyphs belong to
+the screen, like grain in the glass of the aperture. The document pours
+through them: during navigation each committed glyph blends between the row
+it holds and the row arriving beneath, and the blend phase is tied
+**directly to scroll position**, never to a clock. Ink pours from row to
+row under the reader's finger, reverses when they reverse, and settles onto
+whole rows when they stop. Passing content displaces the murmur cell by
+cell; the murmur seeps back when it has gone. No pixel ever moves; no
+transition plays on its own schedule.
 
 ## III. Cells have four states
 
-1. **Ambient** — uncommitted murmur, anchored to the document (it rolls
-   with the content — it is the same material). Lowercase and digits at
-   ~7% ink, denser in a halo around committed text: the field thickens
-   toward meaning. It breathes in a slow coherent wave and mutates rarely.
+1. **Ambient** — uncommitted murmur, anchored to the screen. Lowercase and
+   digits at ~5% ink, denser in a halo around whatever content is passing:
+   the field thickens toward meaning. It mutates one cell at a time, rarely,
+   and otherwise holds still.
 2. **Transitional** — matter forming or dissolving climbs an ink-density
    ramp (`·` `:` `+` → glyph). Never random scramble: transitions read as
-   condensation, not noise. Typographic shimmer uses a glyph's own cousins.
+   condensation, not noise. Ripples are water (`~` `≈`); typographic
+   shimmer uses a glyph's own cousins.
 3. **Committed** — content. Full ink, calm, and *settled*: committed text
    never animates at rest. Reading is sacred.
 4. **Hole** — a committed cell whose glyph has been taken (e.g. by gravity).
@@ -67,17 +69,20 @@ one living exception, so it reads as *alive*.
 
 IBM Plex Mono, regular, one size per breakpoint. Hierarchy comes from
 composition — banner letters built from their own character, wide-tracked
-headings, rules made of `─` — never from weight, size, or color changes.
-Ink is near-black on white. The accent appears only on the butterfly and
-the selection highlight.
+headings, rules made of `─`, buttons boxed in `┌─┐│└┘` — never from weight,
+size, or color changes. Ink is near-black on white. The accent appears only
+on the butterfly and the selection highlight.
 
 ## VIII. Interaction rewards, never obstructs
 
 The cursor disturbs ambient cells only; committed text does not flinch under
-the pointer. Hover shimmers a link through its typographic cousins and
-settles. A click ripples outward and dies. One glyph per section is unstable
-until repaired. None of this may ever make reading harder, and every effect
-must be discoverable by accident.
+the pointer — unless invited. Hovering any word loops it through its
+typographic cousins, the same letters as other languages write them, for as
+long as the reader stays; it is still the same readable word. Links and
+button labels do the same, with their chrome lighting up. A click ripples
+outward in water glyphs and dies. One glyph per section is unstable until
+repaired. None of this may ever make reading harder, and every effect must
+be discoverable by accident.
 
 ## IX. The revelation is progressive
 

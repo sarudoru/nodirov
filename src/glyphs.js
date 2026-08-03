@@ -1,19 +1,26 @@
 // Glyph vocabulary of the field.
-// Every alphabet here is deliberate: ambient cells murmur in lowercase,
-// transitions scramble in unambiguous uppercase, and each letter owns a
-// small family of typographic "cousins" for shimmer effects.
+//
+// Every letter owns a family of typographic siblings — the same letter as
+// other languages write it. Shimmering through a family keeps a word
+// readable while making it visibly alive. Families are restricted to
+// Latin-1 + Latin Extended-A/B ranges that IBM Plex Mono actually covers;
+// letters with no safe siblings stay inert, which is its own kind of charm.
 
 export const AMBIENT = "0123456789abcdefghijklmnopqrstuvwxyz";
 
-// Ink-density ramp for condensation/dissolution. Transitions climb or
-// descend this ramp — matter forming, never static.
+// Ink-density ramp for condensation/dissolution.
 export const RAMP = ["·", ":", "+"];
 
+// Water for ripples.
+export const WAVE = ["~", "≈"];
+
 const COUSIN_FAMILIES = [
-  "aàáâäāă", "cçćč", "dďđ", "eèéêëē", "gğġ", "iìíîï", "lĺľł",
-  "nñńň", "oòóôöø", "rŕř", "sśšş", "tťţ", "uùúûü", "yýÿ", "zźžż",
-  "AÀÁÂÄ", "CÇĆČ", "DĎĐ", "EÈÉÊË", "IÌÍÎÏ", "NÑŃŇ", "OÒÓÔÖØ",
-  "RŔŘ", "SŚŠŞ", "UÙÚÛÜ", "VṼ", "ZŹŽŻ",
+  "aàáâãäåāăą", "cçćĉċč", "dďđ", "eèéêëēĕėęě", "gĝğġģ", "hĥħ",
+  "iìíîïĩīĭįı", "jĵ", "kķ", "lĺļľŀł", "nñńņňŋ", "oòóôõöøōŏő",
+  "rŕŗř", "sśŝşšș", "tţťŧț", "uùúûüũūŭůűų", "wŵ", "yýÿŷ", "zźżž",
+  "AÀÁÂÃÄÅĀĂĄ", "CÇĆĈĊČ", "DĎĐ", "EÈÉÊËĒĔĖĘĚ", "GĜĞĠĢ", "HĤĦ",
+  "IÌÍÎÏĨĪĬĮİ", "JĴ", "KĶ", "LĹĻĽĿŁ", "NÑŃŅŇŊ", "OÒÓÔÕÖØŌŎŐ",
+  "RŔŖŘ", "SŚŜŞŠȘ", "TŢŤŦȚ", "UÙÚÛÜŨŪŬŮŰŲ", "WŴ", "YÝŶŸ", "ZŹŻŽ",
 ];
 
 const COUSINS = new Map();
