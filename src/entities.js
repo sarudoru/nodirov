@@ -1,44 +1,23 @@
-// Inhabitants of the field. Every entity is a set of cell states refreshed on
-// a discrete tick — no pixels, no tweens. Motion is a cell that stops being
-// one character and a neighbor that starts.
+// The field has one inhabitant: the butterfly. It is a formation of cells
+// moving in discrete steps — the only colored thing in the world. It flies
+// where it pleases, lingers, repairs broken glyphs, and is fond of idle
+// cursors. Motion is a cell that stops being one character and a neighbor
+// that starts.
 
 const DEFAULT_ACCENT = "#c8401f";
-const INK = "#1a1a1a";
-const STEAM = "rgba(26, 26, 26, 0.30)";
-const GARDEN_INK = "rgba(26, 26, 26, 0.5)";
-const GARDEN_CHARS = ["·", ":", "+"];
-
-const TRAIN_ART = [
-  "       ___                              ",
-  "  ____| | |__   __________  __________  ",
-  " |o o o  SN |==|  ______  ||  ______  | ",
-  " |__________|  |__________||__________| ",
-];
-const TRAIN_WHEELS_A = "   o-o    o-o     o------o    o------o  ";
-const TRAIN_WHEELS_B = "   0-0    0-0     0------0    0------0  ";
-const TRAIN_W = TRAIN_ART[0].length;
-const TRAIN_H = TRAIN_ART.length + 1;
-const STACK_COL = 8;
 
 export function createEntities(field, accent = DEFAULT_ACCENT) {
   let timer = 0;
   let butterfly = null;
-  let train = null;
-  let gravity = null;
-  let garden = null;
-  let cursor = { col: -1, row: -1, at: 0, fast: 0 };
-
-  function active() {
-    return butterfly || train || gravity || garden;
-  }
+  const cursor = { col: -1, row: -1, at: 0, fast: 0 };
 
   function ensureLoop() {
-    if (timer || !active()) return;
+    if (timer || !butterfly) return;
     timer = window.setInterval(tick, 50);
   }
 
   function stopLoopIfIdle() {
-    if (!active() && timer) {
+    if (!butterfly && timer) {
       window.clearInterval(timer);
       timer = 0;
       field.setOverlayCells([]);
@@ -46,86 +25,74 @@ export function createEntities(field, accent = DEFAULT_ACCENT) {
   }
 
   function tick() {
-    const now = performance.now();
-    if (butterfly) tickButterfly(now);
-    if (train) tickTrain(now);
-    if (gravity) tickGravity(now);
-    if (garden) tickGarden(now);
+    if (butterfly) tickButterfly(performance.now());
     render();
     stopLoopIfIdle();
   }
 
+  // Two rows, two frames. Body ï — the diaeresis reads as antennae.
+  //   open:   \ /      folded:
+  //           (ï)               )ï(
   function render() {
     const cells = [];
-    if (train) {
-      const x = Math.round(train.x);
-      const wheels = train.frame % 2 === 0 ? TRAIN_WHEELS_A : TRAIN_WHEELS_B;
-      const artRows = [...TRAIN_ART, wheels];
-      for (let r = 0; r < artRows.length; r += 1) {
-        const rowText = artRows[r];
-        // opaque silhouette: blank cells inside the body occlude the field
-        const start = rowText.search(/\S/);
-        if (start === -1) continue;
-        const end = rowText.length - [...rowText].reverse().join("").search(/\S/);
-        for (let c = start; c < end; c += 1) {
-          cells.push({ col: x + c, row: train.row + r, ch: rowText[c], ink: INK });
-        }
-      }
-      for (const puff of train.steam) {
-        const chars = "@Oo°·";
-        const ch = chars[Math.min(chars.length - 1, puff.age)];
-        cells.push({ col: Math.round(puff.col), row: Math.round(puff.row), ch, ink: STEAM });
-      }
-    }
-    if (gravity) {
-      for (const p of gravity.particles) {
-        cells.push({ col: p.col, row: Math.round(p.y), ch: p.ch, ink: p.faint ? "rgba(26, 26, 26, 0.40)" : INK });
-      }
-    }
-    if (garden) {
-      for (let r = 0; r < garden.h; r += 1) {
-        for (let c = 0; c < garden.w; c += 1) {
-          const i = r * garden.w + c;
-          if (!garden.cells[i]) continue;
-          const base = garden.age[i] < 3 ? 0 : garden.age[i] < 8 ? 1 : 2;
-          const stage = base - garden.fade;
-          if (stage < 0) continue;
-          cells.push({
-            col: garden.left + c,
-            row: garden.top + r,
-            ch: GARDEN_CHARS[stage],
-            ink: GARDEN_INK,
-          });
-        }
-      }
-    }
     if (butterfly) {
-      const col = Math.round(butterfly.x);
-      const row = Math.round(butterfly.y);
-      const open = butterfly.flap % 2 === 0 && butterfly.mode !== "rest";
-      cells.push({ col: col - 1, row, ch: open ? "\\" : ")", ink: accent });
-      cells.push({ col, row, ch: "·", ink: accent });
-      cells.push({ col: col + 1, row, ch: open ? "/" : "(", ink: accent });
+      const b = butterfly;
+      const col = Math.round(b.x);
+      const row = Math.round(b.y);
+      const slow = b.mode === "hover" || b.mode === "visit";
+      const open = (slow ? b.flap % 4 < 2 : b.flap % 2 === 0);
+      if (open) {
+        cells.push({ col: col - 1, row: row - 1, ch: "\\", ink: accent });
+        cells.push({ col: col + 1, row: row - 1, ch: "/", ink: accent });
+        cells.push({ col: col - 1, row, ch: "(", ink: accent });
+        cells.push({ col, row, ch: "ï", ink: accent });
+        cells.push({ col: col + 1, row, ch: ")", ink: accent });
+      } else {
+        cells.push({ col: col - 1, row, ch: ")", ink: accent });
+        cells.push({ col, row, ch: "ï", ink: accent });
+        cells.push({ col: col + 1, row, ch: "(", ink: accent });
+      }
     }
     field.setOverlayCells(cells);
   }
 
-  // ---- butterfly ----
-
   function spawnButterfly() {
+    const fromLeft = Math.random() < 0.5;
     butterfly = {
-      x: -2,
-      y: Math.round(field.rows() * 0.3),
-      tx: Math.round(field.cols() * 0.5),
-      ty: Math.round(field.rows() * 0.4),
+      x: fromLeft ? -2 : field.cols() + 2,
+      y: 2 + Math.random() * (field.rows() * 0.5),
+      tx: field.cols() * (0.3 + Math.random() * 0.4),
+      ty: field.rows() * (0.25 + Math.random() * 0.5),
       flap: 0,
-      mode: "wander", // wander | visit | rest | flee
-      restUntil: 0,
+      mode: "wander", // wander | visit | hover | flee
+      hoverUntil: 0,
       lastTick: 0,
       retargetAt: 0,
       glitch: null,
     };
     ensureLoop();
+  }
+
+  function pickTarget(b, now) {
+    b.retargetAt = now + 2600 + Math.random() * 3400;
+    const glitches = field.visibleGlitches();
+    const roll = Math.random();
+    if (glitches.length && roll < 0.3) {
+      const g = glitches[Math.floor(Math.random() * glitches.length)];
+      b.mode = "visit";
+      b.glitch = g;
+      b.tx = g.col;
+      b.ty = g.row;
+    } else if (roll < 0.5) {
+      // linger where it is, drifting
+      b.mode = "hover";
+      b.hoverUntil = now + 1200 + Math.random() * 2200;
+    } else {
+      b.mode = "wander";
+      b.glitch = null;
+      b.tx = 2 + Math.random() * (field.cols() - 4);
+      b.ty = 2 + Math.random() * (field.rows() - 4);
+    }
   }
 
   function tickButterfly(now) {
@@ -134,18 +101,13 @@ export function createEntities(field, accent = DEFAULT_ACCENT) {
     b.lastTick = now;
     b.flap += 1;
 
-    if (b.mode === "rest") {
-      if (now >= b.restUntil) b.mode = "wander";
-      else return;
-    }
-
-    // flee a fast cursor
+    // a fast cursor nearby startles it
     if (cursor.fast > 0 && now - cursor.at < 400) {
       const d = Math.hypot(b.x - cursor.col, b.y - cursor.row);
       if (d < 9 && b.mode !== "flee") {
         b.mode = "flee";
-        b.tx = b.x + (b.x - cursor.col) * 3;
-        b.ty = b.y + (b.y - cursor.row) * 3;
+        b.tx = b.x + (b.x - cursor.col) * 3 + (Math.random() - 0.5) * 6;
+        b.ty = b.y + (b.y - cursor.row) * 3 + (Math.random() - 0.5) * 4;
       }
     }
 
@@ -155,212 +117,44 @@ export function createEntities(field, accent = DEFAULT_ACCENT) {
       b.ty = cursor.row - 1;
     }
 
-    if (b.mode !== "flee" && now >= b.retargetAt) {
-      b.retargetAt = now + 3800 + Math.random() * 3200;
-      const glitches = field.visibleGlitches();
-      if (glitches.length && Math.random() < 0.65) {
-        const g = glitches[Math.floor(Math.random() * glitches.length)];
-        b.mode = "visit";
-        b.glitch = g;
-        b.tx = g.col;
-        b.ty = g.row;
-      } else {
-        b.mode = "wander";
-        b.glitch = null;
-        b.tx = 3 + Math.random() * (field.cols() - 6);
-        b.ty = 2 + Math.random() * (field.rows() - 5);
-      }
+    if (b.mode === "hover") {
+      b.x += (Math.random() - 0.5) * 0.7;
+      b.y += (Math.random() - 0.5) * 0.5;
+      if (now >= b.hoverUntil) pickTarget(b, now);
+      clampToView(b);
+      return;
     }
+
+    if (b.mode !== "flee" && now >= b.retargetAt) pickTarget(b, now);
+    if (b.mode === "hover") return;
 
     const dx = b.tx - b.x;
     const dy = b.ty - b.y;
     const dist = Math.hypot(dx, dy);
-    const speed = b.mode === "flee" ? 2.2 : 0.85;
+    const speed = b.mode === "flee" ? 2.2 : 0.8;
 
     if (dist < 1.2) {
       if (b.mode === "visit" && b.glitch) {
         field.repairGlitch(b.glitch.worldRow, b.glitch.col);
         b.glitch = null;
-        b.mode = "rest";
-        b.restUntil = now + 1500;
-        b.retargetAt = now + 1600;
-      } else if (b.mode === "flee") {
-        b.mode = "wander";
-        b.retargetAt = now;
       }
+      b.mode = "hover";
+      b.hoverUntil = now + 1400 + Math.random() * 2000;
       return;
     }
 
-    b.x += (dx / dist) * speed + (Math.random() - 0.5) * 0.5;
-    b.y += (dy / dist) * speed * 0.8 + (Math.random() - 0.5) * 0.5;
+    b.x += (dx / dist) * speed + (Math.random() - 0.5) * 0.55;
+    b.y += (dy / dist) * speed * 0.8 + (Math.random() - 0.5) * 0.55;
+    if (b.mode === "flee" && dist < 3) {
+      b.mode = "wander";
+      b.retargetAt = now;
+    }
+    clampToView(b);
+  }
+
+  function clampToView(b) {
     b.x = Math.max(1, Math.min(field.cols() - 2, b.x));
-    b.y = Math.max(1, Math.min(field.rows() - 2, b.y));
-  }
-
-  // ---- train ----
-
-  function runTrain() {
-    if (train) return;
-    train = {
-      x: field.cols() + 2,
-      row: Math.max(2, Math.round(field.rows() * 0.5) - 3),
-      frame: 0,
-      steam: [],
-      lastTick: 0,
-    };
-    ensureLoop();
-  }
-
-  function tickTrain(now) {
-    if (now - train.lastTick < 65) return;
-    train.lastTick = now;
-    train.frame += 1;
-    train.x -= 1.6;
-
-    if (train.frame % 2 === 0) {
-      train.steam.push({ col: train.x + STACK_COL, row: train.row - 1, age: 0 });
-    }
-    for (const puff of train.steam) {
-      puff.age += 1;
-      puff.col += 0.9 + Math.random() * 0.5;
-      puff.row -= Math.random() < 0.55 ? 1 : 0;
-    }
-    train.steam = train.steam.filter((p) => p.age < 5 && p.row > 0);
-
-    if (train.x < -TRAIN_W - 4 && train.steam.length === 0) train = null;
-  }
-
-  // ---- gravity ----
-
-  function dropRows(fromWorldRow, toWorldRow) {
-    if (gravity) return;
-    const camera = field.camera();
-    const rows = field.rows();
-    const all = field.committedCellsInWorldRows(fromWorldRow, toWorldRow);
-    const particles = [];
-    const maskCells = [];
-    for (const cell of all) {
-      const screenRow = cell.worldRow - camera;
-      if (screenRow < 0 || screenRow >= rows - 1) continue;
-      maskCells.push({ worldRow: cell.worldRow, col: cell.col });
-      particles.push({
-        ch: cell.ch,
-        col: cell.col,
-        y: screenRow,
-        vy: 0,
-        faint: cell.faint,
-        delay: Math.random() * 900,
-        settled: false,
-        born: performance.now(),
-      });
-    }
-    if (!particles.length) return;
-    field.setMasks(maskCells);
-    gravity = { particles, pile: new Map(), settledAt: 0, lastTick: 0 };
-    ensureLoop();
-  }
-
-  function tickGravity(now) {
-    const g = gravity;
-    if (now - g.lastTick < 50) return;
-    g.lastTick = now;
-    const floorRow = field.rows() - 1;
-    let moving = false;
-
-    for (const p of g.particles) {
-      if (p.settled || now - p.born < p.delay) {
-        if (!p.settled) moving = true;
-        continue;
-      }
-      p.vy = Math.min(p.vy + 0.5, 3.2);
-      const pileH = g.pile.get(p.col) ?? 0;
-      const floor = floorRow - pileH;
-      p.y += p.vy;
-      if (p.y >= floor) {
-        p.y = floor;
-        p.settled = true;
-        g.pile.set(p.col, pileH + 1);
-      } else {
-        moving = true;
-      }
-    }
-
-    if (!moving && !g.settledAt) g.settledAt = now;
-    if (g.settledAt && now - g.settledAt > 2400) {
-      gravity = null;
-      field.setMasks(null, true);
-    }
-  }
-
-  function abortGravity() {
-    if (!gravity) return;
-    gravity = null;
-    field.setMasks(null, false);
-  }
-
-  // ---- the garden: Conway's Life, aged along the ink ramp ----
-
-  function seedGarden() {
-    if (garden) return;
-    const cols = field.cols();
-    const rows = field.rows();
-    const w = Math.min(46, cols - 6);
-    const h = Math.min(20, rows - 8);
-    if (w < 12 || h < 8) return;
-    const cells = new Uint8Array(w * h);
-    const age = new Uint16Array(w * h);
-    for (let i = 0; i < w * h; i += 1) {
-      if (Math.random() < 0.22) {
-        cells[i] = 1;
-        age[i] = 1;
-      }
-    }
-    // an r-pentomino heart keeps the soup lively for the full run
-    const cx = w >> 1;
-    const cy = h >> 1;
-    for (const [dr, dc] of [[0, 1], [0, 2], [1, 0], [1, 1], [2, 1]]) {
-      cells[(cy + dr) * w + cx + dc] = 1;
-    }
-    garden = {
-      left: Math.floor((cols - w) / 2),
-      top: Math.floor((rows - h) / 2),
-      w,
-      h,
-      cells,
-      age,
-      lastTick: 0,
-      diesAt: performance.now() + 10000,
-      fade: 0,
-    };
-    ensureLoop();
-  }
-
-  function tickGarden(now) {
-    const g = garden;
-    if (now - g.lastTick < 125) return;
-    g.lastTick = now;
-    if (now >= g.diesAt) {
-      g.fade += 1;
-      if (g.fade > 3) garden = null;
-      return;
-    }
-    const { w, h, cells, age } = g;
-    const next = new Uint8Array(w * h);
-    for (let r = 0; r < h; r += 1) {
-      for (let c = 0; c < w; c += 1) {
-        let n = 0;
-        for (let dr = -1; dr <= 1; dr += 1) {
-          for (let dc = -1; dc <= 1; dc += 1) {
-            if (dr === 0 && dc === 0) continue;
-            n += cells[((r + dr + h) % h) * w + (c + dc + w) % w];
-          }
-        }
-        const i = r * w + c;
-        next[i] = cells[i] ? (n === 2 || n === 3 ? 1 : 0) : (n === 3 ? 1 : 0);
-        age[i] = next[i] ? (cells[i] ? Math.min(age[i] + 1, 999) : 1) : 0;
-      }
-    }
-    g.cells = next;
+    b.y = Math.max(1.5, Math.min(field.rows() - 2, b.y));
   }
 
   return {
@@ -375,16 +169,7 @@ export function createEntities(field, accent = DEFAULT_ACCENT) {
       return true;
     },
     hasButterfly: () => !!butterfly,
-    runTrain,
-    dropRows,
-    seedGarden,
-    onCameraMove() {
-      abortGravity();
-      if (garden) {
-        garden = null;
-        render();
-      }
-    },
+    onCameraMove() { /* the butterfly is unbothered by scrolling */ },
     pointer(col, row, fast) {
       cursor.col = col;
       cursor.row = row;

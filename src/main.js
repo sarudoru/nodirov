@@ -126,20 +126,7 @@ function bindLinks(links) {
 
 function runExperiment(name) {
   if (reducedMotion.matches) return;
-  if (name === "train") {
-    entities.runTrain();
-  } else if (name === "butterfly") {
-    entities.toggleButterfly();
-  } else if (name === "life") {
-    entities.seedGarden();
-  } else if (name === "gravity") {
-    const sections = layoutResult.sections;
-    const index = sections.findIndex((s) => s.id === "experiments");
-    if (index === -1) return;
-    const from = sections[index].row;
-    const to = index + 1 < sections.length ? sections[index + 1].row - 1 : field.worldRows();
-    entities.dropRows(from, to);
-  }
+  if (name === "butterfly") entities.toggleButterfly();
 }
 
 // Native smooth scrolling is unreliable across environments, and the settle
@@ -321,6 +308,13 @@ async function boot() {
 
   field.start();
   booted = true;
+
+  // the butterfly arrives on its own, a little after the reader does
+  if (!reducedMotion.matches) {
+    window.setTimeout(() => {
+      if (!entities.hasButterfly()) entities.toggleButterfly();
+    }, 7000);
+  }
 
   scroller.addEventListener("scroll", onScroll, { passive: true });
   window.addEventListener("resize", onResize);

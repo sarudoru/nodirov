@@ -11,9 +11,6 @@ export const AMBIENT = "0123456789abcdefghijklmnopqrstuvwxyz";
 // Ink-density ramp for condensation/dissolution.
 export const RAMP = ["·", ":", "+"];
 
-// Water for ripples.
-export const WAVE = ["~", "≈"];
-
 const COUSIN_FAMILIES = [
   "aàáâãäåāăą", "cçćĉċč", "dďđ", "eèéêëēĕėęě", "gĝğġģ", "hĥħ",
   "iìíîïĩīĭįı", "jĵ", "kķ", "lĺļľŀł", "nñńņňŋ", "oòóôõöøōŏő",

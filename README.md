@@ -26,8 +26,8 @@ src/main.js           boot & wiring: scroll camera, resize, keys, experiments
 src/field.js          the renderer: cell buffers, ambient, traces, draw
 src/typesetter.js     semantic DOM -> {field lines, positioned DOM spans}
 src/banner.js         5-row hero letters, each built from its own character
-src/glyphs.js         ambient alphabet, ink ramp, wave chars, cousin families
-src/entities.js       butterfly, train, gravity, Life garden — cell sprites
+src/glyphs.js         ambient alphabet, ink ramp, cousin families
+src/entities.js       the butterfly — the field's one inhabitant
 morph.html/.css       typeface studies (linked from the colophon)
 lab.html              side-by-side taste tests on the live field (dev tool)
 ```
@@ -48,13 +48,15 @@ of its world row and the glyph of the next row in a biased crossfade (the
 leaving glyph yields faster than the arriving one rises), so ink visibly
 pours row to row under the reader's finger — reversible, tied to the
 gesture, never on a timer. The ambient murmur stays anchored to the screen,
-whisper-quiet at ~4% ink: it parts in a clearing around passing content,
-rides a 26-second opacity tide, brightens in a lantern around the cursor,
-and falls away slightly in the corners. Coarse mouse-wheel notches are
-routed through a short ease so they pour instead of teleporting; fast
-flicks skip blending entirely and stay crisp. Time-based animation exists
-only for transformations (crystallizing, condensation along the `· : +`
-ramp, water-glyph ripples, cousin shimmer), never for navigation.
+whisper-quiet at ~4% ink and running uniformly under everything: its glyphs
+dissolve one into another slowly and at random, it rides a 26-second
+opacity tide, brightens in a lantern around the cursor, and falls away
+slightly in the corners. Coarse mouse-wheel notches are routed through a
+short ease so they pour instead of teleporting; fast flicks skip blending
+entirely and stay crisp. Time-based animation exists only for
+transformations (crystallizing, condensation along the `· : +` ramp,
+random-glyph click splashes, unhurried cousin shimmer), never for
+navigation.
 
 ### The lab
 

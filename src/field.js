@@ -7,7 +7,7 @@
 // displacing the murmur where it passes and letting it seep back after.
 // Nothing ever moves; cells change what they hold.
 
-import { AMBIENT, RAMP, WAVE, cousinsFor } from "./glyphs.js";
+import { AMBIENT, RAMP, cousinsFor } from "./glyphs.js";
 
 const DEFAULT_PAPER = "#fdfdfb";
 const DEFAULT_INK = "#1a1a1a";
@@ -27,7 +27,8 @@ const LANTERN_GAIN = 0.75;
 
 const TRACE_DURATION = 180;
 const TRACE_STEP = 60;
-const SHIMMER_TICK = 130;
+const SHIMMER_TICK = 280;
+const MUTATION_FADE_MS = 1400;
 
 // cell kinds
 export const K_AMBIENT = 0;
@@ -60,7 +61,6 @@ export function createField(canvas) {
   }
   const ambientTokens = Array.from(AMBIENT, tokenOf);
   const rampTokens = Array.from(RAMP, tokenOf);
-  const waveTokens = Array.from(WAVE, tokenOf);
 
   const randomPool = new Uint32Array(512);
   let randomAt = randomPool.length;
@@ -96,8 +96,8 @@ export function createField(canvas) {
   let colPhase = new Float32Array(0);
 
   let worldData = new Map(); // row -> {chars, kinds, links}
-  let clearRows = []; // row -> Float32Array: how far the murmur parts around content
   let masks = new Set(); // worldRow * 512 + col
+  const mutating = new Map(); // view index -> {start, from} — slow ambient dissolves
 
   let ambient = new Uint16Array(0); // screen-fixed murmur
 
@@ -137,17 +137,11 @@ export function createField(canvas) {
 
   const worldKey = (row, col) => row * 512 + col;
 
-  function clearAt(worldRow, col) {
-    const clear = clearRows[worldRow];
-    return clear ? clear[col] : 0;
-  }
-
-  // Ambient ink for one view cell: base, parted around content, carried by a
-  // slow tide, brightened near the cursor, falling away in the corners.
-  function ambientInk(row, col, worldRow, now) {
-    const cleared = clearAt(worldRow, col);
-    if (cleared >= 0.97) return 0;
-    let a = ALPHA_AMBIENT * (1 - cleared) * vigMap[row * cols + col];
+  // Ambient ink for one view cell: uniform base carried by a slow tide,
+  // brightened near the cursor, falling away in the corners. The murmur
+  // runs everywhere — content sits in it, not on it.
+  function ambientInk(row, col, now) {
+    let a = ALPHA_AMBIENT * vigMap[row * cols + col];
     if (!reducedMotion) {
       a *= 1 + TIDE_AMPLITUDE *
         Math.sin(now * (Math.PI * 2 / TIDE_PERIOD_MS) + row * 0.23 + col * 0.085);
@@ -288,7 +282,7 @@ export function createField(canvas) {
           } else {
             active = true;
             const target = cellChar[i];
-            const ambientHere = ambientInk(row, col, worldA, now);
+            const ambientHere = ambientInk(row, col, now);
             const targetAlpha = target !== 0 ? KIND_ALPHA[cellKind[i]] : ambientHere;
             let token = target !== 0 ? target : ambient[i];
             let alpha = targetAlpha;
@@ -306,7 +300,8 @@ export function createField(canvas) {
                   token = tokenOf(family[(tSeed[i] + stage) % family.length]);
                 }
               } else if (tMode[i] === T_WAVE) {
-                token = waveTokens[stage % waveTokens.length];
+                // the splash passes through random glyphs, not a fixed char
+                token = ambientTokens[(tSeed[i] + stage * 13) % ambientTokens.length];
                 alpha = Math.max(0.24, targetAlpha * 0.5);
               }
             }
@@ -331,10 +326,24 @@ export function createField(canvas) {
         }
 
         if (coverage < 0.996 && ambient[i] !== 0) {
-          const a = ambientInk(row, col, worldA, now) * (1 - coverage);
+          let a = ambientInk(row, col, now) * (1 - coverage);
+          let token = ambient[i];
+          const m = mutating.get(i);
+          if (m) {
+            // a slow dissolve: the old glyph breathes out, the new one in
+            const p = (now - m.start) / MUTATION_FADE_MS;
+            if (p >= 1) {
+              mutating.delete(i);
+            } else if (p < 0.5) {
+              token = m.from;
+              a *= 1 - p * 2;
+            } else {
+              a *= p * 2 - 1;
+            }
+          }
           if (a > 0.01) {
             context.globalAlpha = a;
-            context.fillText(palette[ambient[i]], x, y);
+            context.fillText(palette[token], x, y);
           }
         }
         // biased crossfade: the leaving glyph yields faster than the arriving
@@ -407,11 +416,14 @@ export function createField(canvas) {
 
   function mutateAmbient() {
     if (document.visibilityState !== "visible" || ambient.length === 0 || reducedMotion) return;
-    const i = rnd() % ambient.length;
-    if (cellChar[i] !== 0 || overlay.has(i)) return;
-    let next = ambientTokens[rnd() % ambientTokens.length];
-    if (next === ambient[i]) next = ambientTokens[rnd() % ambientTokens.length];
-    ambient[i] = next;
+    for (let k = 0; k < 2; k += 1) {
+      const i = rnd() % ambient.length;
+      if (cellChar[i] !== 0 || overlay.has(i) || mutating.has(i)) continue;
+      let next = ambientTokens[rnd() % ambientTokens.length];
+      if (next === ambient[i]) next = ambientTokens[rnd() % ambientTokens.length];
+      mutating.set(i, { start: performance.now(), from: ambient[i] });
+      ambient[i] = next;
+    }
     scheduleDraw();
   }
 
@@ -481,6 +493,7 @@ export function createField(canvas) {
       const n = cols * rows;
       ambient = new Uint16Array(n);
       for (let i = 0; i < n; i += 1) ambient[i] = ambientTokens[rnd() % ambientTokens.length];
+      mutating.clear();
 
       // corner vignette for the murmur only — content never dims
       vigMap = new Float32Array(n);
@@ -507,7 +520,6 @@ export function createField(canvas) {
 
     setWorld(lines, totalRows) {
       worldData = new Map();
-      clearRows = new Array(totalRows);
       glitches.clear();
       worldRows = totalRows;
 
@@ -529,21 +541,6 @@ export function createField(canvas) {
           if (ch === " ") continue;
           data.chars[col] = tokenOf(ch);
           data.kinds[col] = line.kind;
-
-          // the murmur parts around content: every committed glyph clears
-          // a soft moat in the ambient field
-          for (let dr = -2; dr <= 2; dr += 1) {
-            const hr = line.row + dr;
-            if (hr < 0 || hr >= totalRows) continue;
-            let clear = clearRows[hr];
-            if (!clear) clear = clearRows[hr] = new Float32Array(cols);
-            for (let dc = -3; dc <= 3; dc += 1) {
-              const hc = col + dc;
-              if (hc < 0 || hc >= cols) continue;
-              const w = 1 - (Math.abs(dr) / 3 + Math.abs(dc) / 4) / 2;
-              if (w > clear[hc]) clear[hc] = w;
-            }
-          }
         }
       }
       composeView();
@@ -788,7 +785,7 @@ export function createField(canvas) {
       window.clearInterval(ambientTimer);
       window.clearInterval(glitchTimer);
       window.clearInterval(tideTimer);
-      ambientTimer = window.setInterval(mutateAmbient, 420);
+      ambientTimer = window.setInterval(mutateAmbient, 300);
       glitchTimer = window.setInterval(flickerGlitch, 1900);
       // the tide needs no rAF loop: a gentle repaint cadence is invisible
       tideTimer = window.setInterval(() => {

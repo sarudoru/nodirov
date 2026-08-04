@@ -27,15 +27,16 @@ transition plays on its own schedule.
 ## III. Cells have four states
 
 1. **Ambient** — uncommitted murmur, anchored to the screen. Lowercase and
-   digits at ~4% ink, **parting in a clearing** around whatever content is
-   passing: the field makes room for meaning, and reading happens inside a
-   quiet moat. Its only life: a slow tide of opacity crossing the surface, a
-   lantern of brightness following the cursor, corners falling away in a
-   whisper of vignette, and one cell mutating at a time, rarely.
+   digits at ~4% ink, running uniformly everywhere: content sits *in* the
+   murmur, never on a cleared panel above it. Its life: glyphs dissolving
+   one into another, slowly and at random; a slow tide of opacity crossing
+   the surface; a lantern of brightness following the cursor; corners
+   falling away in a whisper of vignette.
 2. **Transitional** — matter forming or dissolving climbs an ink-density
-   ramp (`·` `:` `+` → glyph). Never random scramble: transitions read as
-   condensation, not noise. Ripples are water (`~` `≈`); typographic
-   shimmer uses a glyph's own cousins.
+   ramp (`·` `:` `+` → glyph); typographic shimmer uses a glyph's own
+   cousins, unhurried. A click splashes outward through random glyphs —
+   the one permitted burst of chaos, because the reader caused it and it
+   dies within a second.
 3. **Committed** — content. Full ink, calm, and *settled*: committed text
    never animates at rest. Reading is sacred.
 4. **Hole** — a committed cell whose glyph has been taken (e.g. by gravity).
@@ -61,11 +62,12 @@ of it without loss of content.
 
 ## VI. Inhabitants obey the physics
 
-Entities (the butterfly, the train, falling glyphs) are formations of cells
-moving in discrete steps. They may occlude the field, disturb it, or repair
-it, but they are made of the same substance and can never do anything a cell
-cannot do. The butterfly is the only colored thing in the world — one accent,
-one living exception, so it reads as *alive*.
+The field has one inhabitant: the butterfly — a formation of cells moving
+in discrete steps. It arrives on its own, flies where it pleases, lingers,
+repairs broken glyphs, and is wary of fast cursors. It may occlude or
+disturb the field, but it is made of the same substance and can never do
+anything a cell cannot do. It is the only colored thing in the world — one
+accent, one living exception, so it reads as *alive*.
 
 ## VII. One typeface, one ink
 
@@ -83,10 +85,10 @@ The cursor disturbs ambient cells only; committed text does not flinch under
 the pointer — unless invited. Hovering any word loops it through its
 typographic cousins, the same letters as other languages write them, for as
 long as the reader stays; it is still the same readable word. Links and
-button labels do the same, with their chrome lighting up. A click ripples
-outward in water glyphs and dies. One glyph per section is unstable until
-repaired. None of this may ever make reading harder, and every effect must
-be discoverable by accident.
+button labels do the same, with their chrome lighting up. A click splashes
+outward through random glyphs and dies. One glyph per section is unstable
+until repaired. None of this may ever make reading harder, and every effect
+must be discoverable by accident.
 
 ## IX. The revelation is progressive
 
