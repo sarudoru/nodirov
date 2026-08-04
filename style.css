@@ -2,8 +2,8 @@
 
 :root {
   color-scheme: light;
-  --paper: #ffffff;
-  --ink: #161616;
+  --paper: #fdfdfb;
+  --ink: #1a1a1a;
   --accent: #c8401f;
 }
 
@@ -100,7 +100,7 @@ html.js #article.ready a {
 }
 
 ::selection {
-  background: rgba(200, 64, 31, 0.22);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
   color: transparent;
 }
 

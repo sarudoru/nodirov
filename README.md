@@ -26,9 +26,10 @@ src/main.js           boot & wiring: scroll camera, resize, keys, experiments
 src/field.js          the renderer: cell buffers, ambient, traces, draw
 src/typesetter.js     semantic DOM -> {field lines, positioned DOM spans}
 src/banner.js         5-row hero letters, each built from its own character
-src/glyphs.js         ambient/scramble alphabets, cousin families
-src/entities.js       butterfly, train, gravity — sprites in cell space
+src/glyphs.js         ambient alphabet, ink ramp, wave chars, cousin families
+src/entities.js       butterfly, train, gravity, Life garden — cell sprites
 morph.html/.css       typeface studies (linked from the colophon)
+lab.html              side-by-side taste tests on the live field (dev tool)
 ```
 
 ### The trick that makes it a website
@@ -43,12 +44,24 @@ typesetter compiles it into both layers at every column count.
 ### The trick that makes it feel like one substrate
 
 The fractional scroll offset is the transition: each cell draws the glyph
-of its world row at alpha `1 − frac` and the glyph of the next row at
-`frac`, ambient noise included (ambient is hashed per *world* cell, so it
-rolls with the document). Scrolling literally pours the fabric through the
-grid — reversible, tied to the finger, never on a timer. Time-based
-animation exists only for transformations (crystallizing, condensation
-along the `· : +` density ramp, cousin shimmer), never for navigation.
+of its world row and the glyph of the next row in a biased crossfade (the
+leaving glyph yields faster than the arriving one rises), so ink visibly
+pours row to row under the reader's finger — reversible, tied to the
+gesture, never on a timer. The ambient murmur stays anchored to the screen,
+whisper-quiet at ~4% ink: it parts in a clearing around passing content,
+rides a 26-second opacity tide, brightens in a lantern around the cursor,
+and falls away slightly in the corners. Coarse mouse-wheel notches are
+routed through a short ease so they pour instead of teleporting; fast
+flicks skip blending entirely and stay crisp. Time-based animation exists
+only for transformations (crystallizing, condensation along the `· : +`
+ramp, water-glyph ripples, cousin shimmer), never for navigation.
+
+### The lab
+
+`lab.html` renders two live copies of the field side by side, driven by URL
+params (`?font=fragment&size=19&paper=fdfdfb&ink=1a1a1a&accent=c8401f&stagger=1`).
+Typeface, size, palette, and the experimental per-column "fabric stagger"
+are auditioned on real scrolling text, not specimen cards.
 
 ### Content
 

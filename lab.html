@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Glyph Field / Lab</title>
+    <meta name="robots" content="noindex">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&display=swap");
+
+      :root {
+        --paper: #fdfdfb;
+        --ink: #1a1a1a;
+        --line: rgba(26, 26, 26, 0.2);
+        --muted: rgba(26, 26, 26, 0.5);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: "IBM Plex Mono", Menlo, monospace;
+        font-size: 12px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        padding: 18px 24px;
+        border-bottom: 1px solid var(--ink);
+      }
+      h1 { margin: 0; font-size: 13px; font-weight: 400; letter-spacing: 0.08em; }
+      header a { color: var(--muted); font-size: 11px; }
+      main {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0;
+      }
+      .pane { border-right: 1px solid var(--line); }
+      .pane:last-child { border-right: 0; }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px 14px;
+        align-items: end;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+      .controls label {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 10px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      select, input[type="number"] {
+        font: inherit;
+        padding: 3px 6px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--ink);
+      }
+      input[type="color"] {
+        width: 42px;
+        height: 24px;
+        padding: 0;
+        border: 1px solid var(--line);
+        background: transparent;
+      }
+      .check {
+        flex-direction: row !important;
+        align-items: center;
+        gap: 6px !important;
+      }
+      button {
+        font: inherit;
+        padding: 5px 14px;
+        border: 1px solid var(--ink);
+        background: transparent;
+        color: var(--ink);
+        cursor: pointer;
+      }
+      button:hover { background: var(--ink); color: var(--paper); }
+      .url {
+        padding: 6px 18px;
+        border-bottom: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 10px;
+        overflow-x: auto;
+        white-space: nowrap;
+      }
+      iframe {
+        display: block;
+        width: 100%;
+        height: 72vh;
+        border: 0;
+      }
+      @media (max-width: 980px) {
+        main { grid-template-columns: 1fr; }
+        .pane { border-right: 0; border-bottom: 1px solid var(--ink); }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>GLYPH FIELD / LAB — side-by-side taste tests on the live field</h1>
+      <a href="index.html">return to the field ↗</a>
+    </header>
+    <main id="lab"></main>
+
+    <script>
+      const FONTS = [
+        ["plex", "IBM Plex Mono"],
+        ["fragment", "Fragment Mono"],
+        ["space", "Space Mono"],
+        ["kode", "Kode Mono"],
+        ["courier", "Courier Prime"],
+      ];
+
+      const DEFAULTS = [
+        { font: "plex", size: 21, paper: "#fdfdfb", ink: "#1a1a1a", accent: "#c8401f", stagger: false },
+        { font: "fragment", size: 19, paper: "#fdfdfb", ink: "#1a1a1a", accent: "#c8401f", stagger: false },
+      ];
+
+      function buildPane(defaults, index) {
+        const pane = document.createElement("section");
+        pane.className = "pane";
+        pane.innerHTML = `
+          <form class="controls">
+            <label>typeface
+              <select name="font">
+                ${FONTS.map(([v, n]) => `<option value="${v}" ${v === defaults.font ? "selected" : ""}>${n}</option>`).join("")}
+              </select>
+            </label>
+            <label>size
+              <input name="size" type="number" min="14" max="28" value="${defaults.size}">
+            </label>
+            <label>paper <input name="paper" type="color" value="${defaults.paper}"></label>
+            <label>ink <input name="ink" type="color" value="${defaults.ink}"></label>
+            <label>accent <input name="accent" type="color" value="${defaults.accent}"></label>
+            <label class="check">
+              <input name="stagger" type="checkbox" ${defaults.stagger ? "checked" : ""}> fabric stagger
+            </label>
+            <button type="submit">apply</button>
+          </form>
+          <div class="url"></div>
+          <iframe title="field preview ${index + 1}"></iframe>
+        `;
+        const form = pane.querySelector("form");
+        const urlBox = pane.querySelector(".url");
+        const frame = pane.querySelector("iframe");
+
+        function apply() {
+          const data = new FormData(form);
+          const query = new URLSearchParams();
+          if (data.get("font") !== "plex") query.set("font", data.get("font"));
+          if (data.get("size") !== "21") query.set("size", data.get("size"));
+          for (const key of ["paper", "ink", "accent"]) {
+            query.set(key, data.get(key).slice(1));
+          }
+          if (data.get("stagger")) query.set("stagger", "1");
+          const src = "index.html" + (query.size ? "?" + query.toString() : "");
+          frame.src = src;
+          urlBox.textContent = src;
+        }
+
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+          apply();
+        });
+        apply();
+        return pane;
+      }
+
+      const lab = document.getElementById("lab");
+      DEFAULTS.forEach((d, i) => lab.appendChild(buildPane(d, i)));
+    </script>
+  </body>
+</html>

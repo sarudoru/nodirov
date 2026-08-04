@@ -2,10 +2,11 @@
 // a discrete tick — no pixels, no tweens. Motion is a cell that stops being
 // one character and a neighbor that starts.
 
-const ACCENT = "#c8401f";
-const INK = "#161616";
-const INK_FAINT = "rgba(22, 22, 22, 0.40)";
-const STEAM = "rgba(22, 22, 22, 0.30)";
+const DEFAULT_ACCENT = "#c8401f";
+const INK = "#1a1a1a";
+const STEAM = "rgba(26, 26, 26, 0.30)";
+const GARDEN_INK = "rgba(26, 26, 26, 0.5)";
+const GARDEN_CHARS = ["·", ":", "+"];
 
 const TRAIN_ART = [
   "       ___                              ",
@@ -19,15 +20,16 @@ const TRAIN_W = TRAIN_ART[0].length;
 const TRAIN_H = TRAIN_ART.length + 1;
 const STACK_COL = 8;
 
-export function createEntities(field) {
+export function createEntities(field, accent = DEFAULT_ACCENT) {
   let timer = 0;
   let butterfly = null;
   let train = null;
   let gravity = null;
+  let garden = null;
   let cursor = { col: -1, row: -1, at: 0, fast: 0 };
 
   function active() {
-    return butterfly || train || gravity;
+    return butterfly || train || gravity || garden;
   }
 
   function ensureLoop() {
@@ -48,6 +50,7 @@ export function createEntities(field) {
     if (butterfly) tickButterfly(now);
     if (train) tickTrain(now);
     if (gravity) tickGravity(now);
+    if (garden) tickGarden(now);
     render();
     stopLoopIfIdle();
   }
@@ -76,16 +79,33 @@ export function createEntities(field) {
     }
     if (gravity) {
       for (const p of gravity.particles) {
-        cells.push({ col: p.col, row: Math.round(p.y), ch: p.ch, ink: p.faint ? INK_FAINT : INK });
+        cells.push({ col: p.col, row: Math.round(p.y), ch: p.ch, ink: p.faint ? "rgba(26, 26, 26, 0.40)" : INK });
+      }
+    }
+    if (garden) {
+      for (let r = 0; r < garden.h; r += 1) {
+        for (let c = 0; c < garden.w; c += 1) {
+          const i = r * garden.w + c;
+          if (!garden.cells[i]) continue;
+          const base = garden.age[i] < 3 ? 0 : garden.age[i] < 8 ? 1 : 2;
+          const stage = base - garden.fade;
+          if (stage < 0) continue;
+          cells.push({
+            col: garden.left + c,
+            row: garden.top + r,
+            ch: GARDEN_CHARS[stage],
+            ink: GARDEN_INK,
+          });
+        }
       }
     }
     if (butterfly) {
       const col = Math.round(butterfly.x);
       const row = Math.round(butterfly.y);
       const open = butterfly.flap % 2 === 0 && butterfly.mode !== "rest";
-      cells.push({ col: col - 1, row, ch: open ? "\\" : ")", ink: ACCENT });
-      cells.push({ col, row, ch: "·", ink: ACCENT });
-      cells.push({ col: col + 1, row, ch: open ? "/" : "(", ink: ACCENT });
+      cells.push({ col: col - 1, row, ch: open ? "\\" : ")", ink: accent });
+      cells.push({ col, row, ch: "·", ink: accent });
+      cells.push({ col: col + 1, row, ch: open ? "/" : "(", ink: accent });
     }
     field.setOverlayCells(cells);
   }
@@ -278,6 +298,71 @@ export function createEntities(field) {
     field.setMasks(null, false);
   }
 
+  // ---- the garden: Conway's Life, aged along the ink ramp ----
+
+  function seedGarden() {
+    if (garden) return;
+    const cols = field.cols();
+    const rows = field.rows();
+    const w = Math.min(46, cols - 6);
+    const h = Math.min(20, rows - 8);
+    if (w < 12 || h < 8) return;
+    const cells = new Uint8Array(w * h);
+    const age = new Uint16Array(w * h);
+    for (let i = 0; i < w * h; i += 1) {
+      if (Math.random() < 0.22) {
+        cells[i] = 1;
+        age[i] = 1;
+      }
+    }
+    // an r-pentomino heart keeps the soup lively for the full run
+    const cx = w >> 1;
+    const cy = h >> 1;
+    for (const [dr, dc] of [[0, 1], [0, 2], [1, 0], [1, 1], [2, 1]]) {
+      cells[(cy + dr) * w + cx + dc] = 1;
+    }
+    garden = {
+      left: Math.floor((cols - w) / 2),
+      top: Math.floor((rows - h) / 2),
+      w,
+      h,
+      cells,
+      age,
+      lastTick: 0,
+      diesAt: performance.now() + 10000,
+      fade: 0,
+    };
+    ensureLoop();
+  }
+
+  function tickGarden(now) {
+    const g = garden;
+    if (now - g.lastTick < 125) return;
+    g.lastTick = now;
+    if (now >= g.diesAt) {
+      g.fade += 1;
+      if (g.fade > 3) garden = null;
+      return;
+    }
+    const { w, h, cells, age } = g;
+    const next = new Uint8Array(w * h);
+    for (let r = 0; r < h; r += 1) {
+      for (let c = 0; c < w; c += 1) {
+        let n = 0;
+        for (let dr = -1; dr <= 1; dr += 1) {
+          for (let dc = -1; dc <= 1; dc += 1) {
+            if (dr === 0 && dc === 0) continue;
+            n += cells[((r + dr + h) % h) * w + (c + dc + w) % w];
+          }
+        }
+        const i = r * w + c;
+        next[i] = cells[i] ? (n === 2 || n === 3 ? 1 : 0) : (n === 3 ? 1 : 0);
+        age[i] = next[i] ? (cells[i] ? Math.min(age[i] + 1, 999) : 1) : 0;
+      }
+    }
+    g.cells = next;
+  }
+
   return {
     toggleButterfly() {
       if (butterfly) {
@@ -292,8 +377,13 @@ export function createEntities(field) {
     hasButterfly: () => !!butterfly,
     runTrain,
     dropRows,
+    seedGarden,
     onCameraMove() {
       abortGravity();
+      if (garden) {
+        garden = null;
+        render();
+      }
     },
     pointer(col, row, fast) {
       cursor.col = col;

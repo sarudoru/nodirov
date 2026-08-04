@@ -11,8 +11,31 @@ const article = document.getElementById("article");
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+// The /lab page drives taste tests through URL params; absent params leave
+// the production defaults untouched.
+const params = new URLSearchParams(window.location.search);
+const FONTS = {
+  plex: { family: "IBM Plex Mono", css: "IBM+Plex+Mono:wght@400" },
+  fragment: { family: "Fragment Mono", css: "Fragment+Mono" },
+  space: { family: "Space Mono", css: "Space+Mono" },
+  kode: { family: "Kode Mono", css: "Kode+Mono:wght@400" },
+  courier: { family: "Courier Prime", css: "Courier+Prime" },
+};
+function hexParam(name) {
+  const v = params.get(name);
+  return v && /^[0-9a-fA-F]{6}$/.test(v) ? "#" + v : null;
+}
+const config = {
+  font: FONTS[params.get("font")] ?? FONTS.plex,
+  size: parseInt(params.get("size") ?? "", 10) || null,
+  paper: hexParam("paper"),
+  ink: hexParam("ink"),
+  accent: hexParam("accent"),
+  stagger: params.get("stagger") === "1",
+};
+
 const field = createField(canvas);
-const entities = createEntities(field);
+const entities = createEntities(field, config.accent ?? undefined);
 
 let blocks = null;
 let layoutResult = null;
@@ -23,9 +46,12 @@ let lastPointer = { x: 0, y: 0, t: 0 };
 let booted = false;
 
 function computeMetrics() {
-  const fontSize = window.innerWidth < 720 ? 15 : 21;
+  const desktop = config.size ?? 21;
+  const fontSize = window.innerWidth < 720
+    ? (config.size ? Math.max(12, Math.round(config.size * 0.72)) : 15)
+    : desktop;
   const probe = document.createElement("canvas").getContext("2d");
-  const font = `${fontSize}px "IBM Plex Mono", Menlo, monospace`;
+  const font = `${fontSize}px "${config.font.family}", Menlo, monospace`;
   probe.font = font;
   const adv = probe.measureText("M").width;
   return {
@@ -104,6 +130,8 @@ function runExperiment(name) {
     entities.runTrain();
   } else if (name === "butterfly") {
     entities.toggleButterfly();
+  } else if (name === "life") {
+    entities.seedGarden();
   } else if (name === "gravity") {
     const sections = layoutResult.sections;
     const index = sections.findIndex((s) => s.id === "experiments");
@@ -243,15 +271,30 @@ function onClick(event) {
 }
 
 async function boot() {
+  if (config.font.family !== "IBM Plex Mono") {
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = `https://fonts.googleapis.com/css2?family=${config.font.css}&display=swap`;
+    document.head.appendChild(link);
+  }
   try {
     await Promise.race([
       Promise.all([
-        document.fonts.load('16px "IBM Plex Mono"'),
+        document.fonts.load(`16px "${config.font.family}"`),
         document.fonts.ready,
       ]),
       new Promise((resolve) => setTimeout(resolve, 2500)),
     ]);
   } catch { /* fall back to whatever monospace we have */ }
+
+  const rootStyle = document.documentElement.style;
+  if (config.paper) rootStyle.setProperty("--paper", config.paper);
+  if (config.ink) rootStyle.setProperty("--ink", config.ink);
+  if (config.accent) rootStyle.setProperty("--accent", config.accent);
+  if (config.paper || config.ink) {
+    field.setTheme({ paper: config.paper ?? undefined, ink: config.ink ?? undefined });
+  }
+  if (config.stagger) field.setOptions({ stagger: true });
 
   blocks = parseArticle(article);
   field.setReducedMotion(reducedMotion.matches);
@@ -284,6 +327,23 @@ async function boot() {
   window.addEventListener("keydown", onKey);
   window.addEventListener("pointermove", onPointerMove, { passive: true });
   scroller.addEventListener("click", onClick);
+
+  // Discrete mouse wheels jump a hundred pixels per notch, which teleports
+  // the pour. Route coarse deltas through the animator; trackpads (fine,
+  // frequent deltas) keep their native feel. Pinch-zoom stays untouched.
+  scroller.addEventListener("wheel", (event) => {
+    if (event.ctrlKey) return;
+    const coarse = event.deltaMode === 1 || Math.abs(event.deltaY) >= 80;
+    if (!coarse) return;
+    event.preventDefault();
+    const delta = event.deltaMode === 1 ? event.deltaY * metrics.cellH : event.deltaY;
+    const base = anim.target !== null ? anim.target : scroller.scrollTop;
+    animateScrollTo(base + delta, 220);
+  }, { passive: false });
+
+  document.documentElement.addEventListener("mouseleave", () => field.clearLantern());
+  window.addEventListener("blur", () => field.clearLantern());
+
   reducedMotion.addEventListener("change", () => {
     field.setReducedMotion(reducedMotion.matches);
   });

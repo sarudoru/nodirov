@@ -9,13 +9,21 @@
 
 import { AMBIENT, RAMP, WAVE, cousinsFor } from "./glyphs.js";
 
-const INK = "#161616";
+const DEFAULT_PAPER = "#fdfdfb";
+const DEFAULT_INK = "#1a1a1a";
 const ALPHA_TEXT = 1.0;
 const ALPHA_FAINT = 0.42;
-const ALPHA_AMBIENT = 0.055;
+const ALPHA_AMBIENT = 0.04;
 const ALPHA_UNDERLINE = 0.25;
 const ALPHA_UNDERLINE_HOT = 0.85;
 const ALPHA_CHROME_HOT = 0.9;
+
+// murmur life: a slow tide of opacity, a lantern around the cursor,
+// a whisper of vignette in the corners — all applied to ambient ink only
+const TIDE_AMPLITUDE = 0.35;
+const TIDE_PERIOD_MS = 26000;
+const LANTERN_RADIUS = 6.5;
+const LANTERN_GAIN = 0.75;
 
 const TRACE_DURATION = 180;
 const TRACE_STEP = 60;
@@ -75,9 +83,20 @@ export function createField(canvas) {
   let worldRows = 0;
   let reducedMotion = false;
   let lastScrollAt = 0;
+  let paper = DEFAULT_PAPER;
+  let ink = DEFAULT_INK;
+  let ratio = 1;
+  let snap = false; // round glyph positions to device pixels at DPR 1
+  let stagger = false; // per-column pour phase offset (lab flag)
+  let fastUntil = 0;
+  let lastRowFloat = 0;
+  let lanternCol = -1;
+  let lanternRow = -1;
+  let vigMap = new Float32Array(0);
+  let colPhase = new Float32Array(0);
 
   let worldData = new Map(); // row -> {chars, kinds, links}
-  let haloRows = [];
+  let clearRows = []; // row -> Float32Array: how far the murmur parts around content
   let masks = new Set(); // worldRow * 512 + col
 
   let ambient = new Uint16Array(0); // screen-fixed murmur
@@ -114,12 +133,32 @@ export function createField(canvas) {
   let frame = 0;
   let ambientTimer = 0;
   let glitchTimer = 0;
+  let tideTimer = 0;
 
   const worldKey = (row, col) => row * 512 + col;
 
-  function haloAt(worldRow, col) {
-    const halo = haloRows[worldRow];
-    return halo ? halo[col] : 0;
+  function clearAt(worldRow, col) {
+    const clear = clearRows[worldRow];
+    return clear ? clear[col] : 0;
+  }
+
+  // Ambient ink for one view cell: base, parted around content, carried by a
+  // slow tide, brightened near the cursor, falling away in the corners.
+  function ambientInk(row, col, worldRow, now) {
+    const cleared = clearAt(worldRow, col);
+    if (cleared >= 0.97) return 0;
+    let a = ALPHA_AMBIENT * (1 - cleared) * vigMap[row * cols + col];
+    if (!reducedMotion) {
+      a *= 1 + TIDE_AMPLITUDE *
+        Math.sin(now * (Math.PI * 2 / TIDE_PERIOD_MS) + row * 0.23 + col * 0.085);
+    }
+    if (lanternCol >= 0) {
+      const dx = (col - lanternCol) * (metrics.cellW / metrics.cellH);
+      const dy = row - lanternRow;
+      const f = Math.max(0, 1 - Math.hypot(dx, dy) / LANTERN_RADIUS);
+      a *= 1 + LANTERN_GAIN * f * f;
+    }
+    return Math.min(a, 0.1);
   }
 
   function committedAt(worldRow, col, out) {
@@ -189,24 +228,33 @@ export function createField(canvas) {
   function draw() {
     frame = 0;
     const now = performance.now();
-    context.fillStyle = "#ffffff";
+    context.fillStyle = paper;
     context.fillRect(0, 0, width, height);
     context.font = metrics.font;
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.fillStyle = INK;
+    context.fillStyle = ink;
 
-    const ef = frac * frac * (3 - 2 * frac);
-    const blending = ef > 0.004;
+    const fast = now < fastUntil;
+    const efBase = fast
+      ? (frac < 0.5 ? 0 : 1)
+      : frac * frac * (3 - 2 * frac);
+    const anyBlend = efBase > 0.004 && efBase < 0.996;
     let active = false;
 
     for (let row = 0; row < rows; row += 1) {
-      const y = row * metrics.cellH + metrics.cellH / 2;
+      let y = row * metrics.cellH + metrics.cellH / 2;
+      if (snap) y = Math.round(y);
       const worldA = camera + row;
 
       for (let col = 0; col < cols; col += 1) {
         const i = row * cols + col;
-        const x = xOffset + col * metrics.cellW + metrics.cellW / 2;
+        let x = xOffset + col * metrics.cellW + metrics.cellW / 2;
+        if (snap) x = Math.round(x);
+        const ef = stagger && anyBlend
+          ? Math.min(1, Math.max(0, efBase + colPhase[col]))
+          : efBase;
+        const blending = ef > 0.004 && ef < 0.996;
 
         const over = overlay.get(i);
         if (over) {
@@ -214,7 +262,7 @@ export function createField(canvas) {
             context.fillStyle = over.ink;
             context.globalAlpha = 1;
             context.fillText(over.ch, x, y);
-            context.fillStyle = INK;
+            context.fillStyle = ink;
           }
           continue;
         }
@@ -240,7 +288,7 @@ export function createField(canvas) {
           } else {
             active = true;
             const target = cellChar[i];
-            const ambientHere = ALPHA_AMBIENT * (1 + haloAt(worldA, col));
+            const ambientHere = ambientInk(row, col, worldA, now);
             const targetAlpha = target !== 0 ? KIND_ALPHA[cellKind[i]] : ambientHere;
             let token = target !== 0 ? target : ambient[i];
             let alpha = targetAlpha;
@@ -283,24 +331,26 @@ export function createField(canvas) {
         }
 
         if (coverage < 0.996 && ambient[i] !== 0) {
-          const a = ALPHA_AMBIENT * (1 + haloAt(worldA, col)) * (1 - coverage);
-          if (a > 0.012) {
+          const a = ambientInk(row, col, worldA, now) * (1 - coverage);
+          if (a > 0.01) {
             context.globalAlpha = a;
             context.fillText(palette[ambient[i]], x, y);
           }
         }
+        // biased crossfade: the leaving glyph yields faster than the arriving
+        // one rises, so mid-pour reads as ink arriving, not double exposure
         if (cellA.token !== 0) {
-          context.globalAlpha = inkAlpha(cellA) * (blending ? 1 - ef : 1);
+          context.globalAlpha = inkAlpha(cellA) * (blending ? Math.pow(1 - ef, 1.35) : 1);
           context.fillText(palette[cellA.token], x, y);
         }
         if (cellB.token !== 0) {
-          context.globalAlpha = inkAlpha(cellB) * ef;
+          context.globalAlpha = inkAlpha(cellB) * Math.pow(ef, 0.8);
           context.fillText(palette[cellB.token], x, y);
         }
       }
     }
 
-    drawChrome(ef);
+    drawChrome(efBase);
     drawHud();
     context.globalAlpha = 1;
 
@@ -329,7 +379,7 @@ export function createField(canvas) {
   }
 
   function drawChrome(ef) {
-    context.fillStyle = INK;
+    context.fillStyle = ink;
     for (let row = 0; row < rows; row += 1) {
       const y = row * metrics.cellH + metrics.cellH - 3;
       chromeRowFor(camera + row, y, 1 - ef);
@@ -420,7 +470,8 @@ export function createField(canvas) {
     resize(w, h) {
       width = w;
       height = h;
-      const ratio = Math.min(window.devicePixelRatio || 1, 3);
+      ratio = Math.min(window.devicePixelRatio || 1, 3);
+      snap = ratio === 1;
       canvas.width = Math.ceil(w * ratio);
       canvas.height = Math.ceil(h * ratio);
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
@@ -430,6 +481,25 @@ export function createField(canvas) {
       const n = cols * rows;
       ambient = new Uint16Array(n);
       for (let i = 0; i < n; i += 1) ambient[i] = ambientTokens[rnd() % ambientTokens.length];
+
+      // corner vignette for the murmur only — content never dims
+      vigMap = new Float32Array(n);
+      for (let r = 0; r < rows; r += 1) {
+        for (let c = 0; c < cols; c += 1) {
+          const dx = ((c + 0.5) / cols) * 2 - 1;
+          const dy = ((r + 0.5) / rows) * 2 - 1;
+          const excess = Math.max(0, Math.hypot(dx * 0.72, dy) - 0.78) / 0.5;
+          vigMap[r * cols + c] = 1 - 0.4 * Math.min(1, excess * excess);
+        }
+      }
+
+      // fixed per-column phase offsets for the optional fabric stagger
+      colPhase = new Float32Array(cols);
+      for (let c = 0; c < cols; c += 1) {
+        const h2 = Math.imul(c + 7, 2654435761) >>> 0;
+        colPhase[c] = ((h2 % 1000) / 1000 - 0.5) * 0.16;
+      }
+
       cellChar = new Uint16Array(0);
       composeView();
       scheduleDraw();
@@ -437,7 +507,7 @@ export function createField(canvas) {
 
     setWorld(lines, totalRows) {
       worldData = new Map();
-      haloRows = new Array(totalRows);
+      clearRows = new Array(totalRows);
       glitches.clear();
       worldRows = totalRows;
 
@@ -460,18 +530,18 @@ export function createField(canvas) {
           data.chars[col] = tokenOf(ch);
           data.kinds[col] = line.kind;
 
-          if (line.kind === K_TEXT || line.kind === K_LINK) {
-            for (let dr = -2; dr <= 2; dr += 1) {
-              const hr = line.row + dr;
-              if (hr < 0 || hr >= totalRows) continue;
-              let halo = haloRows[hr];
-              if (!halo) halo = haloRows[hr] = new Float32Array(cols);
-              for (let dc = -3; dc <= 3; dc += 1) {
-                const hc = col + dc;
-                if (hc < 0 || hc >= cols) continue;
-                const w = 1 - (Math.abs(dr) / 3 + Math.abs(dc) / 4) / 2;
-                if (w > 0) halo[hc] = Math.min(0.9, halo[hc] + w * 0.2);
-              }
+          // the murmur parts around content: every committed glyph clears
+          // a soft moat in the ambient field
+          for (let dr = -2; dr <= 2; dr += 1) {
+            const hr = line.row + dr;
+            if (hr < 0 || hr >= totalRows) continue;
+            let clear = clearRows[hr];
+            if (!clear) clear = clearRows[hr] = new Float32Array(cols);
+            for (let dc = -3; dc <= 3; dc += 1) {
+              const hc = col + dc;
+              if (hc < 0 || hc >= cols) continue;
+              const w = 1 - (Math.abs(dr) / 3 + Math.abs(dc) / 4) / 2;
+              if (w > clear[hc]) clear[hc] = w;
             }
           }
         }
@@ -482,6 +552,9 @@ export function createField(canvas) {
 
     setScroll(scrollTopPx) {
       const rowFloat = Math.max(0, scrollTopPx / metrics.cellH);
+      // during fast flicks, skip blending: quantized rows read crisper than smear
+      if (Math.abs(rowFloat - lastRowFloat) > 2) fastUntil = performance.now() + 90;
+      lastRowFloat = rowFloat;
       const nextCamera = Math.min(Math.floor(rowFloat), Math.max(0, worldRows - 1));
       frac = Math.min(0.999, Math.max(0, rowFloat - nextCamera));
       lastScrollAt = performance.now();
@@ -509,6 +582,8 @@ export function createField(canvas) {
       const col = Math.floor((x - xOffset) / metrics.cellW);
       const row = Math.floor(y / metrics.cellH);
       if (row < 0 || row >= rows || col < 0 || col >= cols) return;
+      lanternCol = col;
+      lanternRow = row;
       const center = row * cols + col;
       if (center === lastPointerCell) return;
       lastPointerCell = center;
@@ -685,6 +760,23 @@ export function createField(canvas) {
       reducedMotion = v;
       if (v) stopShimmer();
     },
+
+    setTheme(theme) {
+      if (theme.paper) paper = theme.paper;
+      if (theme.ink) ink = theme.ink;
+      scheduleDraw();
+    },
+
+    setOptions(options) {
+      if (typeof options.stagger === "boolean") stagger = options.stagger;
+      scheduleDraw();
+    },
+
+    clearLantern() {
+      lanternCol = -1;
+      lanternRow = -1;
+      scheduleDraw();
+    },
     requestDraw: scheduleDraw,
     cols: () => cols,
     rows: () => rows,
@@ -695,8 +787,13 @@ export function createField(canvas) {
     start() {
       window.clearInterval(ambientTimer);
       window.clearInterval(glitchTimer);
+      window.clearInterval(tideTimer);
       ambientTimer = window.setInterval(mutateAmbient, 420);
       glitchTimer = window.setInterval(flickerGlitch, 1900);
+      // the tide needs no rAF loop: a gentle repaint cadence is invisible
+      tideTimer = window.setInterval(() => {
+        if (document.visibilityState === "visible" && !reducedMotion) scheduleDraw();
+      }, 180);
     },
   };
 }

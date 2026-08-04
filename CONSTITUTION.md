@@ -27,9 +27,11 @@ transition plays on its own schedule.
 ## III. Cells have four states
 
 1. **Ambient** — uncommitted murmur, anchored to the screen. Lowercase and
-   digits at ~5% ink, denser in a halo around whatever content is passing:
-   the field thickens toward meaning. It mutates one cell at a time, rarely,
-   and otherwise holds still.
+   digits at ~4% ink, **parting in a clearing** around whatever content is
+   passing: the field makes room for meaning, and reading happens inside a
+   quiet moat. Its only life: a slow tide of opacity crossing the surface, a
+   lantern of brightness following the cursor, corners falling away in a
+   whisper of vignette, and one cell mutating at a time, rarely.
 2. **Transitional** — matter forming or dissolving climbs an ink-density
    ramp (`·` `:` `+` → glyph). Never random scramble: transitions read as
    condensation, not noise. Ripples are water (`~` `≈`); typographic
@@ -70,8 +72,10 @@ one living exception, so it reads as *alive*.
 IBM Plex Mono, regular, one size per breakpoint. Hierarchy comes from
 composition — banner letters built from their own character, wide-tracked
 headings, rules made of `─`, buttons boxed in `┌─┐│└┘` — never from weight,
-size, or color changes. Ink is near-black on white. The accent appears only
-on the butterfly and the selection highlight.
+size, or color changes. Ink is near-black (`#1a1a1a`) on warm white
+(`#fdfdfb`). The accent appears only on the butterfly and the selection
+highlight. Candidate palettes and typefaces are auditioned in `/lab` on the
+live field — taste decisions are made with eyes, never from specimen cards.
 
 ## VIII. Interaction rewards, never obstructs
 
