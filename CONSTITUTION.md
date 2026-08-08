@@ -27,11 +27,14 @@ transition plays on its own schedule.
 ## III. Cells have four states
 
 1. **Ambient** — uncommitted murmur, anchored to the screen. Lowercase and
-   digits at ~4% ink, running uniformly everywhere: content sits *in* the
-   murmur, never on a cleared panel above it. Its life: glyphs dissolving
-   one into another, slowly and at random; a slow tide of opacity crossing
-   the surface; a lantern of brightness following the cursor; corners
-   falling away in a whisper of vignette.
+   digits at ~4.5% ink, running uniformly everywhere: content sits *in* the
+   murmur, never on a cleared panel above it. **It is never still.** Every
+   cell owns a slow opacity oscillation with its own period (4–11s) and
+   phase, so the entire surface breathes at once while no single cell draws
+   the eye; on top of that, cells cross-dissolve into new glyphs at ~22 per
+   second. A tide passes across the grid, a lantern follows the cursor, the
+   corners fall away in a whisper of vignette. A substrate that holds still
+   is a photograph, and a photograph is a failure.
 2. **Transitional** — matter forming or dissolving climbs an ink-density
    ramp (`·` `:` `+` → glyph); typographic shimmer uses a glyph's own
    cousins, unhurried. A click splashes outward through random glyphs —
@@ -62,12 +65,12 @@ of it without loss of content.
 
 ## VI. Inhabitants obey the physics
 
-The field has one inhabitant: the butterfly — a formation of cells moving
-in discrete steps. It arrives on its own, flies where it pleases, lingers,
-repairs broken glyphs, and is wary of fast cursors. It may occlude or
-disturb the field, but it is made of the same substance and can never do
-anything a cell cannot do. It is the only colored thing in the world — one
-accent, one living exception, so it reads as *alive*.
+The field has no mascots, no set-pieces, and no buttons that perform
+tricks. Whatever lives here must be a formation of cells obeying the same
+physics, and must earn its place by making the field more itself — not by
+being a demonstration. A personal site is not a toy chest: anything that
+reads as "look what this can do" is cut. (A cursor-chasing butterfly lived
+here briefly; it was removed for exactly this reason.)
 
 ## VII. One typeface, one ink
 
@@ -75,9 +78,11 @@ IBM Plex Mono, regular, one size per breakpoint. Hierarchy comes from
 composition — banner letters built from their own character, wide-tracked
 headings, rules made of `─`, buttons boxed in `┌─┐│└┘` — never from weight,
 size, or color changes. Ink is near-black (`#1a1a1a`) on warm white
-(`#fdfdfb`). The accent appears only on the butterfly and the selection
-highlight. Candidate palettes and typefaces are auditioned in `/lab` on the
-live field — taste decisions are made with eyes, never from specimen cards.
+(`#fdfdfb`); the accent appears only in the selection highlight. Every
+visual constant in this document is a *tuned default*, not a magic number:
+all of them live in `src/params.js` and are auditioned in `lab.html` on the
+live field. Taste decisions are made with eyes and sliders, never from
+specimen cards or argument.
 
 ## VIII. Interaction rewards, never obstructs
 

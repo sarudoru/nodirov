@@ -3,9 +3,10 @@
   "configurations": [
     {
       "name": "glyph",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "4173", "--bind", "127.0.0.1"],
-      "port": 4173
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "python3 -m http.server \"${PORT:-4173}\" --bind 127.0.0.1"],
+      "port": 4173,
+      "autoPort": true
     }
   ]
 }

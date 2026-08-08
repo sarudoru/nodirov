@@ -3,7 +3,7 @@
 
 import { createField } from "./field.js";
 import { parseArticle, typeset } from "./typesetter.js";
-import { createEntities } from "./entities.js";
+import { fromQuery, toQuery, defaults, needsRelayout, FONTS, SCHEMA } from "./params.js";
 
 const canvas = document.getElementById("field");
 const scroller = document.getElementById("scroller");
@@ -11,31 +11,8 @@ const article = document.getElementById("article");
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-// The /lab page drives taste tests through URL params; absent params leave
-// the production defaults untouched.
-const params = new URLSearchParams(window.location.search);
-const FONTS = {
-  plex: { family: "IBM Plex Mono", css: "IBM+Plex+Mono:wght@400" },
-  fragment: { family: "Fragment Mono", css: "Fragment+Mono" },
-  space: { family: "Space Mono", css: "Space+Mono" },
-  kode: { family: "Kode Mono", css: "Kode+Mono:wght@400" },
-  courier: { family: "Courier Prime", css: "Courier+Prime" },
-};
-function hexParam(name) {
-  const v = params.get(name);
-  return v && /^[0-9a-fA-F]{6}$/.test(v) ? "#" + v : null;
-}
-const config = {
-  font: FONTS[params.get("font")] ?? FONTS.plex,
-  size: parseInt(params.get("size") ?? "", 10) || null,
-  paper: hexParam("paper"),
-  ink: hexParam("ink"),
-  accent: hexParam("accent"),
-  stagger: params.get("stagger") === "1",
-};
-
-const field = createField(canvas);
-const entities = createEntities(field, config.accent ?? undefined);
+let P = fromQuery();
+const field = createField(canvas, P);
 
 let blocks = null;
 let layoutResult = null;
@@ -43,23 +20,19 @@ let metrics = null;
 let resizeTimer = 0;
 let scrollEndTimer = 0;
 let lastPointer = { x: 0, y: 0, t: 0 };
-let booted = false;
 
 function computeMetrics() {
-  const desktop = config.size ?? 21;
-  const fontSize = window.innerWidth < 720
-    ? (config.size ? Math.max(12, Math.round(config.size * 0.72)) : 15)
-    : desktop;
+  const fontSize = window.innerWidth < 720 ? Math.max(12, Math.round(P.size * 0.72)) : P.size;
   const probe = document.createElement("canvas").getContext("2d");
-  const font = `${fontSize}px "${config.font.family}", Menlo, monospace`;
+  const font = `${fontSize}px "${FONTS[P.font].family}", Menlo, monospace`;
   probe.font = font;
   const adv = probe.measureText("M").width;
   return {
     fontSize,
     adv,
     font,
-    cellW: Math.round(adv + fontSize * 0.18),
-    cellH: Math.round(fontSize * 1.24),
+    cellW: Math.round(adv + fontSize * P.tracking),
+    cellH: Math.round(fontSize * P.leading),
   };
 }
 
@@ -75,6 +48,7 @@ function layout() {
     adv: metrics.adv,
     fontSize: metrics.fontSize,
     xOffset: field.xOffset(),
+    measure: P.measure,
   });
   field.setWorld(layoutResult.lines, layoutResult.worldRows);
   field.registerGlitches(layoutResult.glitches);
@@ -113,43 +87,22 @@ function bindLinks(links) {
     a.addEventListener("mouseleave", off);
     a.addEventListener("focus", on);
     a.addEventListener("blur", off);
-
-    const experiment = a.dataset.experiment;
-    if (experiment) {
-      a.addEventListener("click", (event) => {
-        event.preventDefault();
-        runExperiment(experiment);
-      });
-    }
   });
 }
 
-function runExperiment(name) {
-  if (reducedMotion.matches) return;
-  if (name === "butterfly") entities.toggleButterfly();
-}
-
-// Native smooth scrolling is unreliable across environments, and the settle
-// deserves a precise feel anyway: a short ease-out drives scrollTop directly.
 const anim = { raf: 0, target: null, lastWrite: -1 };
 
-// Keep the field in lockstep with the scroller. Called from the scroll event
-// AND directly by the animator — some environments do not emit scroll events
-// for programmatic scrollTop writes.
 function syncFromScroll() {
   const before = field.camera();
   field.setScroll(scroller.scrollTop);
-  if (field.camera() !== before) {
-    entities.onCameraMove();
-    updateHud();
-  }
+  if (field.camera() !== before) updateHud();
 }
 
-function animateScrollTo(target, duration = 180) {
+function animateScrollTo(target, duration) {
   target = Math.max(0, Math.min(target, scroller.scrollHeight - scroller.clientHeight));
   window.cancelAnimationFrame(anim.raf);
   anim.target = target;
-  if (reducedMotion.matches || duration === 0) {
+  if (reducedMotion.matches || !duration) {
     anim.lastWrite = target;
     scroller.scrollTop = target;
     anim.target = null;
@@ -165,8 +118,7 @@ function animateScrollTo(target, duration = 180) {
   const t0 = performance.now();
   const step = (now) => {
     const p = Math.min(1, (now - t0) / duration);
-    const eased = 1 - Math.pow(1 - p, 3);
-    anim.lastWrite = start + dist * eased;
+    anim.lastWrite = start + dist * (1 - Math.pow(1 - p, 3));
     scroller.scrollTop = anim.lastWrite;
     syncFromScroll();
     if (p < 1) anim.raf = window.requestAnimationFrame(step);
@@ -176,7 +128,6 @@ function animateScrollTo(target, duration = 180) {
 }
 
 function onScroll() {
-  // a user gesture mid-animation wins immediately
   if (anim.target !== null && Math.abs(scroller.scrollTop - anim.lastWrite) > 2) {
     window.cancelAnimationFrame(anim.raf);
     anim.target = null;
@@ -187,15 +138,14 @@ function onScroll() {
 }
 
 function onScrollSettled() {
-  // settle the pour onto a whole row
   if (anim.target === null) {
     const target = Math.round(scroller.scrollTop / metrics.cellH) * metrics.cellH;
-    if (Math.abs(scroller.scrollTop - target) > 1) animateScrollTo(target, 150);
+    if (Math.abs(scroller.scrollTop - target) > 1) animateScrollTo(target, P.settleMs);
   }
   const section = currentSection();
-  const hash = section.id ? `#${section.id}` : " ";
-  if (window.location.hash !== hash) {
-    history.replaceState(null, "", section.id ? `#${section.id}` : window.location.pathname);
+  const hash = section.id ? `#${section.id}` : "";
+  if (hash && window.location.hash !== hash) {
+    history.replaceState(null, "", hash);
   }
   try {
     sessionStorage.setItem("glyph-camera", String(field.camera()));
@@ -205,18 +155,15 @@ function onScrollSettled() {
 function onResize() {
   window.clearTimeout(resizeTimer);
   resizeTimer = window.setTimeout(() => {
-    const oldSections = layoutResult ? layoutResult.sections : [];
     const camera = field.camera();
     let anchor = null;
-    for (const section of oldSections) {
+    for (const section of layoutResult ? layoutResult.sections : []) {
       if (section.row <= camera) anchor = { id: section.id, offset: camera - section.row };
     }
     layout();
     if (anchor) {
       const section = layoutResult.sections.find((s) => s.id === anchor.id);
-      if (section) {
-        scroller.scrollTop = (section.row + anchor.offset) * metrics.cellH;
-      }
+      if (section) scroller.scrollTop = (section.row + anchor.offset) * metrics.cellH;
     }
     field.setScroll(scroller.scrollTop);
   }, 140);
@@ -243,13 +190,9 @@ function onPointerMove(event) {
   if (event.pointerType === "touch") return;
   const now = performance.now();
   const dt = now - lastPointer.t;
-  const speed = dt > 0 ? Math.hypot(event.clientX - lastPointer.x, event.clientY - lastPointer.y) / dt : 0;
   lastPointer = { x: event.clientX, y: event.clientY, t: now };
   field.pulse(event.clientX, event.clientY);
   field.shimmerWordAt(event.clientX, event.clientY);
-  const col = Math.floor((event.clientX - field.xOffset()) / metrics.cellW);
-  const row = Math.floor(event.clientY / metrics.cellH);
-  entities.pointer(col, row, speed > 1.4);
 }
 
 function onClick(event) {
@@ -257,37 +200,38 @@ function onClick(event) {
   field.rippleAt(event.clientX, event.clientY);
 }
 
-async function boot() {
-  if (config.font.family !== "IBM Plex Mono") {
+async function loadFont() {
+  const font = FONTS[P.font];
+  if (font.family !== "IBM Plex Mono" && !document.querySelector(`link[data-font="${P.font}"]`)) {
     const link = document.createElement("link");
     link.rel = "stylesheet";
-    link.href = `https://fonts.googleapis.com/css2?family=${config.font.css}&display=swap`;
+    link.dataset.font = P.font;
+    link.href = `https://fonts.googleapis.com/css2?family=${font.css}&display=swap`;
     document.head.appendChild(link);
   }
   try {
     await Promise.race([
-      Promise.all([
-        document.fonts.load(`16px "${config.font.family}"`),
-        document.fonts.ready,
-      ]),
+      Promise.all([document.fonts.load(`16px "${font.family}"`), document.fonts.ready]),
       new Promise((resolve) => setTimeout(resolve, 2500)),
     ]);
   } catch { /* fall back to whatever monospace we have */ }
+}
 
-  const rootStyle = document.documentElement.style;
-  if (config.paper) rootStyle.setProperty("--paper", config.paper);
-  if (config.ink) rootStyle.setProperty("--ink", config.ink);
-  if (config.accent) rootStyle.setProperty("--accent", config.accent);
-  if (config.paper || config.ink) {
-    field.setTheme({ paper: config.paper ?? undefined, ink: config.ink ?? undefined });
-  }
-  if (config.stagger) field.setOptions({ stagger: true });
+function applyCssVars() {
+  const style = document.documentElement.style;
+  style.setProperty("--paper", P.paper);
+  style.setProperty("--ink", P.ink);
+  style.setProperty("--accent", P.accent);
+}
+
+async function boot() {
+  await loadFont();
+  applyCssVars();
 
   blocks = parseArticle(article);
   field.setReducedMotion(reducedMotion.matches);
   layout();
 
-  // restore position: hash first, then session
   let startRow = 0;
   const hash = window.location.hash.slice(1);
   if (hash) {
@@ -306,15 +250,7 @@ async function boot() {
     field.crystallize();
   }
 
-  field.start();
-  booted = true;
-
-  // the butterfly arrives on its own, a little after the reader does
-  if (!reducedMotion.matches) {
-    window.setTimeout(() => {
-      if (!entities.hasButterfly()) entities.toggleButterfly();
-    }, 7000);
-  }
+  if (!reducedMotion.matches) field.start();
 
   scroller.addEventListener("scroll", onScroll, { passive: true });
   window.addEventListener("resize", onResize);
@@ -322,25 +258,56 @@ async function boot() {
   window.addEventListener("pointermove", onPointerMove, { passive: true });
   scroller.addEventListener("click", onClick);
 
-  // Discrete mouse wheels jump a hundred pixels per notch, which teleports
-  // the pour. Route coarse deltas through the animator; trackpads (fine,
-  // frequent deltas) keep their native feel. Pinch-zoom stays untouched.
+  // Discrete wheels jump ~100px per notch, which teleports the pour. Route
+  // coarse deltas through the animator; trackpads keep their native feel.
   scroller.addEventListener("wheel", (event) => {
-    if (event.ctrlKey) return;
+    if (event.ctrlKey || !P.wheelMs) return;
     const coarse = event.deltaMode === 1 || Math.abs(event.deltaY) >= 80;
     if (!coarse) return;
     event.preventDefault();
     const delta = event.deltaMode === 1 ? event.deltaY * metrics.cellH : event.deltaY;
     const base = anim.target !== null ? anim.target : scroller.scrollTop;
-    animateScrollTo(base + delta, 220);
+    animateScrollTo(base + delta, P.wheelMs);
   }, { passive: false });
 
   document.documentElement.addEventListener("mouseleave", () => field.clearLantern());
   window.addEventListener("blur", () => field.clearLantern());
-
-  reducedMotion.addEventListener("change", () => {
-    field.setReducedMotion(reducedMotion.matches);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && !reducedMotion.matches) field.start();
+    else field.stop();
   });
+
+  reducedMotion.addEventListener("change", () => field.setReducedMotion(reducedMotion.matches));
+
+  // The workbench (lab.html) drives this page live, same-origin.
+  window.__glyph = {
+    schema: SCHEMA,
+    defaults,
+    get: () => ({ ...P }),
+    query: () => toQuery(P),
+    renderAt: (now, dt) => field.renderAt(now, dt),
+    set(patch) {
+      const changed = Object.keys(patch);
+      P = { ...P, ...patch };
+      applyCssVars();
+      if (needsRelayout(patch)) {
+        if (patch.font) {
+          loadFont().then(() => {
+            const top = scroller.scrollTop;
+            layout();
+            scroller.scrollTop = top;
+            field.applyParams(P, changed);
+          });
+          return;
+        }
+        const top = scroller.scrollTop;
+        layout();
+        scroller.scrollTop = top;
+      }
+      field.applyParams(P, changed);
+    },
+  };
+  window.dispatchEvent(new CustomEvent("glyph-ready"));
 }
 
 boot();

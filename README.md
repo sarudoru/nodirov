@@ -27,9 +27,8 @@ src/field.js          the renderer: cell buffers, ambient, traces, draw
 src/typesetter.js     semantic DOM -> {field lines, positioned DOM spans}
 src/banner.js         5-row hero letters, each built from its own character
 src/glyphs.js         ambient alphabet, ink ramp, cousin families
-src/entities.js       the butterfly — the field's one inhabitant
-morph.html/.css       typeface studies (linked from the colophon)
-lab.html              side-by-side taste tests on the live field (dev tool)
+src/params.js         every tunable: schema, defaults, URL codec
+lab.html              the workbench — live control of all of it (dev tool)
 ```
 
 ### The trick that makes it a website
@@ -47,23 +46,35 @@ The fractional scroll offset is the transition: each cell draws the glyph
 of its world row and the glyph of the next row in a biased crossfade (the
 leaving glyph yields faster than the arriving one rises), so ink visibly
 pours row to row under the reader's finger — reversible, tied to the
-gesture, never on a timer. The ambient murmur stays anchored to the screen,
-whisper-quiet at ~4% ink and running uniformly under everything: its glyphs
-dissolve one into another slowly and at random, it rides a 26-second
-opacity tide, brightens in a lantern around the cursor, and falls away
-slightly in the corners. Coarse mouse-wheel notches are routed through a
+gesture, never on a timer. Coarse mouse-wheel notches are routed through a
 short ease so they pour instead of teleporting; fast flicks skip blending
-entirely and stay crisp. Time-based animation exists only for
-transformations (crystallizing, condensation along the `· : +` ramp,
-random-glyph click splashes, unhurried cousin shimmer), never for
-navigation.
+entirely and stay crisp.
 
-### The lab
+### The trick that keeps the substrate from looking like a JPEG
 
-`lab.html` renders two live copies of the field side by side, driven by URL
-params (`?font=fragment&size=19&paper=fdfdfb&ink=1a1a1a&accent=c8401f&stagger=1`).
-Typeface, size, palette, and the experimental per-column "fabric stagger"
-are auditioned on real scrolling text, not specimen cards.
+A background that swaps a few random cells per second reads as *static*:
+with ~2,500 cells on screen, even generous churn leaves 99% of the field
+frozen at any instant, and at 4% ink a glyph swap is nearly invisible
+anyway. So identity churn is not the mechanism of life here — **opacity
+is**. Every cell carries its own sine oscillation with a randomized period
+(4–11s) and phase, so all 2,500 cells are always in motion while each moves
+too slowly to notice; glyph cross-dissolves (~22/s, 1.5s smoothstep) ride on
+top for texture. A tide sweeps the grid on a 26s cycle, the cursor carries a
+lantern, corners fall away. Measured: ~21% total-ink swing across a tide
+period, ~500 pixels changing per second. The loop runs at a capped 30fps and
+suspends entirely when the tab is hidden or `prefers-reduced-motion` is set.
+
+### The workbench
+
+`lab.html` is the tuning surface. Every constant in the renderer is declared
+once in `src/params.js`, and the workbench generates its controls from that
+schema — sliders apply live to a real embedded field: substrate opacity and
+density, twinkle depth and periods, churn, crossfade duration and shape,
+tide, lantern, vignette, pour easing, hover and splash behavior, typeface,
+measure, and palette. Hold **compare** to A/B against a snapshot, save named
+presets, and copy a link that reproduces the exact tuning
+(`index.html?alpha=0.06&churn=40&…`). Adding a knob to the schema makes it
+appear in the UI, the URL, and the defaults at once.
 
 ### Content
 
