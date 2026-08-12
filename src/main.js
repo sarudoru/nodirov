@@ -187,17 +187,18 @@ function onKey(event) {
 }
 
 function onPointerMove(event) {
-  if (event.pointerType === "touch") return;
   const now = performance.now();
-  const dt = now - lastPointer.t;
+  const dt = Math.min(120, now - lastPointer.t);
+  const px = lastPointer.t === 0 ? event.clientX : lastPointer.x;
+  const py = lastPointer.t === 0 ? event.clientY : lastPointer.y;
   lastPointer = { x: event.clientX, y: event.clientY, t: now };
-  field.pulse(event.clientX, event.clientY);
-  field.shimmerWordAt(event.clientX, event.clientY);
+  field.touch(event.clientX, event.clientY, px, py, dt);
+  if (event.pointerType !== "touch") field.shimmerWordAt(event.clientX, event.clientY);
 }
 
 function onClick(event) {
   if (event.target.closest("a")) return;
-  field.rippleAt(event.clientX, event.clientY);
+  field.strike(event.clientX, event.clientY);
 }
 
 async function loadFont() {
@@ -270,8 +271,6 @@ async function boot() {
     animateScrollTo(base + delta, P.wheelMs);
   }, { passive: false });
 
-  document.documentElement.addEventListener("mouseleave", () => field.clearLantern());
-  window.addEventListener("blur", () => field.clearLantern());
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && !reducedMotion.matches) field.start();
     else field.stop();
@@ -286,6 +285,11 @@ async function boot() {
     get: () => ({ ...P }),
     query: () => toQuery(P),
     renderAt: (now, dt) => field.renderAt(now, dt),
+    stats: () => field.stats(),
+    glyphCount: () => field.glyphCount(),
+    touch: (x, y, px, py, dt) => field.touch(x, y, px, py, dt),
+    strike: (x, y) => field.strike(x, y),
+    reveal: () => field.crystallize(),
     set(patch) {
       const changed = Object.keys(patch);
       P = { ...P, ...patch };

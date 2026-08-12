@@ -1,17 +1,19 @@
 // The field: a fixed grid of character cells — the only place anything is
 // ever painted.
 //
-// The substrate is never still. Every cell owns a slow opacity oscillation
-// with its own period and phase, so the whole surface breathes at once
-// while no single cell draws attention; on top of that, cells continuously
-// cross-dissolve into new glyphs at a tunable rate. A tide passes across
-// the grid, the cursor carries a lantern, the corners fall away.
+// Three things share this grid and never contradict each other:
 //
-// The document pours through all of it: committed glyphs blend between the
-// row they hold and the row arriving beneath, with the blend phase tied
-// directly to scroll position. Nothing moves; cells change.
+//   the substrate   a living medium of glyphs (substrate.js), warmed by the
+//                   cursor, transitioning through the morphospace
+//   the document    committed text, poured row to row by scroll position
+//   the aperture    vignette, and the small chrome of links and position
+//
+// Law: nothing moves; cells only change.
 
-import { AMBIENT, RAMP, cousinsFor } from "./glyphs.js";
+import { cousinsFor } from "./glyphs.js";
+import { buildGlyphSpace } from "./glyphspace.js";
+import { createSubstrate } from "./substrate.js";
+import { ALPHABETS } from "./params.js";
 
 // cell kinds
 export const K_AMBIENT = 0;
@@ -20,44 +22,15 @@ export const K_FAINT = 2;
 export const K_LINK = 3;
 export const K_HOLE = 4;
 
-// one-shot trace modes
-const T_CONDENSE = 0;
-const T_COUSIN = 1;
-const T_SPLASH = 2;
-
-const TRACE_DURATION = 180;
-const TRACE_STEP = 60;
-
 const smoothstep = (p) => p * p * (3 - 2 * p);
+const REVEAL_STEPS = 7;
 
 export function createField(canvas, params) {
   const context = canvas.getContext("2d", { alpha: false });
   let P = params;
 
-  const palette = [" "];
-  const paletteIndex = new Map([[" ", 0]]);
-  function tokenOf(ch) {
-    let i = paletteIndex.get(ch);
-    if (i === undefined) {
-      i = palette.length;
-      palette.push(ch);
-      paletteIndex.set(ch, i);
-    }
-    return i;
-  }
-  const ambientTokens = Array.from(AMBIENT, tokenOf);
-  const rampTokens = Array.from(RAMP, tokenOf);
-
-  const randomPool = new Uint32Array(1024);
-  let randomAt = randomPool.length;
-  function rnd() {
-    if (randomAt >= randomPool.length) {
-      crypto.getRandomValues(randomPool);
-      randomAt = 0;
-    }
-    return randomPool[randomAt++];
-  }
-  const rndF = () => rnd() / 4294967296;
+  let space = null;
+  let substrate = null;
 
   let metrics = null;
   let width = 0;
@@ -72,47 +45,45 @@ export function createField(canvas, params) {
   let snap = false;
   let fastUntil = 0;
   let lastRowFloat = 0;
-  let lanternCol = -1;
-  let lanternRow = -1;
 
-  let worldData = new Map(); // world row -> {chars, kinds, links}
+  let worldData = new Map();
   let masks = new Set();
-
-  // --- the living substrate, one entry per view cell ---
-  let subToken = new Uint16Array(0);   // glyph shown now
-  let subNext = new Uint16Array(0);    // glyph fading in (0 = idle)
-  let subStart = new Float64Array(0);  // ms when the crossfade began
-  let subLit = new Uint8Array(0);      // density mask
-  let twPhase = new Float32Array(0);   // 0..1 offset into the twinkle cycle
-  let twRate = new Float32Array(0);    // cycles per ms
   let vigMap = new Float32Array(0);
-  let colPhase = new Float32Array(0);
+  let shelterMap = new Float32Array(0);
 
   // view-anchored committed content
   let cellChar = new Uint16Array(0);
   let cellKind = new Uint8Array(0);
   let cellLink = new Int16Array(0);
+  const textPalette = [" "];
+  const textIndex = new Map([[" ", 0]]);
+  function textToken(ch) {
+    let i = textIndex.get(ch);
+    if (i === undefined) {
+      i = textPalette.length;
+      textPalette.push(ch);
+      textIndex.set(ch, i);
+    }
+    return i;
+  }
 
-  // one-shot traces (crystallize, cousins, splash)
-  let tStart = new Float64Array(0);
-  let tFrom = new Uint16Array(0);
-  let tFromAlpha = new Float32Array(0);
-  let tSeed = new Uint32Array(0);
-  let tMode = new Uint8Array(0);
+  // reveal: committed text condensing out of the substrate through the
+  // morphospace, staggered so meaning arrives like a wave
+  let revealPath = new Int16Array(0);
+  let revealLen = new Uint8Array(0);
+  let revealStart = new Float32Array(0);
+  let revealDur = new Float32Array(0);
+  let revealActive = false;
 
   let overlay = new Map();
   let hud = "";
   let hoveredLink = -1;
 
-  let pointerCells = [];
-  let pointerTokens = new Map();
-  let pointerTimer = 0;
-  let lastPointerCell = -1;
-
   const glitches = new Map();
   let glitchTimer = 0;
+  let glitchCells = new Map(); // view index -> {until, token}
 
-  // looping cousin shimmer
+  // looping cousin shimmer on hovered words
   let shimmerCells = [];
   let shimmerShown = new Map();
   let shimmerTimer = 0;
@@ -121,127 +92,10 @@ export function createField(canvas, params) {
   let rafId = 0;
   let running = false;
   let lastFrameAt = 0;
-  let churnCarry = 0;
 
   const worldKey = (row, col) => row * 512 + col;
 
-  // ---------- substrate ----------
-
-  function seedSubstrate() {
-    const n = cols * rows;
-    subToken = new Uint16Array(n);
-    subNext = new Uint16Array(n);
-    subStart = new Float64Array(n);
-    subLit = new Uint8Array(n);
-    twPhase = new Float32Array(n);
-    twRate = new Float32Array(n);
-    for (let i = 0; i < n; i += 1) {
-      subToken[i] = ambientTokens[rnd() % ambientTokens.length];
-      subLit[i] = rndF() < P.density ? 1 : 0;
-      twPhase[i] = rndF();
-      const period = (P.twMin + rndF() * Math.max(0.1, P.twMax - P.twMin)) * 1000;
-      twRate[i] = 1 / period;
-    }
-  }
-
-  function reseedTwinkle() {
-    for (let i = 0; i < twRate.length; i += 1) {
-      const period = (P.twMin + rndF() * Math.max(0.1, P.twMax - P.twMin)) * 1000;
-      twRate[i] = 1 / period;
-    }
-  }
-
-  function reseedDensity() {
-    for (let i = 0; i < subLit.length; i += 1) subLit[i] = rndF() < P.density ? 1 : 0;
-  }
-
-  // Start `churn` crossfades per second, spread randomly across the field.
-  function advanceChurn(now, dt) {
-    if (reducedMotion || P.churn <= 0) return;
-    churnCarry += (P.churn * dt) / 1000;
-    let starts = Math.floor(churnCarry);
-    churnCarry -= starts;
-    const n = subToken.length;
-    if (n === 0) return;
-    while (starts > 0) {
-      starts -= 1;
-      const i = rnd() % n;
-      if (!subLit[i] || subNext[i] !== 0 || cellChar[i] !== 0) continue;
-      let next = ambientTokens[rnd() % ambientTokens.length];
-      if (next === subToken[i]) next = ambientTokens[rnd() % ambientTokens.length];
-      subNext[i] = next;
-      subStart[i] = now;
-    }
-  }
-
-  // Base opacity of one substrate cell, before the glyph crossfade.
-  function substrateAlpha(i, row, col, now) {
-    if (!subLit[i]) return 0;
-    let a = P.alpha * vigMap[i];
-    if (!reducedMotion && P.twAmp > 0) {
-      const phase = (twPhase[i] + now * twRate[i]) % 1;
-      a *= 1 + P.twAmp * Math.sin(phase * Math.PI * 2);
-    }
-    if (!reducedMotion && P.tideAmp > 0) {
-      a *= 1 + P.tideAmp *
-        Math.sin(now * (Math.PI * 2 / (P.tidePeriod * 1000)) + (row + col * 0.7) * P.tideScale);
-    }
-    if (lanternCol >= 0 && P.lanternR > 0 && P.lanternGain > 0) {
-      const dx = (col - lanternCol) * (metrics.cellW / metrics.cellH);
-      const dy = row - lanternRow;
-      const f = Math.max(0, 1 - Math.hypot(dx, dy) / P.lanternR);
-      a *= 1 + P.lanternGain * f * f;
-    }
-    return a > 0 ? a : 0;
-  }
-
-  // Paint one substrate cell, resolving any in-flight glyph crossfade.
-  function paintSubstrate(i, row, col, x, y, now, scale) {
-    const base = substrateAlpha(i, row, col, now) * scale;
-    if (base <= 0.004) return;
-
-    if (subNext[i] === 0) {
-      if (subToken[i] === 0) return;
-      context.globalAlpha = Math.min(1, base);
-      context.fillText(palette[subToken[i]], x, y);
-      return;
-    }
-
-    const p = (now - subStart[i]) / P.fade;
-    if (p >= 1) {
-      subToken[i] = subNext[i];
-      subNext[i] = 0;
-      context.globalAlpha = Math.min(1, base);
-      context.fillText(palette[subToken[i]], x, y);
-      return;
-    }
-
-    const e = P.fadeEase === "linear" ? p : smoothstep(p);
-    if (P.fadeEase === "ramp") {
-      // pass through the density ramp: glyph → · → glyph
-      const mid = rampTokens[0];
-      if (p < 0.5) {
-        const q = smoothstep(p * 2);
-        drawAt(subToken[i], base * (1 - q), x, y);
-        drawAt(mid, base * q, x, y);
-      } else {
-        const q = smoothstep((p - 0.5) * 2);
-        drawAt(mid, base * (1 - q), x, y);
-        drawAt(subNext[i], base * q, x, y);
-      }
-      return;
-    }
-    drawAt(subToken[i], base * (1 - e), x, y);
-    drawAt(subNext[i], base * e, x, y);
-  }
-
-  function drawAt(token, alpha, x, y) {
-    if (token === 0 || alpha <= 0.004) return;
-    context.globalAlpha = Math.min(1, alpha);
-    context.fillText(palette[token], x, y);
-  }
-
-  // ---------- committed content ----------
+  // ---------- world & view ----------
 
   function committedAt(worldRow, col, out) {
     const data = worldData.get(worldRow);
@@ -279,15 +133,11 @@ export function createField(canvas, params) {
       cellChar = new Uint16Array(n);
       cellKind = new Uint8Array(n);
       cellLink = new Int16Array(n);
-      tStart = new Float64Array(n);
-      tFrom = new Uint16Array(n);
-      tFromAlpha = new Float32Array(n);
-      tSeed = new Uint32Array(n);
-      tMode = new Uint8Array(n);
-    } else {
-      tStart.fill(0);
+      shelterMap = new Float32Array(n);
     }
     stopShimmer();
+    glitchCells.clear();
+    shelterMap.fill(1);
     for (let row = 0; row < rows; row += 1) {
       const worldRow = camera + row;
       const data = worldData.get(worldRow);
@@ -303,6 +153,27 @@ export function createField(canvas, params) {
           cellKind[i] = K_AMBIENT;
         }
         cellLink[i] = inRange ? data.links[col] : -1;
+      }
+    }
+    // Reading shelter: the substrate calms in the rows that carry text, so a
+    // paragraph never has to compete with its own background. This is a
+    // *rate* reduction, not a clearing — the murmur stays present.
+    if (P.shelter > 0) {
+      for (let row = 0; row < rows; row += 1) {
+        let inked = 0;
+        for (let col = 0; col < cols; col += 1) {
+          if (cellKind[row * cols + col] === K_TEXT || cellKind[row * cols + col] === K_LINK) inked += 1;
+        }
+        if (inked < 3) continue;
+        for (let dr = -1; dr <= 1; dr += 1) {
+          const r = row + dr;
+          if (r < 0 || r >= rows) continue;
+          const factor = 1 - P.shelter * (dr === 0 ? 1 : 0.5);
+          for (let col = 0; col < cols; col += 1) {
+            const i = r * cols + col;
+            if (factor < shelterMap[i]) shelterMap[i] = factor;
+          }
+        }
       }
     }
   }
@@ -321,8 +192,8 @@ export function createField(canvas, params) {
     context.fillStyle = P.ink;
 
     const fast = P.fastSkip && now < fastUntil;
-    const efBase = fast ? (frac < 0.5 ? 0 : 1) : smoothstep(frac);
-    const anyBlend = efBase > 0.004 && efBase < 0.996;
+    const ef = fast ? (frac < 0.5 ? 0 : 1) : smoothstep(frac);
+    const blending = ef > 0.004 && ef < 0.996;
 
     for (let row = 0; row < rows; row += 1) {
       let y = row * metrics.cellH + metrics.cellH / 2;
@@ -333,10 +204,6 @@ export function createField(canvas, params) {
         const i = row * cols + col;
         let x = xOffset + col * metrics.cellW + metrics.cellW / 2;
         if (snap) x = Math.round(x);
-        const ef = P.stagger && anyBlend
-          ? Math.min(1, Math.max(0, efBase + colPhase[col]))
-          : efBase;
-        const blending = ef > 0.004 && ef < 0.996;
 
         const over = overlay.get(i);
         if (over) {
@@ -352,48 +219,18 @@ export function createField(canvas, params) {
         const shimmerToken = shimmerShown.get(i);
         if (shimmerToken !== undefined && !blending) {
           context.globalAlpha = kindAlpha(cellKind[i]) || P.textAlpha;
-          context.fillText(palette[shimmerToken], x, y);
+          context.fillText(textPalette[shimmerToken], x, y);
           continue;
         }
 
-        if (pointerTokens.has(i)) {
-          context.globalAlpha = 0.3;
-          context.fillText(palette[pointerTokens.get(i)], x, y);
+        const glitch = glitchCells.get(i);
+        if (glitch !== undefined && now < glitch.until && !blending) {
+          context.globalAlpha = kindAlpha(cellKind[i]) || P.textAlpha;
+          context.fillText(glitch.ch, x, y);
           continue;
         }
 
-        // one-shot traces on committed cells
-        if (!blending && tStart[i] !== 0) {
-          const elapsed = now - tStart[i];
-          if (elapsed >= TRACE_DURATION) {
-            tStart[i] = 0;
-          } else {
-            const target = cellChar[i];
-            const targetAlpha = target !== 0 ? kindAlpha(cellKind[i]) : substrateAlpha(i, row, col, now);
-            let token = target !== 0 ? target : subToken[i];
-            let alpha = targetAlpha;
-            if (elapsed < 0) {
-              token = tFrom[i];
-              alpha = tFromAlpha[i];
-            } else {
-              const stage = Math.floor(elapsed / TRACE_STEP);
-              if (tMode[i] === T_CONDENSE) {
-                token = rampTokens[Math.min(stage, rampTokens.length - 1)];
-                alpha = 0.3 + 0.25 * stage;
-              } else if (tMode[i] === T_COUSIN) {
-                const family = cousinsFor(palette[target]);
-                if (family && stage < 2) token = tokenOf(family[(tSeed[i] + stage) % family.length]);
-              } else if (tMode[i] === T_SPLASH) {
-                token = ambientTokens[(tSeed[i] + stage * 13) % ambientTokens.length];
-                alpha = Math.max(0.24, targetAlpha * 0.5);
-              }
-            }
-            drawAt(token, alpha, x, y);
-            continue;
-          }
-        }
-
-        // the pour
+        // the pour: committed rows blend by scroll phase
         committedAt(worldA, col, cellA);
         let coverage = 0;
         if (cellA.kind === K_HOLE || cellA.token !== 0) coverage = blending ? 1 - ef : 1;
@@ -404,17 +241,70 @@ export function createField(canvas, params) {
           cellB.token = 0;
         }
 
-        if (coverage < 0.996) paintSubstrate(i, row, col, x, y, now, 1 - coverage);
+        // the substrate shows wherever the document does not cover it
+        if (coverage < 0.996 && substrate) {
+          const s = substrate.read(i, now, vigMap[i] * shelterMap[i]);
+          const alpha = s.alpha * (1 - coverage);
+          if (alpha > 0.006) {
+            if (s.b < 0) {
+              context.globalAlpha = Math.min(1, alpha);
+              context.fillText(space.chars[s.a], x, y);
+            } else {
+              // cross-fade only between adjacent hops of the morph walk
+              const fromAlpha = alpha * (1 - s.blend);
+              const toAlpha = alpha * s.blend;
+              if (fromAlpha > 0.006) {
+                context.globalAlpha = Math.min(1, fromAlpha);
+                context.fillText(space.chars[s.a], x, y);
+              }
+              if (toAlpha > 0.006) {
+                context.globalAlpha = Math.min(1, toAlpha);
+                context.fillText(space.chars[s.b], x, y);
+              }
+            }
+          }
+        }
+
         if (cellA.token !== 0) {
-          drawAt(cellA.token, inkAlpha(cellA) * (blending ? Math.pow(1 - ef, P.biasOut) : 1), x, y);
+          const a = inkAlpha(cellA) * (blending ? Math.pow(1 - ef, P.biasOut) : 1);
+          if (a > 0.006) {
+            context.globalAlpha = Math.min(1, a);
+            // during the reveal a letter is still walking in from the murmur
+            if (revealActive && revealLen[i] > 0) {
+              const t = (now - revealStart[i]) / revealDur[i];
+              if (t < 0) {
+                context.globalAlpha = Math.min(1, a * 0.25);
+                context.fillText(space.chars[revealPath[i * REVEAL_STEPS]], x, y);
+              } else if (t < 1) {
+                const segments = revealLen[i] - 1;
+                const scaled = t * segments;
+                const hop = Math.min(segments - 1, Math.floor(scaled));
+                const local = smoothstep(scaled - hop);
+                const fade = 0.25 + 0.75 * t;
+                context.globalAlpha = Math.min(1, a * fade * (1 - local));
+                context.fillText(space.chars[revealPath[i * REVEAL_STEPS + hop]], x, y);
+                context.globalAlpha = Math.min(1, a * fade * local);
+                context.fillText(space.chars[revealPath[i * REVEAL_STEPS + hop + 1]], x, y);
+              } else {
+                revealLen[i] = 0;
+                context.fillText(textPalette[cellA.token], x, y);
+              }
+            } else {
+              context.fillText(textPalette[cellA.token], x, y);
+            }
+          }
         }
         if (cellB.token !== 0) {
-          drawAt(cellB.token, inkAlpha(cellB) * Math.pow(ef, P.biasIn), x, y);
+          const a = inkAlpha(cellB) * Math.pow(ef, P.biasIn);
+          if (a > 0.006) {
+            context.globalAlpha = Math.min(1, a);
+            context.fillText(textPalette[cellB.token], x, y);
+          }
         }
       }
     }
 
-    drawChrome(efBase);
+    drawChrome(ef);
     drawHud();
     context.globalAlpha = 1;
   }
@@ -467,7 +357,7 @@ export function createField(canvas, params) {
     const minDelta = 1000 / P.fps;
     const dt = now - lastFrameAt;
     if (dt >= minDelta - 1) {
-      advanceChurn(now, Math.min(dt, 250));
+      if (substrate && !reducedMotion) substrate.step(now, Math.min(dt, 120));
       lastFrameAt = now;
       draw(now);
     }
@@ -475,7 +365,7 @@ export function createField(canvas, params) {
   }
 
   function start() {
-    if (running) return;
+    if (running || !metrics) return;
     running = true;
     lastFrameAt = performance.now() - 1000;
     rafId = requestAnimationFrame(tick);
@@ -497,31 +387,7 @@ export function createField(canvas, params) {
     });
   }
 
-  // ---------- traces & shimmer ----------
-
-  function startTrace(i, mode, delay) {
-    if (reducedMotion) return;
-    tStart[i] = performance.now() + delay;
-    tFrom[i] = cellChar[i] !== 0 ? cellChar[i] : subToken[i];
-    tFromAlpha[i] = cellChar[i] !== 0 ? kindAlpha(cellKind[i]) : P.alpha;
-    tSeed[i] = rnd();
-    tMode[i] = mode;
-  }
-
-  function restartGlitchTimer() {
-    window.clearInterval(glitchTimer);
-    glitchTimer = 0;
-    if (!P.glitch) return;
-    glitchTimer = window.setInterval(() => {
-      if (reducedMotion || glitches.size === 0 || document.visibilityState !== "visible") return;
-      const all = [...glitches.values()];
-      const g = all[rnd() % all.length];
-      const row = g.row - camera;
-      if (row < 1 || row >= rows - 1) return;
-      startTrace(row * cols + g.col, T_COUSIN, 0);
-      requestDraw();
-    }, P.glitchMs);
-  }
+  // ---------- shimmer & instability ----------
 
   function stopShimmer() {
     if (shimmerTimer) window.clearInterval(shimmerTimer);
@@ -538,14 +404,35 @@ export function createField(canvas, params) {
     shimmerKey = key;
     const step = () => {
       for (const i of shimmerCells) {
-        const family = cousinsFor(palette[cellChar[i]]);
+        const family = cousinsFor(textPalette[cellChar[i]]);
         if (!family) continue;
-        shimmerShown.set(i, tokenOf(family[rnd() % family.length]));
+        shimmerShown.set(i, textToken(family[(Math.random() * family.length) | 0]));
       }
       requestDraw();
     };
     step();
     shimmerTimer = window.setInterval(step, P.shimmerTick);
+  }
+
+  function restartGlitchTimer() {
+    window.clearInterval(glitchTimer);
+    glitchTimer = 0;
+    if (!P.glitch) return;
+    glitchTimer = window.setInterval(() => {
+      if (reducedMotion || glitches.size === 0 || document.visibilityState !== "visible") return;
+      const all = [...glitches.values()];
+      const g = all[(Math.random() * all.length) | 0];
+      const row = g.row - camera;
+      if (row < 1 || row >= rows - 1) return;
+      const i = row * cols + g.col;
+      const family = cousinsFor(textPalette[cellChar[i]]);
+      if (!family) return;
+      glitchCells.set(i, {
+        ch: family[(Math.random() * family.length) | 0],
+        until: performance.now() + 420,
+      });
+      requestDraw();
+    }, P.glitchMs);
   }
 
   // ---------- public API ----------
@@ -565,7 +452,27 @@ export function createField(canvas, params) {
       rows = Math.max(6, Math.ceil(h / metrics.cellH));
       xOffset = Math.floor((w - cols * metrics.cellW) / 2);
 
-      seedSubstrate();
+      // The space spans the substrate alphabet AND every printable character
+      // the document might use, so a letter of body text can be morphed into
+      // from the murmur — the page condenses out of its own background.
+      const alphabet = ALPHABETS[P.alphabet] ?? ALPHABETS.latin;
+      let printable = "";
+      for (let code = 33; code <= 126; code += 1) printable += String.fromCharCode(code);
+      const chars = Array.from(new Set(Array.from(alphabet + printable)));
+      space = buildGlyphSpace(chars, metrics.font, metrics.cellW, metrics.cellH);
+
+      const eligible = [];
+      const inAlphabet = new Set(Array.from(alphabet));
+      for (let i = 0; i < chars.length; i += 1) if (inAlphabet.has(chars[i])) eligible.push(i);
+
+      const subParams = { ...P, aspect: metrics.cellH / metrics.cellW };
+      if (!substrate) substrate = createSubstrate(space, subParams, eligible);
+      else substrate.setEligible(eligible), substrate.setParams(subParams, []);
+      substrate.resize(cols, rows);
+      revealLen = new Uint8Array(cols * rows);
+      revealPath = new Int16Array(cols * rows * REVEAL_STEPS);
+      revealStart = new Float32Array(cols * rows);
+      revealDur = new Float32Array(cols * rows);
 
       const n = cols * rows;
       vigMap = new Float32Array(n);
@@ -576,12 +483,6 @@ export function createField(canvas, params) {
           const excess = Math.max(0, Math.hypot(dx * 0.72, dy) - 0.78) / 0.5;
           vigMap[r * cols + c] = 1 - P.vignette * Math.min(1, excess * excess);
         }
-      }
-
-      colPhase = new Float32Array(cols);
-      for (let c = 0; c < cols; c += 1) {
-        const h2 = Math.imul(c + 7, 2654435761) >>> 0;
-        colPhase[c] = ((h2 % 1000) / 1000 - 0.5) * 0.16;
       }
 
       cellChar = new Uint16Array(0);
@@ -609,7 +510,7 @@ export function createField(canvas, params) {
           const ch = line.text[k];
           if (line.linkId !== undefined && line.linkId >= 0) data.links[col] = line.linkId;
           if (ch === " ") continue;
-          data.chars[col] = tokenOf(ch);
+          data.chars[col] = textToken(ch);
           data.kinds[col] = line.kind;
         }
       }
@@ -619,7 +520,14 @@ export function createField(canvas, params) {
 
     setScroll(scrollTopPx) {
       const rowFloat = Math.max(0, scrollTopPx / metrics.cellH);
-      if (Math.abs(rowFloat - lastRowFloat) > 2) fastUntil = performance.now() + 90;
+      const delta = Math.abs(rowFloat - lastRowFloat);
+      if (delta > 2) fastUntil = performance.now() + 90;
+      // scrolling stirs the medium: the document passing through leaves warmth
+      if (substrate && P.scrollHeat > 0 && delta > 0.01 && !reducedMotion) {
+        const strength = Math.min(1, delta * 0.5) * P.scrollHeat;
+        const row = rows - 1;
+        for (let c = 0; c < cols; c += 4) substrate.warm(c, row, 0, -1, strength * 0.35);
+      }
       lastRowFloat = rowFloat;
       const nextCamera = Math.min(Math.floor(rowFloat), Math.max(0, worldRows - 1));
       frac = Math.min(0.999, Math.max(0, rowFloat - nextCamera));
@@ -630,69 +538,35 @@ export function createField(canvas, params) {
       requestDraw();
     },
 
-    crystallize() {
-      for (let row = 0; row < rows; row += 1) {
-        for (let col = 0; col < cols; col += 1) {
-          const i = row * cols + col;
-          if (cellChar[i] === 0) continue;
-          startTrace(i, T_CONDENSE, row * 16 + col * 1.4);
-          tFrom[i] = 0;
-          tFromAlpha[i] = 0;
-        }
+    // The cursor warms the medium along its whole path, so a fast sweep
+    // leaves a continuous wake rather than a dotted line.
+    touch(x, y, px, py, dt) {
+      if (!substrate || reducedMotion) return;
+      const col = (x - xOffset) / metrics.cellW;
+      const row = y / metrics.cellH;
+      const pcol = (px - xOffset) / metrics.cellW;
+      const prow = py / metrics.cellH;
+      const dx = col - pcol;
+      const dy = row - prow;
+      const distance = Math.hypot(dx, dy);
+      const speed = dt > 0 ? distance / (dt / 16.67) : 0;
+      const steps = Math.min(12, Math.max(1, Math.ceil(distance / 1.2)));
+      const vx = distance > 0.001 ? dx / distance : 0;
+      const vy = distance > 0.001 ? dy / distance : 0;
+      const push = Math.min(1.6, 0.35 + speed * 0.4);
+      for (let s = 1; s <= steps; s += 1) {
+        const t = s / steps;
+        substrate.warm(pcol + dx * t, prow + dy * t, vx * push, vy * push, 1 / steps + 0.08);
       }
       requestDraw();
     },
 
-    pulse(x, y) {
-      const col = Math.floor((x - xOffset) / metrics.cellW);
-      const row = Math.floor(y / metrics.cellH);
-      if (row < 0 || row >= rows || col < 0 || col >= cols) return;
-      lanternCol = col;
-      lanternRow = row;
-      const center = row * cols + col;
-      if (center === lastPointerCell) return;
-      lastPointerCell = center;
-      window.clearTimeout(pointerTimer);
-      for (const i of pointerCells) pointerTokens.delete(i);
-      pointerCells = [];
-      if (!reducedMotion && P.pulse) {
-        const spread = rnd() % 2 === 0 ? [[0, 0], [0, -1], [0, 1]] : [[0, 0], [-1, 0], [1, 0]];
-        for (const [dr, dc] of spread) {
-          const r = row + dr;
-          const c = col + dc;
-          if (r < 0 || r >= rows || c < 0 || c >= cols) continue;
-          const i = r * cols + c;
-          if (cellChar[i] !== 0 || overlay.has(i)) continue;
-          pointerTokens.set(i, rampTokens[rnd() % rampTokens.length]);
-          pointerCells.push(i);
-        }
-      }
-      pointerTimer = window.setTimeout(() => {
-        for (const i of pointerCells) pointerTokens.delete(i);
-        pointerCells = [];
-        lastPointerCell = -1;
-        requestDraw();
-      }, 140);
-      requestDraw();
-    },
-
-    rippleAt(x, y) {
-      if (reducedMotion || P.rippleR <= 0) return;
-      const originCol = (x - xOffset) / metrics.cellW;
-      const originRow = y / metrics.cellH;
-      const aspect = metrics.cellH / metrics.cellW;
-      const now = performance.now();
-      for (let row = 0; row < rows; row += 1) {
-        for (let col = 0; col < cols; col += 1) {
-          const dc = (col + 0.5 - originCol) / aspect;
-          const dr = row + 0.5 - originRow;
-          const dist = Math.sqrt(dc * dc + dr * dr);
-          if (dist > P.rippleR) continue;
-          const i = row * cols + col;
-          if (tStart[i] !== 0 && now - tStart[i] < TRACE_DURATION) continue;
-          startTrace(i, T_SPLASH, dist * P.rippleSpeed);
-        }
-      }
+    strike(x, y) {
+      if (!substrate || reducedMotion) return;
+      const col = Math.round((x - xOffset) / metrics.cellW);
+      const row = Math.round(y / metrics.cellH);
+      substrate.impulse(col, row, P.clickStrength);
+      substrate.warm(col, row, 0, 0, 1.4);
       requestDraw();
     },
 
@@ -760,23 +634,52 @@ export function createField(canvas, params) {
       requestDraw();
     },
 
+    // First contact: every letter walks in from the murmur through the
+    // morphospace, staggered by distance from the centre so meaning arrives
+    // as an expanding wave rather than a curtain.
+    crystallize() {
+      if (reducedMotion || !space) return;
+      const now = performance.now();
+      const cx = cols / 2;
+      const cy = rows * 0.42;
+      const aspect = metrics.cellH / metrics.cellW;
+      revealActive = true;
+      for (let row = 0; row < rows; row += 1) {
+        for (let col = 0; col < cols; col += 1) {
+          const i = row * cols + col;
+          if (cellChar[i] === 0) continue;
+          const target = space.indexOf(textPalette[cellChar[i]]);
+          if (target < 0) continue;
+          const seed = space.byDensity[(Math.random() * Math.min(10, space.size)) | 0];
+          const sequence = space.morph(seed, target, REVEAL_STEPS - 1);
+          const len = Math.min(REVEAL_STEPS, sequence.length);
+          for (let s = 0; s < len; s += 1) revealPath[i * REVEAL_STEPS + s] = sequence[s];
+          revealLen[i] = len;
+          const dx = (col - cx) / aspect;
+          const dy = row - cy;
+          revealStart[i] = now + 120 + Math.hypot(dx, dy) * 11 + Math.random() * 90;
+          revealDur[i] = 520 + Math.random() * 380;
+        }
+      }
+      window.setTimeout(() => { revealActive = false; }, 4200);
+      requestDraw();
+    },
+
     setReducedMotion(v) {
       reducedMotion = v;
       if (v) {
         stopShimmer();
         stop();
         requestDraw();
-      } else if (metrics) {
+      } else {
         start();
       }
     },
 
-    // Live parameter updates from the workbench. Only re-derives what changed.
     applyParams(next, changed) {
       P = next;
       const touched = changed ?? Object.keys(next);
-      if (touched.includes("density")) reseedDensity();
-      if (touched.includes("twMin") || touched.includes("twMax")) reseedTwinkle();
+      if (substrate) substrate.setParams({ ...P, aspect: metrics.cellH / metrics.cellW }, touched);
       if (touched.includes("vignette") && cols > 0) {
         for (let r = 0; r < rows; r += 1) {
           for (let c = 0; c < cols; c += 1) {
@@ -787,27 +690,24 @@ export function createField(canvas, params) {
           }
         }
       }
+      if (touched.includes("shelter")) composeView();
       if (touched.includes("glitch") || touched.includes("glitchMs")) restartGlitchTimer();
       if (touched.includes("shimmerTick") && shimmerTimer) startShimmer(shimmerCells, shimmerKey);
       requestDraw();
     },
 
-    clearLantern() {
-      lanternCol = -1;
-      lanternRow = -1;
-      requestDraw();
+    // Synchronous render at an explicit timestamp — deterministic frames for
+    // the workbench and for tests, independent of the animation clock.
+    renderAt(now, dt = 1000 / P.fps) {
+      if (substrate) substrate.step(now, dt);
+      draw(now);
     },
 
     requestDraw,
     start,
     stop,
-
-    // Synchronous render at an explicit timestamp. Used by the workbench and
-    // by tests to step the substrate without waiting on the animation clock.
-    renderAt(now, dt = 1000 / P.fps) {
-      advanceChurn(now, dt);
-      draw(now);
-    },
+    stats: () => (substrate ? substrate.stats() : null),
+    glyphCount: () => (space ? space.size : 0),
     cols: () => cols,
     rows: () => rows,
     camera: () => camera,

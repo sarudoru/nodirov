@@ -6,34 +6,51 @@
 
 export const SCHEMA = [
   // ---- the substrate ----
-  { key: "alpha", group: "Substrate", label: "base ink", type: "range", min: 0.005, max: 0.16, step: 0.005, def: 0.045 },
+  { key: "alpha", group: "Substrate", label: "base ink", type: "range", min: 0.005, max: 0.2, step: 0.005, def: 0.05 },
   { key: "density", group: "Substrate", label: "density", type: "range", min: 0.15, max: 1, step: 0.05, def: 1,
     help: "fraction of cells that hold a glyph at all" },
-  { key: "fps", group: "Substrate", label: "animation fps", type: "range", min: 12, max: 60, step: 1, def: 30 },
+  { key: "ambientBand", group: "Substrate", label: "resting weight", type: "range", min: 0.1, max: 1, step: 0.05, def: 0.45,
+    help: "how far up the ink ramp the resting field may draw" },
+  { key: "restDensity", group: "Substrate", label: "resting density", type: "range", min: 0.01, max: 0.2, step: 0.005, def: 0.035,
+    help: "ink density a cool cell settles toward" },
+  { key: "fps", group: "Substrate", label: "animation fps", type: "range", min: 12, max: 60, step: 1, def: 45 },
 
-  // ---- how the substrate lives ----
-  { key: "twAmp", group: "Life", label: "twinkle depth", type: "range", min: 0, max: 1, step: 0.05, def: 0.5,
-    help: "how far each cell's opacity drifts from base" },
-  { key: "twMin", group: "Life", label: "twinkle period min", type: "range", min: 1, max: 20, step: 0.5, def: 4, unit: "s" },
-  { key: "twMax", group: "Life", label: "twinkle period max", type: "range", min: 2, max: 40, step: 0.5, def: 11, unit: "s" },
-  { key: "churn", group: "Life", label: "glyph changes", type: "range", min: 0, max: 120, step: 1, def: 22, unit: "/s" },
-  { key: "fade", group: "Life", label: "crossfade", type: "range", min: 150, max: 4000, step: 50, def: 1500, unit: "ms" },
-  { key: "fadeEase", group: "Life", label: "crossfade shape", type: "select", def: "smooth",
-    options: [["smooth", "smoothstep"], ["linear", "linear"], ["ramp", "through · : +"]] },
+  // ---- transitions through the morphospace ----
+  { key: "restRate", group: "Change", label: "resting change rate", type: "range", min: 0, max: 2, step: 0.02, def: 0.14, unit: "/cell/s" },
+  { key: "morphMs", group: "Change", label: "morph duration", type: "range", min: 120, max: 2500, step: 20, def: 620, unit: "ms" },
+  { key: "morphSteps", group: "Change", label: "morph steps", type: "range", min: 2, max: 8, step: 1, def: 5,
+    help: "intermediate glyphs walked through on the way" },
+  { key: "hasteGain", group: "Change", label: "heat haste", type: "range", min: 0, max: 0.85, step: 0.05, def: 0.55,
+    help: "how much faster hot cells settle" },
+  { key: "twAmp", group: "Change", label: "twinkle depth", type: "range", min: 0, max: 1, step: 0.05, def: 0.4 },
+  { key: "twMin", group: "Change", label: "twinkle period min", type: "range", min: 1, max: 20, step: 0.5, def: 4, unit: "s" },
+  { key: "twMax", group: "Change", label: "twinkle period max", type: "range", min: 2, max: 40, step: 0.5, def: 11, unit: "s" },
 
-  // ---- large-scale motion ----
-  { key: "tideAmp", group: "Tide", label: "tide depth", type: "range", min: 0, max: 1, step: 0.05, def: 0.25 },
-  { key: "tidePeriod", group: "Tide", label: "tide period", type: "range", min: 4, max: 90, step: 1, def: 26, unit: "s" },
-  { key: "tideScale", group: "Tide", label: "tide grain", type: "range", min: 0.02, max: 0.6, step: 0.01, def: 0.11,
-    help: "small = broad slow bands, large = fine ripples" },
+  // ---- heat: the cursor warms the medium ----
+  { key: "warmRadius", group: "Heat", label: "touch radius", type: "range", min: 1, max: 18, step: 0.5, def: 5.5, unit: "cells" },
+  { key: "warmGain", group: "Heat", label: "touch strength", type: "range", min: 0, max: 2, step: 0.02, def: 0.42 },
+  { key: "heatDiffuse", group: "Heat", label: "spread", type: "range", min: 0, max: 0.24, step: 0.005, def: 0.115 },
+  { key: "heatCool", group: "Heat", label: "cooling", type: "range", min: 0.9, max: 0.999, step: 0.001, def: 0.972,
+    help: "per-frame retention — higher lingers longer" },
+  { key: "heatCeiling", group: "Heat", label: "heat ceiling", type: "range", min: 0.2, max: 3, step: 0.05, def: 1.15 },
+  { key: "heatRate", group: "Heat", label: "heat change rate", type: "range", min: 0, max: 30, step: 0.5, def: 9, unit: "/cell/s",
+    help: "extra transitions per second in hot cells" },
+  { key: "heatAlpha", group: "Heat", label: "heat glow", type: "range", min: 0, max: 8, step: 0.1, def: 2.6 },
+  { key: "densityGain", group: "Heat", label: "heat weight", type: "range", min: 0, max: 0.5, step: 0.01, def: 0.13,
+    help: "how much denser glyphs get when hot" },
+  { key: "energyThreshold", group: "Heat", label: "warm threshold", type: "range", min: 0, max: 0.5, step: 0.01, def: 0.05 },
 
-  // ---- reader-driven ----
-  { key: "lanternR", group: "Cursor", label: "lantern radius", type: "range", min: 0, max: 26, step: 0.5, def: 6.5 },
-  { key: "lanternGain", group: "Cursor", label: "lantern gain", type: "range", min: 0, max: 3, step: 0.05, def: 0.75 },
-  { key: "pulse", group: "Cursor", label: "cursor disturbance", type: "bool", def: true },
-  { key: "rippleR", group: "Cursor", label: "click splash radius", type: "range", min: 0, max: 18, step: 0.5, def: 7 },
-  { key: "rippleSpeed", group: "Cursor", label: "splash spread", type: "range", min: 8, max: 140, step: 2, def: 36, unit: "ms/cell" },
-  { key: "shimmerTick", group: "Cursor", label: "hover shimmer", type: "range", min: 60, max: 900, step: 10, def: 280, unit: "ms" },
+  // ---- flow: strokes lean along the current ----
+  { key: "flowGain", group: "Flow", label: "flow pickup", type: "range", min: 0, max: 3, step: 0.05, def: 1 },
+  { key: "flowDecay", group: "Flow", label: "flow persistence", type: "range", min: 0.8, max: 0.999, step: 0.001, def: 0.94 },
+  { key: "flowThreshold", group: "Flow", label: "flow threshold", type: "range", min: 0.01, max: 1.5, step: 0.01, def: 0.22,
+    help: "current needed before strokes align to it" },
+
+  // ---- waves: clicks ring outward ----
+  { key: "waveSpeed", group: "Wave", label: "ripple speed", type: "range", min: 0, max: 0.9, step: 0.01, def: 0.42 },
+  { key: "waveDamp", group: "Wave", label: "ripple damping", type: "range", min: 0.9, max: 0.999, step: 0.001, def: 0.978 },
+  { key: "waveHeat", group: "Wave", label: "ripple energy", type: "range", min: 0, max: 3, step: 0.05, def: 1.1 },
+  { key: "clickStrength", group: "Wave", label: "click force", type: "range", min: 0, max: 8, step: 0.1, def: 2.4 },
 
   // ---- the aperture ----
   { key: "vignette", group: "Aperture", label: "vignette", type: "range", min: 0, max: 1, step: 0.05, def: 0.4 },
@@ -46,7 +63,14 @@ export const SCHEMA = [
   { key: "wheelMs", group: "Pour", label: "wheel ease", type: "range", min: 0, max: 700, step: 10, def: 220, unit: "ms" },
   { key: "settleMs", group: "Pour", label: "settle ease", type: "range", min: 0, max: 700, step: 10, def: 150, unit: "ms" },
   { key: "fastSkip", group: "Pour", label: "crisp fast flicks", type: "bool", def: true },
-  { key: "stagger", group: "Pour", label: "fabric stagger", type: "bool", def: false },
+  { key: "scrollHeat", group: "Pour", label: "scroll warms field", type: "range", min: 0, max: 1.5, step: 0.05, def: 0.35 },
+
+  // ---- reading ----
+  { key: "shimmerTick", group: "Reading", label: "hover shimmer", type: "range", min: 60, max: 900, step: 10, def: 280, unit: "ms" },
+  { key: "textAlpha", group: "Reading", label: "content ink", type: "range", min: 0.5, max: 1, step: 0.02, def: 1 },
+  { key: "faintAlpha", group: "Reading", label: "secondary ink", type: "range", min: 0.08, max: 0.9, step: 0.02, def: 0.42 },
+  { key: "shelter", group: "Reading", label: "text shelter", type: "range", min: 0, max: 1, step: 0.05, def: 0.55,
+    help: "how much the substrate calms behind text so reading stays easy" },
 
   // ---- type ----
   { key: "font", group: "Type", label: "typeface", type: "select", def: "plex",
@@ -56,13 +80,13 @@ export const SCHEMA = [
   { key: "tracking", group: "Type", label: "tracking", type: "range", min: 0.02, max: 0.45, step: 0.01, def: 0.18, layout: true },
   { key: "leading", group: "Type", label: "leading", type: "range", min: 1, max: 1.7, step: 0.02, def: 1.24, layout: true },
   { key: "measure", group: "Type", label: "measure", type: "range", min: 40, max: 96, step: 1, def: 66, unit: "cols", layout: true },
+  { key: "alphabet", group: "Type", label: "alphabet", type: "select", def: "latin", layout: true,
+    options: [["latin", "letters + digits"], ["marks", "marks & strokes"], ["wide", "everything"], ["geometric", "geometric"]] },
 
   // ---- ink ----
   { key: "paper", group: "Ink", label: "paper", type: "color", def: "#fdfdfb" },
   { key: "ink", group: "Ink", label: "ink", type: "color", def: "#1a1a1a" },
   { key: "accent", group: "Ink", label: "accent", type: "color", def: "#c8401f" },
-  { key: "textAlpha", group: "Ink", label: "content ink", type: "range", min: 0.5, max: 1, step: 0.02, def: 1 },
-  { key: "faintAlpha", group: "Ink", label: "secondary ink", type: "range", min: 0.08, max: 0.9, step: 0.02, def: 0.42 },
 ];
 
 export const FONTS = {
@@ -72,6 +96,15 @@ export const FONTS = {
   kode: { family: "Kode Mono", css: "Kode+Mono:wght@400" },
   courier: { family: "Courier Prime", css: "Courier+Prime" },
   azeret: { family: "Azeret Mono", css: "Azeret+Mono:wght@400" },
+};
+
+// Candidate glyph sets for the substrate. Every character here is verified to
+// render with a consistent advance width in the mono faces we offer.
+export const ALPHABETS = {
+  latin: "abcdefghijklmnopqrstuvwxyz0123456789",
+  marks: ".,:;'\"`^~-_=+*/\\|()[]{}<>!?iloxvnmwustcr0123456789",
+  wide: "abcdefghijklmnopqrstuvwxyz0123456789.,:;'\"`^~-_=+*/\\|()[]{}<>!?@#$%&",
+  geometric: ".,:;'`^~-_=+*/\\|()[]{}<>·•◦○◌□▫■▲▼◄►◊─│┌┐└┘├┤┬┴┼╱╲",
 };
 
 export const BY_KEY = new Map(SCHEMA.map((entry) => [entry.key, entry]));
