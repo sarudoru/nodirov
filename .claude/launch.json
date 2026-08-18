@@ -4,8 +4,8 @@
     {
       "name": "glyph",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "python3 -m http.server \"${PORT:-4173}\" --bind 127.0.0.1"],
-      "port": 4173,
+      "runtimeArgs": ["-c", "python3 -m http.server \"${PORT:-4180}\" --bind 127.0.0.1"],
+      "port": 4180,
       "autoPort": true
     }
   ]

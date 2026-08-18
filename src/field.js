@@ -95,6 +95,14 @@ export function createField(canvas, params) {
 
   const worldKey = (row, col) => row * 512 + col;
 
+  // Every read out of the morphospace goes through here. An out-of-range or
+  // negative index would otherwise reach fillText as `undefined` and paint
+  // that word across the field, which is exactly the bug this guards.
+  function glyphAt(index) {
+    const ch = space.chars[index];
+    return ch === undefined ? " " : ch;
+  }
+
   // ---------- world & view ----------
 
   function committedAt(worldRow, col, out) {
@@ -249,18 +257,18 @@ export function createField(canvas, params) {
           if (alpha > 0.006) {
             if (s.b < 0) {
               context.globalAlpha = Math.min(1, alpha);
-              context.fillText(space.chars[s.a], x, y);
+              context.fillText(glyphAt(s.a), x, y);
             } else {
               // cross-fade only between adjacent hops of the morph walk
               const fromAlpha = alpha * (1 - s.blend);
               const toAlpha = alpha * s.blend;
               if (fromAlpha > 0.006) {
                 context.globalAlpha = Math.min(1, fromAlpha);
-                context.fillText(space.chars[s.a], x, y);
+                context.fillText(glyphAt(s.a), x, y);
               }
               if (toAlpha > 0.006) {
                 context.globalAlpha = Math.min(1, toAlpha);
-                context.fillText(space.chars[s.b], x, y);
+                context.fillText(glyphAt(s.b), x, y);
               }
             }
           }
@@ -275,7 +283,7 @@ export function createField(canvas, params) {
               const t = (now - revealStart[i]) / revealDur[i];
               if (t < 0) {
                 context.globalAlpha = Math.min(1, a * 0.25);
-                context.fillText(space.chars[revealPath[i * REVEAL_STEPS]], x, y);
+                context.fillText(glyphAt(revealPath[i * REVEAL_STEPS]), x, y);
               } else if (t < 1 && revealLen[i] > 1) {
                 const segments = revealLen[i] - 1;
                 const scaled = t * segments;
@@ -283,9 +291,9 @@ export function createField(canvas, params) {
                 const local = smoothstep(scaled - hop);
                 const fade = 0.25 + 0.75 * t;
                 context.globalAlpha = Math.min(1, a * fade * (1 - local));
-                context.fillText(space.chars[revealPath[i * REVEAL_STEPS + hop]], x, y);
+                context.fillText(glyphAt(revealPath[i * REVEAL_STEPS + hop]), x, y);
                 context.globalAlpha = Math.min(1, a * fade * local);
-                context.fillText(space.chars[revealPath[i * REVEAL_STEPS + hop + 1]], x, y);
+                context.fillText(glyphAt(revealPath[i * REVEAL_STEPS + hop + 1]), x, y);
               } else {
                 revealLen[i] = 0;
                 context.fillText(textPalette[cellA.token], x, y);
@@ -459,7 +467,12 @@ export function createField(canvas, params) {
       const alphabet = ALPHABETS[P.alphabet] ?? ALPHABETS.latin;
       let printable = "";
       for (let code = 33; code <= 126; code += 1) printable += String.fromCharCode(code);
-      const chars = Array.from(new Set(Array.from(alphabet + printable)));
+      // Typographic characters the typesetter emits (rules, dashes, bullets)
+      // and any character already committed by the document. Without these,
+      // indexOf() returns -1 for them and the morphospace has no landing site.
+      const typographic = "·—–—─│┌┐└┘├┤┬┴┼’‘“”…×";
+      const committed = textPalette.join("");
+      const chars = Array.from(new Set(Array.from(alphabet + printable + typographic + committed)));
       space = buildGlyphSpace(chars, metrics.font, metrics.cellW, metrics.cellH);
 
       const eligible = [];
