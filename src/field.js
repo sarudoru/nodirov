@@ -138,6 +138,7 @@ export function createField(canvas, params) {
     stopShimmer();
     glitchCells.clear();
     shelterMap.fill(1);
+    substrate.setShelter(shelterMap);
     for (let row = 0; row < rows; row += 1) {
       const worldRow = camera + row;
       const data = worldData.get(worldRow);
@@ -243,7 +244,7 @@ export function createField(canvas, params) {
 
         // the substrate shows wherever the document does not cover it
         if (coverage < 0.996 && substrate) {
-          const s = substrate.read(i, now, vigMap[i] * shelterMap[i]);
+          const s = substrate.read(i, now, vigMap[i]);
           const alpha = s.alpha * (1 - coverage);
           if (alpha > 0.006) {
             if (s.b < 0) {
@@ -275,7 +276,7 @@ export function createField(canvas, params) {
               if (t < 0) {
                 context.globalAlpha = Math.min(1, a * 0.25);
                 context.fillText(space.chars[revealPath[i * REVEAL_STEPS]], x, y);
-              } else if (t < 1) {
+              } else if (t < 1 && revealLen[i] > 1) {
                 const segments = revealLen[i] - 1;
                 const scaled = t * segments;
                 const hop = Math.min(segments - 1, Math.floor(scaled));

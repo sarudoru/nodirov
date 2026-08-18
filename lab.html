@@ -207,6 +207,18 @@
         border: 1px solid var(--line);
         background: var(--paper);
       }
+      #stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 2px 8px;
+        padding: 8px 16px 12px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 9px;
+        font-variant-numeric: tabular-nums;
+      }
+      #stats b { display: block; color: var(--ink); font-weight: 400; font-size: 12px; }
+
       #toast {
         position: fixed;
         right: 16px;
@@ -242,10 +254,13 @@
         <button id="compare" class="hot">compare</button>
         <button id="snapshot">snap</button>
         <button id="reset">reset all</button>
+        <button id="reveal">replay reveal</button>
+        <button id="stir">stir</button>
         <button id="copyLink">copy link</button>
         <button id="copyJson">copy json</button>
         <button id="pasteJson">paste json</button>
       </div>
+      <div id="stats"></div>
     </aside>
 
     <section id="stage">
@@ -462,6 +477,47 @@
       compare.addEventListener("pointerdown", holdOn);
       window.addEventListener("pointerup", holdOff);
       compare.addEventListener("pointerleave", holdOff);
+
+      document.getElementById("reveal").addEventListener("click", () => {
+        if (api && api.reveal) api.reveal();
+      });
+
+      // Drive a curved stroke through the field so the wake can be judged
+      // without needing a steady hand on the iframe.
+      document.getElementById("stir").addEventListener("click", () => {
+        const win = frame.contentWindow;
+        if (!api || !api.touch) return;
+        const w = frame.clientWidth;
+        const h = frame.clientHeight;
+        let px = w * 0.12;
+        let py = h * 0.5;
+        let step = 0;
+        const run = () => {
+          for (let k = 0; k < 3 && step < 90; k += 1, step += 1) {
+            const t = step / 90;
+            const x = w * (0.12 + t * 0.76);
+            const y = h * (0.5 + Math.sin(t * Math.PI * 2.4) * 0.28);
+            api.touch(x, y, px, py, 16);
+            px = x;
+            py = y;
+          }
+          if (step < 90) win.requestAnimationFrame(run);
+        };
+        run();
+      });
+
+      // live telemetry from the substrate
+      const statsEl = document.getElementById("stats");
+      setInterval(() => {
+        if (!api || !api.stats) return;
+        const s = api.stats();
+        if (!s) return;
+        statsEl.innerHTML =
+          `<div><b>${s.cells}</b>cells</div>` +
+          `<div><b>${s.moving}</b>morphing</div>` +
+          `<div><b>${s.hot}</b>warm</div>` +
+          `<div><b>${(api.glyphCount ? api.glyphCount() : 0)}</b>glyphs</div>`;
+      }, 300);
 
       document.getElementById("copyLink").addEventListener("click", () => {
         const query = toQuery(params);

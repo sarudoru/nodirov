@@ -35,6 +35,8 @@ export function createSubstrate(space, params, eligible) {
   let waveNext = new Float32Array(0);
 
   // per-cell glyph animation
+  let bursting = new Uint8Array(0);  // two-state Markov: still or in weather
+  let shelter = new Float32Array(0); // 1 = open field, <1 = calm, near text
   let current = new Int16Array(0);   // settled glyph index
   let path = new Int16Array(0);      // morph sequence, MAX_STEPS per cell
   let pathLen = new Uint8Array(0);
@@ -85,6 +87,7 @@ export function createSubstrate(space, params, eligible) {
     started = new Float32Array(n);
     duration = new Float32Array(n);
     lit = new Uint8Array(n);
+    bursting = new Uint8Array(n);
     twPhase = new Float32Array(n);
     twRate = new Float32Array(n);
 
@@ -230,7 +233,24 @@ export function createSubstrate(space, params, eligible) {
         continue;
       }
       const energy = Math.min(1, heat[i] + Math.abs(wave[i]) * P.waveHeat);
-      const rate = P.restRate + energy * P.heatRate;
+
+      // Two-state Markov chain per cell. Uniform turnover reads as a
+      // screensaver; long-tailed inter-event times with genuinely still
+      // regions between drifting clumps is what weather does.
+      if (bursting[i]) {
+        if (rnd() < P.burstOff * perCell) bursting[i] = 0;
+      } else if (rnd() < P.burstOn * perCell) {
+        bursting[i] = 1;
+      }
+
+      // Arrhenius rather than linear: below the knee almost nothing happens,
+      // above it the field liquefies. A lazy hover does nothing; a real
+      // gesture finds the melting point. Shelter raises the activation
+      // energy near text, so protection is exponential and never touches ink.
+      const calm = shelter.length ? 1 - shelter[i] : 0;
+      const rate = P.restRate
+        * Math.exp(P.rateKnee * energy - 3.6 * calm)
+        * (bursting[i] ? P.burstGain : 1);
       if (rnd() < rate * perCell) startTransition(i, now);
     }
   }
@@ -251,6 +271,9 @@ export function createSubstrate(space, params, eligible) {
     const energy = Math.min(1.4, heat[i] + Math.abs(wave[i]) * P.waveHeat);
     out.energy = energy;
 
+    // The cursor's entire signature is a change in turnover rate. A
+    // screenshot taken under the pointer is identical to one at rest — this
+    // is what keeps disturbance from becoming the lantern glow cliche.
     let alpha = P.alpha * (1 + energy * P.heatAlpha) * vignetteValue;
     if (P.twAmp > 0) {
       const phase = (twPhase[i] + now * twRate[i]) % 1;
@@ -265,14 +288,37 @@ export function createSubstrate(space, params, eligible) {
       return out;
     }
 
-    const t = Math.min(1, (now - started[i]) / duration[i]);
+    // The Solari law: a drum spins fast, then decelerates into its landing.
+    // Progress through the ladder is quadratically eased so early hops flick
+    // past and the last one arrives slowly — the eye can predict the landing
+    // before it happens, which is what makes a change feel *settled* rather
+    // than merely finished. The tail of the duration is held still on the
+    // final glyph so the arrival has a beat.
+    const raw = Math.min(1, (now - started[i]) / duration[i]);
+    const hold = P.settleHold / Math.max(1, duration[i]);
+    const t = hold >= 1 ? 1 : Math.min(1, raw / (1 - hold));
+    const eased = 1 - (1 - t) * (1 - t);
+
     const segments = pathLen[i] - 1;
-    const scaled = t * segments;
+    if (segments < 1) {
+      out.a = path[i * MAX_STEPS];
+      out.b = -1;
+      out.blend = 0;
+      return out;
+    }
+    const scaled = eased * segments;
     const hop = Math.min(segments - 1, Math.floor(scaled));
     let local = scaled - hop;
-    // ease each hop so the sequence pulses rather than sliding linearly:
-    // each glyph holds briefly, then gives way
+
+    // flipSharp compresses the cross-fade into the end of each dwell, so most
+    // frames show one clean letterform. A blend is only ever between glyphs
+    // that are neighbours in the morphospace, and at sharpness 1 there is no
+    // blend at all: every rendered frame is a real character, which is the
+    // whole reason this reads as transformation instead of malfunction.
+    const window = Math.max(0.001, 1 - P.flipSharp);
+    local = local <= 1 - window ? 0 : (local - (1 - window)) / window;
     local = local * local * (3 - 2 * local);
+
     out.a = path[i * MAX_STEPS + hop];
     out.b = path[i * MAX_STEPS + hop + 1];
     out.blend = local;
@@ -280,6 +326,7 @@ export function createSubstrate(space, params, eligible) {
   }
 
   return {
+    setShelter(map) { shelter = map; },
     resize,
     step,
     read,

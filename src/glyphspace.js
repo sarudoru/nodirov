@@ -237,6 +237,8 @@ export function buildGlyphSpace(chars, font, cellW, cellH) {
       // distance-to-target must strictly decrease, so the walk never doubles
       // back — the eye reads steady progress rather than indecision
       let ceiling = distance(vectors, a, b);
+      const kappaDir = Math.sign(density[b] - density[a]);
+      let kappaLast = density[a];
 
       for (let s = 1; s < steps; s += 1) {
         const t = s / steps;
@@ -249,6 +251,12 @@ export function buildGlyphSpace(chars, font, cellW, cellH) {
           if (used.has(i)) continue;
           const toTarget = distance(vectors, i, b);
           if (toTarget >= ceiling) continue;
+          // Monotone in ink: at these opacities brightness is almost the only
+          // channel the eye has, so a ladder that brightens then darkens reads
+          // as a glitch however well the shapes match. Forcing the walk to
+          // move steadily along the density axis makes the cell read as
+          // condensing or evaporating — one process, not a flicker.
+          if (kappaDir !== 0 && (density[i] - kappaLast) * kappaDir < -0.004) continue;
           let sum = 0;
           const io = i * DIMS;
           for (let d = 0; d < DIMS; d += 1) {
@@ -263,6 +271,7 @@ export function buildGlyphSpace(chars, font, cellW, cellH) {
         if (best < 0) break; // nothing closer remains: settle early
         used.add(best);
         ceiling = distance(vectors, best, b);
+        kappaLast = density[best];
         out.push(best);
       }
       out.push(b);
