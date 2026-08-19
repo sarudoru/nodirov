@@ -40,6 +40,7 @@ function layout() {
   metrics = computeMetrics();
   field.setMetrics(metrics);
   field.resize(window.innerWidth, window.innerHeight);
+  field.collectPlanes(article);
   layoutResult = typeset(blocks, article, {
     cols: field.cols(),
     viewRows: field.rows(),
@@ -49,6 +50,7 @@ function layout() {
     fontSize: metrics.fontSize,
     xOffset: field.xOffset(),
     measure: P.measure,
+    placePlane: (el, r, c, cc, rr) => field.placePlane(el, r, c, cc, rr),
   });
   field.setWorld(layoutResult.lines, layoutResult.worldRows);
   field.registerGlitches(layoutResult.glitches);
@@ -285,6 +287,7 @@ async function boot() {
     get: () => ({ ...P }),
     query: () => toQuery(P),
     renderAt: (now, dt) => field.renderAt(now, dt),
+    planeCount: () => field.planeCount(),
     stats: () => field.stats(),
     glyphCount: () => field.glyphCount(),
     touch: (x, y, px, py, dt) => field.touch(x, y, px, py, dt),

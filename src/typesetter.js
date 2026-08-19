@@ -52,6 +52,9 @@ export function parseArticle(article) {
           : cls.contains("interstitial") ? "interstitial"
           : "p";
         blocks.push({ type, el: child, runs: runsOf(child) });
+      } else if (tag === "FIGURE" && child.dataset.glyph) {
+        blocks.push({ type: "plane", el: child, rows: parseInt(child.dataset.rows ?? "16", 10),
+                      caption: child.querySelector("figcaption")?.textContent.trim() ?? "" });
       } else if (tag === "UL") {
         for (const li of child.children) {
           blocks.push({ type: "li", el: li, runs: runsOf(li) });
@@ -286,6 +289,26 @@ export function typeset(blocks, article, ctx) {
 
       case "p": {
         layoutRuns(block, left, contentW, K_TEXT, { gapAfter: 1 });
+        break;
+      }
+
+      case "plane": {
+        const el = block.el;
+        const planeRows = Math.max(4, Math.min(block.rows, viewRows - 4));
+        const planeCols = Math.min(contentW, cols - 4);
+        const c = Math.floor((cols - planeCols) / 2);
+        row += 2;
+        // The region is reserved here; the plane writes the glyphs each frame.
+        // Screen readers and no-JS get the real <img>/<figcaption> instead.
+        if (ctx.placePlane) ctx.placePlane(el, row, c, planeCols, planeRows);
+        row += planeRows + 1;
+        if (block.caption) {
+          const width = Math.min(block.caption.length, contentW);
+          const cc = Math.floor((cols - width) / 2);
+          emit(row, cc, block.caption.slice(0, width), K_FAINT);
+          row += 1;
+        }
+        row += 2;
         break;
       }
 

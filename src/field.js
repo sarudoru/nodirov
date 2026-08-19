@@ -13,6 +13,7 @@
 import { cousinsFor } from "./glyphs.js";
 import { buildGlyphSpace } from "./glyphspace.js";
 import { createSubstrate } from "./substrate.js";
+import { createPlanes } from "./plane.js";
 import { ALPHABETS } from "./params.js";
 
 // cell kinds
@@ -31,6 +32,7 @@ export function createField(canvas, params) {
 
   let space = null;
   let substrate = null;
+  let planes = null;
 
   let metrics = null;
   let width = 0;
@@ -239,6 +241,15 @@ export function createField(canvas, params) {
           continue;
         }
 
+        // A media plane covers this cell unless the document has committed
+        // text here — a photograph never paints over a word.
+        const planeCell = planes && cellChar[i] === 0 ? planes.at(worldA, col) : null;
+        if (planeCell) {
+          context.globalAlpha = Math.min(1, 0.10 + planeCell.ink * 0.9);
+          context.fillText(glyphAt(planeCell.glyph), x, y);
+          continue;
+        }
+
         // the pour: committed rows blend by scroll phase
         committedAt(worldA, col, cellA);
         let coverage = 0;
@@ -367,6 +378,7 @@ export function createField(canvas, params) {
     const dt = now - lastFrameAt;
     if (dt >= minDelta - 1) {
       if (substrate && !reducedMotion) substrate.step(now, Math.min(dt, 120));
+      if (planes) { planes.playVisible(camera, rows); planes.update(); }
       lastFrameAt = now;
       draw(now);
     }
@@ -478,6 +490,8 @@ export function createField(canvas, params) {
       const eligible = [];
       const inAlphabet = new Set(Array.from(alphabet));
       for (let i = 0; i < chars.length; i += 1) if (inAlphabet.has(chars[i])) eligible.push(i);
+
+      if (!planes) planes = createPlanes(space);
 
       const subParams = { ...P, aspect: metrics.cellH / metrics.cellW };
       if (!substrate) substrate = createSubstrate(space, subParams, eligible);
@@ -717,6 +731,9 @@ export function createField(canvas, params) {
       draw(now);
     },
 
+    collectPlanes(article) { return planes ? planes.collect(article) : []; },
+    placePlane(el, worldRow, col, c, r) { if (planes) planes.place(el, worldRow, col, c, r); },
+    planeCount: () => (planes ? planes.count() : 0),
     requestDraw,
     start,
     stop,

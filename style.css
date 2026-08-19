@@ -123,3 +123,15 @@ html:not(.js) ::selection { color: inherit; }
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* Declared media: the real <img>/<video> is the no-JS and screen-reader
+   truth. Once the field renders the figure as glyphs, hide the raster but
+   keep it in the accessibility tree via the caption and alt text. */
+html.js #article.ready .glyph-plane :is(img, video) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+html:not(.js) .glyph-plane img { max-width: 100%; height: auto; }
