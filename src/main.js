@@ -203,7 +203,7 @@ function onClick(event) {
 
 async function loadFont() {
   const font = FONTS[P.font];
-  if (font.family !== "IBM Plex Mono" && !document.querySelector(`link[data-font="${P.font}"]`)) {
+  if (!font.local && font.family !== "IBM Plex Mono" && !document.querySelector(`link[data-font="${P.font}"]`)) {
     const link = document.createElement("link");
     link.rel = "stylesheet";
     link.dataset.font = P.font;

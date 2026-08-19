@@ -17,8 +17,8 @@ export const SCHEMA = [
 
   // ---- transitions through the morphospace ----
   { key: "restRate", group: "Change", label: "resting change rate", type: "range", min: 0, max: 2, step: 0.02, def: 0.14, unit: "/cell/s" },
-  { key: "morphMs", group: "Change", label: "morph duration", type: "range", min: 120, max: 2500, step: 20, def: 620, unit: "ms" },
-  { key: "morphSteps", group: "Change", label: "morph steps", type: "range", min: 2, max: 8, step: 1, def: 5,
+  { key: "morphMs", group: "Change", label: "morph duration", type: "range", min: 120, max: 2500, step: 20, def: 520, unit: "ms" },
+  { key: "morphSteps", group: "Change", label: "morph steps", type: "range", min: 2, max: 10, step: 1, def: 7,
     help: "intermediate glyphs walked through on the way" },
   { key: "hasteGain", group: "Change", label: "heat haste", type: "range", min: 0, max: 0.85, step: 0.05, def: 0.55,
     help: "how much faster hot cells settle" },
@@ -38,7 +38,7 @@ export const SCHEMA = [
   { key: "warmRadius", group: "Heat", label: "touch radius", type: "range", min: 1, max: 18, step: 0.5, def: 5.5, unit: "cells" },
   { key: "warmGain", group: "Heat", label: "touch strength", type: "range", min: 0, max: 2, step: 0.02, def: 0.42 },
   { key: "heatDiffuse", group: "Heat", label: "spread", type: "range", min: 0, max: 0.24, step: 0.005, def: 0.115 },
-  { key: "heatCool", group: "Heat", label: "cooling", type: "range", min: 0.9, max: 0.999, step: 0.001, def: 0.972,
+  { key: "heatCool", group: "Heat", label: "cooling", type: "range", min: 0.86, max: 0.999, step: 0.001, def: 0.9,
     help: "per-frame retention — higher lingers longer" },
   { key: "heatCeiling", group: "Heat", label: "heat ceiling", type: "range", min: 0.2, max: 3, step: 0.05, def: 1.15 },
   { key: "heatRate", group: "Heat", label: "heat change rate", type: "range", min: 0, max: 30, step: 0.5, def: 9, unit: "/cell/s",
@@ -53,13 +53,13 @@ export const SCHEMA = [
 
   // ---- flow: strokes lean along the current ----
   { key: "flowGain", group: "Flow", label: "flow pickup", type: "range", min: 0, max: 3, step: 0.05, def: 1 },
-  { key: "flowDecay", group: "Flow", label: "flow persistence", type: "range", min: 0.8, max: 0.999, step: 0.001, def: 0.94 },
+  { key: "flowDecay", group: "Flow", label: "flow persistence", type: "range", min: 0.7, max: 0.999, step: 0.001, def: 0.86 },
   { key: "flowThreshold", group: "Flow", label: "flow threshold", type: "range", min: 0.01, max: 1.5, step: 0.01, def: 0.22,
     help: "current needed before strokes align to it" },
 
   // ---- waves: clicks ring outward ----
   { key: "waveSpeed", group: "Wave", label: "ripple speed", type: "range", min: 0, max: 0.9, step: 0.01, def: 0.42 },
-  { key: "waveDamp", group: "Wave", label: "ripple damping", type: "range", min: 0.9, max: 0.999, step: 0.001, def: 0.978 },
+  { key: "waveDamp", group: "Wave", label: "ripple damping", type: "range", min: 0.88, max: 0.999, step: 0.001, def: 0.955 },
   { key: "waveHeat", group: "Wave", label: "ripple energy", type: "range", min: 0, max: 3, step: 0.05, def: 1.1 },
   { key: "clickStrength", group: "Wave", label: "click force", type: "range", min: 0, max: 8, step: 0.1, def: 2.4 },
 
@@ -84,8 +84,8 @@ export const SCHEMA = [
     help: "how much the substrate calms behind text so reading stays easy" },
 
   // ---- type ----
-  { key: "font", group: "Type", label: "typeface", type: "select", def: "plex",
-    options: [["plex", "IBM Plex Mono"], ["fragment", "Fragment Mono"], ["space", "Space Mono"],
+  { key: "font", group: "Type", label: "typeface", type: "select", def: "departure",
+    options: [["departure", "Departure Mono"], ["plex", "IBM Plex Mono"], ["fragment", "Fragment Mono"], ["space", "Space Mono"],
               ["kode", "Kode Mono"], ["courier", "Courier Prime"], ["azeret", "Azeret Mono"]], layout: true },
   { key: "size", group: "Type", label: "size", type: "range", min: 13, max: 30, step: 1, def: 21, unit: "px", layout: true },
   { key: "tracking", group: "Type", label: "tracking", type: "range", min: 0.02, max: 0.45, step: 0.01, def: 0.18, layout: true },
@@ -101,6 +101,7 @@ export const SCHEMA = [
 ];
 
 export const FONTS = {
+  departure: { family: "Departure Mono", local: true },
   plex: { family: "IBM Plex Mono", css: "IBM+Plex+Mono:wght@400" },
   fragment: { family: "Fragment Mono", css: "Fragment+Mono" },
   space: { family: "Space Mono", css: "Space+Mono" },

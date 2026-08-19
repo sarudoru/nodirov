@@ -250,13 +250,16 @@ export function buildGlyphSpace(chars, font, cellW, cellH) {
         for (let i = 0; i < n; i += 1) {
           if (used.has(i)) continue;
           const toTarget = distance(vectors, i, b);
-          if (toTarget >= ceiling) continue;
+          // A small plateau is allowed. Requiring strictly monotone approach
+          // truncated ladders to two or three hops, which reads as a swap;
+          // the point of the walk is that the eye SEES it travel.
+          if (toTarget > ceiling * 1.06) continue;
           // Monotone in ink: at these opacities brightness is almost the only
           // channel the eye has, so a ladder that brightens then darkens reads
           // as a glitch however well the shapes match. Forcing the walk to
           // move steadily along the density axis makes the cell read as
           // condensing or evaporating — one process, not a flicker.
-          if (kappaDir !== 0 && (density[i] - kappaLast) * kappaDir < -0.004) continue;
+          if (kappaDir !== 0 && (density[i] - kappaLast) * kappaDir < -0.012) continue;
           let sum = 0;
           const io = i * DIMS;
           for (let d = 0; d < DIMS; d += 1) {
@@ -270,7 +273,7 @@ export function buildGlyphSpace(chars, font, cellW, cellH) {
         }
         if (best < 0) break; // nothing closer remains: settle early
         used.add(best);
-        ceiling = distance(vectors, best, b);
+        ceiling = Math.min(ceiling, distance(vectors, best, b));
         kappaLast = density[best];
         out.push(best);
       }

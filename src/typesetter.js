@@ -6,7 +6,7 @@
 //
 // The article element is the single source of truth. The field is a renderer.
 
-import { renderBanner, BANNER_ROWS } from "./banner.js";
+import { headline } from "./bigtype.js";
 import { K_TEXT, K_FAINT, K_LINK } from "./field.js";
 
 // Parse once at boot; the blueprint keeps element references and raw runs so
@@ -214,34 +214,19 @@ export function typeset(blocks, article, ctx) {
         sr.textContent = block.text;
         el.appendChild(sr);
 
-        const words = block.text.split(" ");
-        const banners = words.map(renderBanner);
-        const fits = banners.every((b, i) => b && words[i].length * 6 - 1 <= cols - 2);
-
-        if (fits) {
-          for (let w = 0; w < words.length; w += 1) {
-            const bannerLines = banners[w];
-            const width = words[w].length * 6 - 1;
-            const c = Math.floor((cols - width) / 2);
-            for (let r = 0; r < BANNER_ROWS; r += 1) {
-              span(el, bannerLines[r], row + r, c, false, true);
-              emit(row + r, c, bannerLines[r], K_TEXT);
-            }
-            row += BANNER_ROWS + 1;
+        // Real block letterforms, set to the available measure. The face
+        // steps down on narrow viewports and falls back to letter-spaced
+        // capitals only when even the condensed face cannot fit.
+        const set = headline(block.text, cols - 2);
+        for (const line of set.lines) {
+          const c = Math.max(0, Math.floor((cols - line.width) / 2));
+          for (let r = 0; r < set.rows; r += 1) {
+            span(el, line.grid[r], row + r, c, false, true);
+            emit(row + r, c, line.grid[r], K_TEXT);
           }
-          row += 1;
-        } else {
-          // narrow screens: letter-spaced name, one word per line
-          for (const word of words) {
-            const wide = word.length * 2 - 1 <= cols - 2;
-            const shown = word.toUpperCase();
-            const width = wide ? shown.length * 2 - 1 : shown.length;
-            const c = Math.floor((cols - width) / 2);
-            span(el, shown, row, c, wide, true);
-            emit(row, c, wide ? [...shown].join(" ") : shown, K_TEXT);
-            row += 2;
-          }
+          row += set.rows + (set.rows > 1 ? 1 : 0);
         }
+        row += 2;
         break;
       }
 
