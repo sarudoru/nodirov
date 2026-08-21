@@ -200,6 +200,7 @@ export function createField(canvas, params) {
     context.font = metrics.font;
     context.textAlign = "center";
     context.textBaseline = "middle";
+  if (context.textRendering !== undefined) context.textRendering = "geometricPrecision";
     context.fillStyle = P.ink;
 
     const fast = P.fastSkip && now < fastUntil;

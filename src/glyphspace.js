@@ -122,6 +122,7 @@ export function buildGlyphSpace(chars, font, cellW, cellH) {
   context.font = font.replace(/^\d+(\.\d+)?px/, `${Math.round(parseFloat(font) * scale)}px`);
   context.textAlign = "center";
   context.textBaseline = "middle";
+  if (context.textRendering !== undefined) context.textRendering = "geometricPrecision";
 
   const vectors = new Float32Array(n * DIMS);
   const density = new Float32Array(n);

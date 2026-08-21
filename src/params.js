@@ -87,7 +87,7 @@ export const SCHEMA = [
   { key: "font", group: "Type", label: "typeface", type: "select", def: "departure",
     options: [["departure", "Departure Mono"], ["plex", "IBM Plex Mono"], ["fragment", "Fragment Mono"], ["space", "Space Mono"],
               ["kode", "Kode Mono"], ["courier", "Courier Prime"], ["azeret", "Azeret Mono"]], layout: true },
-  { key: "size", group: "Type", label: "size", type: "range", min: 13, max: 30, step: 1, def: 21, unit: "px", layout: true },
+  { key: "size", group: "Type", label: "size", type: "range", min: 11, max: 44, step: 1, def: 22, unit: "px", layout: true },
   { key: "tracking", group: "Type", label: "tracking", type: "range", min: 0.02, max: 0.45, step: 0.01, def: 0.18, layout: true },
   { key: "leading", group: "Type", label: "leading", type: "range", min: 1, max: 1.7, step: 0.02, def: 1.24, layout: true },
   { key: "measure", group: "Type", label: "measure", type: "range", min: 40, max: 96, step: 1, def: 66, unit: "cols", layout: true },
@@ -101,7 +101,15 @@ export const SCHEMA = [
 ];
 
 export const FONTS = {
-  departure: { family: "Departure Mono", local: true },
+  // A true pixel face: unitsPerEm 550 with a 350 advance, so the advance is
+  // only an integer at multiples of 11px (11->7, 22->14, 33->21). Its designed
+  // cell is 7x14 units — a true 1:2 ratio — so it wants no added tracking and
+  // its own 14/11 line box. computeMetrics() enforces this contract.
+  departure: {
+    family: "Departure Mono",
+    local: true,
+    grid: { sizeStep: 11, minSize: 11, tracking: 0, leading: 14 / 11 },
+  },
   plex: { family: "IBM Plex Mono", css: "IBM+Plex+Mono:wght@400" },
   fragment: { family: "Fragment Mono", css: "Fragment+Mono" },
   space: { family: "Space Mono", css: "Space+Mono" },

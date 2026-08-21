@@ -22,17 +22,30 @@ let scrollEndTimer = 0;
 let lastPointer = { x: 0, y: 0, t: 0 };
 
 function computeMetrics() {
-  const fontSize = window.innerWidth < 720 ? Math.max(12, Math.round(P.size * 0.72)) : P.size;
+  const face = FONTS[P.font];
+  const grid = face.grid;
+  let fontSize = window.innerWidth < 720 ? Math.max(12, Math.round(P.size * 0.72)) : P.size;
+
+  // A pixel face has no fractional sizes: off-step, its advance lands between
+  // device pixels and every stem smears. Snap to the design step instead of
+  // letting the workbench hand it an unrenderable size.
+  if (grid) fontSize = Math.max(grid.minSize, Math.round(fontSize / grid.sizeStep) * grid.sizeStep);
+
   const probe = document.createElement("canvas").getContext("2d");
-  const font = `${fontSize}px "${FONTS[P.font].family}", Menlo, monospace`;
+  const font = `${fontSize}px "${face.family}", Menlo, monospace`;
   probe.font = font;
+  if (probe.textRendering !== undefined) probe.textRendering = "geometricPrecision";
   const adv = probe.measureText("M").width;
+
+  const tracking = grid ? grid.tracking : P.tracking;
+  const leading = grid ? grid.leading : P.leading;
   return {
     fontSize,
     adv,
     font,
-    cellW: Math.round(adv + fontSize * P.tracking),
-    cellH: Math.round(fontSize * P.leading),
+    pixelFace: !!grid,
+    cellW: Math.round(adv + fontSize * tracking),
+    cellH: Math.round(fontSize * leading),
   };
 }
 
