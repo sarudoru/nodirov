@@ -43,6 +43,7 @@ export function createField(canvas, params) {
   let reducedMotion = false;
   let ratio = 1;
   let prevChar = new Uint16Array(0);
+  let lastFlipAt = -1e9; // when the board last received a flip request
   let tokenGlyph = new Int16Array(0); // text token -> morphospace index
   let lastRowFloat = 0;
 
@@ -178,7 +179,13 @@ export function createField(canvas, params) {
   function driveBoard(mode, direction, fresh) {
     if (!substrate) return;
     const now = performance.now();
-    const instant = mode === "instant" || reducedMotion;
+    // A flip that arrives while the previous one is still mostly in flight
+    // lands instantly. Deliberate steps ripple; continuous scrolling never
+    // stacks ladders into a jumble, and costs one paint per cell.
+    const crowded = mode === "flip" && now - lastFlipAt < P.flipMs * P.flipCoalesce;
+    const instant = mode === "instant" || reducedMotion || crowded;
+    if (mode === "flip") lastFlipAt = now; // every request counts: a pause earns the ripple
+    const releaseMs = P.flipMs * P.releaseRatio;
     const cx = cols / 2;
     const cy = rows * 0.42;
     const aspect = metrics.cellH / metrics.cellW;
@@ -208,7 +215,8 @@ export function createField(canvas, params) {
           if (mode === "reveal") substrate.release(i, now, 0, true);
           substrate.commit(i, glyph, kindAlpha(cellKind[i]), now, delay, instant);
         } else if (before !== 0 || fresh) {
-          substrate.release(i, now, delay, instant);
+          // departing letters sink faster than arriving ones rise: no trail
+          substrate.release(i, now, delay * 0.5, instant, releaseMs);
         }
       }
     }

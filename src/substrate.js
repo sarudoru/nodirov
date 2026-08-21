@@ -371,7 +371,7 @@ export function createSubstrate(space, params, eligible) {
 
   // Ask a cell to hold a document character. Its current glyph walks through
   // the morphospace to the letter while its ink climbs to the text level.
-  function commit(i, glyph, alpha, now, delay = 0, instant = false) {
+  function commit(i, glyph, alpha, now, delay = 0, instant = false, ms = P.flipMs) {
     const was = committed[i];
     committed[i] = 1;
     inkTo[i] = alpha;
@@ -391,12 +391,12 @@ export function createSubstrate(space, params, eligible) {
       pathLen[i] = 0;
       return;
     }
-    startLadder(i, from, glyph, P.flipSteps, now, delay, P.flipMs);
+    startLadder(i, from, glyph, P.flipSteps, now, delay, ms);
   }
 
   // Let a cell go: it walks back down into the murmur and the weather
   // reclaims it when the ladder completes.
-  function release(i, now, delay = 0, instant = false) {
+  function release(i, now, delay = 0, instant = false, ms = P.flipMs) {
     if (!committed[i] && inkMode[i] !== 1) return;
     committed[i] = 0;
     if (instant) {
@@ -409,7 +409,7 @@ export function createSubstrate(space, params, eligible) {
     inkFrom[i] = read(i, now, 1).alpha;
     inkMode[i] = 2;
     const target = ambientPool[(rnd() * ambientPool.length) | 0];
-    startLadder(i, from, target, P.flipSteps, now, delay, P.flipMs);
+    startLadder(i, from, target, Math.max(2, P.flipSteps - 2), now, delay, ms);
   }
 
   return {
