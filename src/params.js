@@ -68,13 +68,19 @@ export const SCHEMA = [
   { key: "glitch", group: "Aperture", label: "unstable glyphs", type: "bool", def: true },
   { key: "glitchMs", group: "Aperture", label: "instability interval", type: "range", min: 400, max: 12000, step: 100, def: 2600, unit: "ms" },
 
-  // ---- the pour ----
-  { key: "biasOut", group: "Pour", label: "outgoing bias", type: "range", min: 0.6, max: 3, step: 0.05, def: 1.35 },
-  { key: "biasIn", group: "Pour", label: "incoming bias", type: "range", min: 0.4, max: 2, step: 0.05, def: 0.8 },
-  { key: "wheelMs", group: "Pour", label: "wheel ease", type: "range", min: 0, max: 700, step: 10, def: 220, unit: "ms" },
-  { key: "settleMs", group: "Pour", label: "settle ease", type: "range", min: 0, max: 700, step: 10, def: 150, unit: "ms" },
-  { key: "fastSkip", group: "Pour", label: "crisp fast flicks", type: "bool", def: true },
-  { key: "scrollHeat", group: "Pour", label: "scroll warms field", type: "range", min: 0, max: 1.5, step: 0.05, def: 0.35 },
+  // ---- the board: scrolling is every cell flipping to its new letter ----
+  { key: "flipMs", group: "Board", label: "flip duration", type: "range", min: 80, max: 900, step: 10, def: 260, unit: "ms",
+    help: "how long a cell takes to become its new character" },
+  { key: "flipSteps", group: "Board", label: "flip ladder", type: "range", min: 2, max: 8, step: 1, def: 5,
+    help: "intermediate letterforms a cell walks through on the way" },
+  { key: "flipSweep", group: "Board", label: "column sweep", type: "range", min: 0, max: 8, step: 0.25, def: 1.5, unit: "ms/col",
+    help: "stagger across columns, so a row change ripples instead of snapping" },
+  { key: "flipDrift", group: "Board", label: "row drift", type: "range", min: 0, max: 16, step: 0.5, def: 3, unit: "ms/row" },
+  { key: "flipHysteresis", group: "Board", label: "row threshold", type: "range", min: 0.5, max: 0.9, step: 0.01, def: 0.58,
+    help: "how far past a row boundary the scroll must travel before the board flips" },
+  { key: "wheelMs", group: "Board", label: "wheel ease", type: "range", min: 0, max: 700, step: 10, def: 220, unit: "ms" },
+  { key: "settleMs", group: "Board", label: "settle ease", type: "range", min: 0, max: 700, step: 10, def: 150, unit: "ms" },
+  { key: "scrollHeat", group: "Board", label: "scroll warms field", type: "range", min: 0, max: 1.5, step: 0.05, def: 0.35 },
 
   // ---- reading ----
   { key: "shimmerTick", group: "Reading", label: "hover shimmer", type: "range", min: 60, max: 900, step: 10, def: 280, unit: "ms" },
@@ -84,10 +90,10 @@ export const SCHEMA = [
     help: "how much the substrate calms behind text so reading stays easy" },
 
   // ---- type ----
-  { key: "font", group: "Type", label: "typeface", type: "select", def: "departure",
-    options: [["departure", "Departure Mono"], ["plex", "IBM Plex Mono"], ["fragment", "Fragment Mono"], ["space", "Space Mono"],
+  { key: "font", group: "Type", label: "typeface", type: "select", def: "geist",
+    options: [["geist", "Geist Mono"], ["plex", "IBM Plex Mono"], ["departure", "Departure Mono"], ["fragment", "Fragment Mono"], ["space", "Space Mono"],
               ["kode", "Kode Mono"], ["courier", "Courier Prime"], ["azeret", "Azeret Mono"]], layout: true },
-  { key: "size", group: "Type", label: "size", type: "range", min: 11, max: 44, step: 1, def: 22, unit: "px", layout: true },
+  { key: "size", group: "Type", label: "size", type: "range", min: 11, max: 44, step: 1, def: 21, unit: "px", layout: true },
   { key: "tracking", group: "Type", label: "tracking", type: "range", min: 0.02, max: 0.45, step: 0.01, def: 0.18, layout: true },
   { key: "leading", group: "Type", label: "leading", type: "range", min: 1, max: 1.7, step: 0.02, def: 1.24, layout: true },
   { key: "measure", group: "Type", label: "measure", type: "range", min: 40, max: 96, step: 1, def: 66, unit: "cols", layout: true },
@@ -101,6 +107,10 @@ export const SCHEMA = [
 ];
 
 export const FONTS = {
+  // Geist Mono is the default: a contemporary vector mono that hints cleanly
+  // and renders razor-crisp at native resolution — the "white page, black
+  // text, why does this look so good" register.
+  geist: { family: "Geist Mono", css: "Geist+Mono:wght@400" },
   // A true pixel face: unitsPerEm 550 with a 350 advance, so the advance is
   // only an integer at multiples of 11px (11->7, 22->14, 33->21). Its designed
   // cell is 7x14 units — a true 1:2 ratio — so it wants no added tracking and

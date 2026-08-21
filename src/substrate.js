@@ -46,6 +46,15 @@ export function createSubstrate(space, params, eligible) {
   let twPhase = new Float32Array(0);
   let twRate = new Float32Array(0);
 
+  // Commitment. A committed cell holds a document character at full ink and
+  // is exempt from the weather; it got there by morphing up out of the murmur
+  // and it leaves the same way. There is no second layer: text is a state of
+  // the same cells that murmur.
+  let committed = new Uint8Array(0);  // 1 = holds a document character
+  let inkMode = new Uint8Array(0);    // 0 free, 1 rising to text, 2 falling to murmur
+  let inkFrom = new Float32Array(0);
+  let inkTo = new Float32Array(0);
+
   let ambientPool = [];
   let rngState = 0x2f6e2b1;
 
@@ -88,6 +97,10 @@ export function createSubstrate(space, params, eligible) {
     duration = new Float32Array(n);
     lit = new Uint8Array(n);
     bursting = new Uint8Array(n);
+    committed = new Uint8Array(n);
+    inkMode = new Uint8Array(n);
+    inkFrom = new Float32Array(n);
+    inkTo = new Float32Array(n);
     twPhase = new Float32Array(n);
     twRate = new Float32Array(n);
 
@@ -229,9 +242,11 @@ export function createSubstrate(space, params, eligible) {
         if (now - started[i] >= duration[i]) {
           current[i] = path[i * MAX_STEPS + pathLen[i] - 1];
           pathLen[i] = 0;
+          if (inkMode[i] === 2) inkMode[i] = 0; // released: free again
         }
         continue;
       }
+      if (committed[i]) continue;
       const energy = Math.min(1, heat[i] + Math.abs(wave[i]) * P.waveHeat);
 
       // Two-state Markov chain per cell. Uniform turnover reads as a
@@ -279,12 +294,13 @@ export function createSubstrate(space, params, eligible) {
       const phase = (twPhase[i] + now * twRate[i]) % 1;
       alpha *= 1 + P.twAmp * Math.sin(phase * Math.PI * 2);
     }
-    out.alpha = lit[i] ? alpha : 0;
+    const murmur = lit[i] ? alpha : 0;
 
     if (pathLen[i] === 0) {
       out.a = current[i];
       out.b = -1;
       out.blend = 0;
+      out.alpha = committed[i] ? inkTo[i] : murmur;
       return out;
     }
 
@@ -294,8 +310,10 @@ export function createSubstrate(space, params, eligible) {
     // before it happens, which is what makes a change feel *settled* rather
     // than merely finished. The tail of the duration is held still on the
     // final glyph so the arrival has a beat.
-    const raw = Math.min(1, (now - started[i]) / duration[i]);
-    const hold = P.settleHold / Math.max(1, duration[i]);
+    const raw = Math.max(0, Math.min(1, (now - started[i]) / duration[i]));
+    // the landing beat never eats more than a third of a short ladder, so a
+    // quick flip still shows its intermediate letters
+    const hold = Math.min(P.settleHold, duration[i] * 0.33) / Math.max(1, duration[i]);
     const t = hold >= 1 ? 1 : Math.min(1, raw / (1 - hold));
     const eased = 1 - (1 - t) * (1 - t);
 
@@ -322,11 +340,87 @@ export function createSubstrate(space, params, eligible) {
     out.a = path[i * MAX_STEPS + hop];
     out.b = path[i * MAX_STEPS + hop + 1];
     out.blend = local;
+
+    // ink rises with the ladder on the way up and falls with it on the way
+    // down, so a character condenses out of the murmur as one motion
+    if (inkMode[i] === 1) out.alpha = inkFrom[i] + (inkTo[i] - inkFrom[i]) * eased;
+    else if (inkMode[i] === 2) out.alpha = inkFrom[i] + (murmur - inkFrom[i]) * eased;
+    else out.alpha = murmur;
     return out;
+  }
+
+  // The glyph a cell is showing right now, mid-ladder or not — a new ladder
+  // must start from what the eye can see, never from a future state.
+  function displayedGlyph(i, now) {
+    if (pathLen[i] === 0) return current[i];
+    const raw = Math.max(0, Math.min(1, (now - started[i]) / duration[i]));
+    const segments = pathLen[i] - 1;
+    const hop = Math.min(segments, Math.floor((1 - (1 - raw) * (1 - raw)) * segments + 0.5));
+    return path[i * MAX_STEPS + hop];
+  }
+
+  function startLadder(i, from, to, steps, now, delay, ms) {
+    let sequence = from === to ? [from, to] : space.morph(from, to, steps);
+    if (sequence.length < 2) sequence = [from, to];
+    const len = Math.min(MAX_STEPS, sequence.length);
+    for (let k = 0; k < len; k += 1) path[i * MAX_STEPS + k] = sequence[k];
+    pathLen[i] = len;
+    started[i] = now + delay;
+    duration[i] = ms;
+  }
+
+  // Ask a cell to hold a document character. Its current glyph walks through
+  // the morphospace to the letter while its ink climbs to the text level.
+  function commit(i, glyph, alpha, now, delay = 0, instant = false) {
+    const was = committed[i];
+    committed[i] = 1;
+    inkTo[i] = alpha;
+    if (instant) {
+      current[i] = glyph;
+      pathLen[i] = 0;
+      inkMode[i] = 1;
+      return;
+    }
+    const from = displayedGlyph(i, now);
+    // start the ink where it visibly is: murmur level, or the old text level
+    const probe = read(i, now, 1);
+    inkFrom[i] = was ? probe.alpha : Math.min(probe.alpha, alpha);
+    inkMode[i] = 1;
+    if (from === glyph && was && Math.abs(inkFrom[i] - alpha) < 0.01) {
+      current[i] = glyph;
+      pathLen[i] = 0;
+      return;
+    }
+    startLadder(i, from, glyph, P.flipSteps, now, delay, P.flipMs);
+  }
+
+  // Let a cell go: it walks back down into the murmur and the weather
+  // reclaims it when the ladder completes.
+  function release(i, now, delay = 0, instant = false) {
+    if (!committed[i] && inkMode[i] !== 1) return;
+    committed[i] = 0;
+    if (instant) {
+      current[i] = ambientPool[(rnd() * ambientPool.length) | 0];
+      pathLen[i] = 0;
+      inkMode[i] = 0;
+      return;
+    }
+    const from = displayedGlyph(i, now);
+    inkFrom[i] = read(i, now, 1).alpha;
+    inkMode[i] = 2;
+    const target = ambientPool[(rnd() * ambientPool.length) | 0];
+    startLadder(i, from, target, P.flipSteps, now, delay, P.flipMs);
   }
 
   return {
     setShelter(map) { shelter = map; },
+    setSpace(next) {
+      space = next;
+      buildAmbientPool();
+    },
+    commit,
+    release,
+    isCommitted: (i) => committed[i] === 1,
     resize,
     step,
     read,

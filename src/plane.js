@@ -18,6 +18,7 @@
 import { createSampler } from "./media.js";
 
 export function createPlanes(space) {
+  let current = space;
   const sampler = createSampler();
   const planes = [];
 
@@ -90,7 +91,7 @@ export function createPlanes(space) {
       if (!plane.dirty && !live) continue;
       const field = sampler.sample(plane.media, plane.cols, plane.rows, plane.options);
       if (!field) continue;
-      plane.frame = sampler.toGlyphs(field, space, plane.options, plane.frame);
+      plane.frame = sampler.toGlyphs(field, current, plane.options, plane.frame);
       plane.dirty = false;
       changed = true;
     }
@@ -122,5 +123,10 @@ export function createPlanes(space) {
     }
   }
 
-  return { collect, place, update, at, playVisible, list: () => planes, count: () => planes.length };
+  return {
+    collect, place, update, at, playVisible,
+    setSpace(next) { current = next; },
+    list: () => planes,
+    count: () => planes.length,
+  };
 }

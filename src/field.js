@@ -23,8 +23,6 @@ export const K_FAINT = 2;
 export const K_LINK = 3;
 export const K_HOLE = 4;
 
-const smoothstep = (p) => p * p * (3 - 2 * p);
-const REVEAL_STEPS = 7;
 
 export function createField(canvas, params) {
   const context = canvas.getContext("2d", { alpha: false });
@@ -41,11 +39,11 @@ export function createField(canvas, params) {
   let rows = 0;
   let xOffset = 0;
   let camera = 0;
-  let frac = 0;
   let worldRows = 0;
   let reducedMotion = false;
-  let snap = false;
-  let fastUntil = 0;
+  let ratio = 1;
+  let prevChar = new Uint16Array(0);
+  let tokenGlyph = new Int16Array(0); // text token -> morphospace index
   let lastRowFloat = 0;
 
   let worldData = new Map();
@@ -68,14 +66,6 @@ export function createField(canvas, params) {
     }
     return i;
   }
-
-  // reveal: committed text condensing out of the substrate through the
-  // morphospace, staggered so meaning arrives like a wave
-  let revealPath = new Int16Array(0);
-  let revealLen = new Uint8Array(0);
-  let revealStart = new Float32Array(0);
-  let revealDur = new Float32Array(0);
-  let revealActive = false;
 
   let overlay = new Map();
   let hud = "";
@@ -107,48 +97,39 @@ export function createField(canvas, params) {
 
   // ---------- world & view ----------
 
-  function committedAt(worldRow, col, out) {
-    const data = worldData.get(worldRow);
-    if (data && col < data.chars.length) {
-      const token = data.chars[col];
-      out.link = data.links[col];
-      if (token !== 0 && !(masks.size > 0 && masks.has(worldKey(worldRow, col)))) {
-        out.token = token;
-        out.kind = data.kinds[col];
-        return;
-      }
-      out.token = 0;
-      out.kind = token !== 0 ? K_HOLE : K_AMBIENT;
-      return;
-    }
-    out.token = 0;
-    out.kind = K_AMBIENT;
-    out.link = -1;
-  }
-
   function kindAlpha(kind) {
     if (kind === K_TEXT || kind === K_LINK) return P.textAlpha;
     if (kind === K_FAINT) return P.faintAlpha;
     return 0;
   }
 
-  function inkAlpha(cell) {
-    if (cell.kind === K_FAINT && cell.link !== -1 && cell.link === hoveredLink) return 0.9;
-    return kindAlpha(cell.kind);
+  function glyphForToken(token) {
+    if (token < tokenGlyph.length) return tokenGlyph[token];
+    // a character committed after the space was built: resolve live
+    return space ? space.indexOf(textPalette[token]) : -1;
   }
 
-  function composeView() {
+  // Compose the view for the current camera, then hand every changed cell to
+  // the substrate: a cell that gains a character commits (its glyph walks up
+  // out of the murmur), a cell that loses one releases (walks back down).
+  // mode: "instant" | "flip" | "reveal"
+  function composeView(mode = "instant", direction = 1) {
     const n = cols * rows;
-    if (cellChar.length !== n) {
+    const fresh = cellChar.length !== n;
+    if (fresh) {
+      prevChar = new Uint16Array(n);
       cellChar = new Uint16Array(n);
       cellKind = new Uint8Array(n);
       cellLink = new Int16Array(n);
       shelterMap = new Float32Array(n);
+    } else {
+      prevChar.set(cellChar);
     }
     stopShimmer();
     glitchCells.clear();
     shelterMap.fill(1);
     substrate.setShelter(shelterMap);
+
     for (let row = 0; row < rows; row += 1) {
       const worldRow = camera + row;
       const data = worldData.get(worldRow);
@@ -166,6 +147,7 @@ export function createField(canvas, params) {
         cellLink[i] = inRange ? data.links[col] : -1;
       }
     }
+
     // Reading shelter: the substrate calms in the rows that carry text, so a
     // paragraph never has to compete with its own background. This is a
     // *rate* reduction, not a clearing — the murmur stays present.
@@ -187,12 +169,81 @@ export function createField(canvas, params) {
         }
       }
     }
+
+    driveBoard(mode, direction, fresh);
+  }
+
+  // The board: every cell whose character changed flips. A scroll is a wave
+  // of flips sweeping the grid; nothing slides, nothing is covered.
+  function driveBoard(mode, direction, fresh) {
+    if (!substrate) return;
+    const now = performance.now();
+    const instant = mode === "instant" || reducedMotion;
+    const cx = cols / 2;
+    const cy = rows * 0.42;
+    const aspect = metrics.cellH / metrics.cellW;
+
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const i = row * cols + col;
+        const token = cellChar[i];
+        const before = fresh ? 0 : prevChar[i];
+        if (token === before && !fresh && mode !== "reveal") continue;
+
+        let delay = 0;
+        if (!instant) {
+          if (mode === "reveal") {
+            const dx = (col - cx) / aspect;
+            const dy = row - cy;
+            delay = 140 + Math.hypot(dx, dy) * 12 + Math.random() * 80;
+          } else {
+            const sweepRow = direction >= 0 ? row : rows - 1 - row;
+            delay = col * P.flipSweep + sweepRow * P.flipDrift;
+          }
+        }
+
+        if (token !== 0) {
+          const glyph = glyphForToken(token);
+          if (glyph < 0) continue;
+          if (mode === "reveal") substrate.release(i, now, 0, true);
+          substrate.commit(i, glyph, kindAlpha(cellKind[i]), now, delay, instant);
+        } else if (before !== 0 || fresh) {
+          substrate.release(i, now, delay, instant);
+        }
+      }
+    }
+  }
+
+  // Block elements mean "this much of the cell is ink". A font's █ fills
+  // its own advance, not our tracked cell, so on the grid it would read as
+  // a slat. Painting blocks as cell geometry keeps display type solid and
+  // makes the metaphor exact: the cell is the pixel.
+  const BLOCKS = {
+    "█": [0, 0, 1, 1],
+    "▀": [0, 0, 1, 0.5], "▄": [0, 0.5, 1, 0.5],
+    "▌": [0, 0, 0.5, 1], "▐": [0.5, 0, 0.5, 1],
+    "▘": [0, 0, 0.5, 0.5], "▝": [0.5, 0, 0.5, 0.5],
+    "▖": [0, 0.5, 0.5, 0.5], "▗": [0.5, 0.5, 0.5, 0.5],
+  };
+
+  function paintGlyph(ch, x, y) {
+    const block = BLOCKS[ch];
+    if (!block) {
+      context.fillText(ch, x, y);
+      return;
+    }
+    const cw = metrics.cellW;
+    const chh = metrics.cellH;
+    // snap rect edges to device pixels so adjacent cells tile without seams
+    const left = Math.round((x - cw / 2 + block[0] * cw) * ratio) / ratio;
+    const top = Math.round((y - chh / 2 + block[1] * chh) * ratio) / ratio;
+    const right = Math.round((x - cw / 2 + (block[0] + block[2]) * cw) * ratio) / ratio;
+    const bottom = Math.round((y - chh / 2 + (block[1] + block[3]) * chh) * ratio) / ratio;
+    context.fillRect(left, top, right - left, bottom - top);
   }
 
   // ---------- the frame ----------
 
-  const cellA = { token: 0, kind: 0, link: -1 };
-  const cellB = { token: 0, kind: 0, link: -1 };
 
   function draw(now) {
     context.fillStyle = P.paper;
@@ -200,22 +251,22 @@ export function createField(canvas, params) {
     context.font = metrics.font;
     context.textAlign = "center";
     context.textBaseline = "middle";
-  if (context.textRendering !== undefined) context.textRendering = "geometricPrecision";
+    // A pixel face wants its edges untouched; a vector face wants the
+    // platform rasterizer's hinting, which geometricPrecision disables.
+    if (context.textRendering !== undefined) {
+      context.textRendering = metrics.pixelFace ? "geometricPrecision" : "auto";
+    }
     context.fillStyle = P.ink;
 
-    const fast = P.fastSkip && now < fastUntil;
-    const ef = fast ? (frac < 0.5 ? 0 : 1) : smoothstep(frac);
-    const blending = ef > 0.004 && ef < 0.996;
-
     for (let row = 0; row < rows; row += 1) {
-      let y = row * metrics.cellH + metrics.cellH / 2;
-      if (snap) y = Math.round(y);
+      // glyph origins land on whole device pixels, so stems never straddle
+      // two columns of the backing store
+      const y = Math.round((row * metrics.cellH + metrics.cellH / 2) * ratio) / ratio;
       const worldA = camera + row;
 
       for (let col = 0; col < cols; col += 1) {
         const i = row * cols + col;
-        let x = xOffset + col * metrics.cellW + metrics.cellW / 2;
-        if (snap) x = Math.round(x);
+        const x = Math.round((xOffset + col * metrics.cellW + metrics.cellW / 2) * ratio) / ratio;
 
         const over = overlay.get(i);
         if (over) {
@@ -229,14 +280,14 @@ export function createField(canvas, params) {
         }
 
         const shimmerToken = shimmerShown.get(i);
-        if (shimmerToken !== undefined && !blending) {
+        if (shimmerToken !== undefined) {
           context.globalAlpha = kindAlpha(cellKind[i]) || P.textAlpha;
           context.fillText(textPalette[shimmerToken], x, y);
           continue;
         }
 
         const glitch = glitchCells.get(i);
-        if (glitch !== undefined && now < glitch.until && !blending) {
+        if (glitch !== undefined && now < glitch.until) {
           context.globalAlpha = kindAlpha(cellKind[i]) || P.textAlpha;
           context.fillText(glitch.ch, x, y);
           continue;
@@ -247,85 +298,34 @@ export function createField(canvas, params) {
         const planeCell = planes && cellChar[i] === 0 ? planes.at(worldA, col) : null;
         if (planeCell) {
           context.globalAlpha = Math.min(1, 0.10 + planeCell.ink * 0.9);
-          context.fillText(glyphAt(planeCell.glyph), x, y);
+          paintGlyph(glyphAt(planeCell.glyph), x, y);
           continue;
         }
 
-        // the pour: committed rows blend by scroll phase
-        committedAt(worldA, col, cellA);
-        let coverage = 0;
-        if (cellA.kind === K_HOLE || cellA.token !== 0) coverage = blending ? 1 - ef : 1;
-        if (blending) {
-          committedAt(worldA + 1, col, cellB);
-          if (cellB.token !== 0 || cellB.kind === K_HOLE) coverage += ef;
+        // One readout for every cell. Murmur, a letter rising out of it, a
+        // letter settled, a letter sinking back: all the same call.
+        const s = substrate.read(i, now, vigMap[i]);
+        if (s.alpha <= 0.006) continue;
+        if (s.b < 0) {
+          context.globalAlpha = Math.min(1, s.alpha);
+          paintGlyph(glyphAt(s.a), x, y);
         } else {
-          cellB.token = 0;
-        }
-
-        // the substrate shows wherever the document does not cover it
-        if (coverage < 0.996 && substrate) {
-          const s = substrate.read(i, now, vigMap[i]);
-          const alpha = s.alpha * (1 - coverage);
-          if (alpha > 0.006) {
-            if (s.b < 0) {
-              context.globalAlpha = Math.min(1, alpha);
-              context.fillText(glyphAt(s.a), x, y);
-            } else {
-              // cross-fade only between adjacent hops of the morph walk
-              const fromAlpha = alpha * (1 - s.blend);
-              const toAlpha = alpha * s.blend;
-              if (fromAlpha > 0.006) {
-                context.globalAlpha = Math.min(1, fromAlpha);
-                context.fillText(glyphAt(s.a), x, y);
-              }
-              if (toAlpha > 0.006) {
-                context.globalAlpha = Math.min(1, toAlpha);
-                context.fillText(glyphAt(s.b), x, y);
-              }
-            }
+          // cross-fade only between adjacent hops of the morph walk
+          const fromAlpha = s.alpha * (1 - s.blend);
+          const toAlpha = s.alpha * s.blend;
+          if (fromAlpha > 0.006) {
+            context.globalAlpha = Math.min(1, fromAlpha);
+            paintGlyph(glyphAt(s.a), x, y);
           }
-        }
-
-        if (cellA.token !== 0) {
-          const a = inkAlpha(cellA) * (blending ? Math.pow(1 - ef, P.biasOut) : 1);
-          if (a > 0.006) {
-            context.globalAlpha = Math.min(1, a);
-            // during the reveal a letter is still walking in from the murmur
-            if (revealActive && revealLen[i] > 0) {
-              const t = (now - revealStart[i]) / revealDur[i];
-              if (t < 0) {
-                context.globalAlpha = Math.min(1, a * 0.25);
-                context.fillText(glyphAt(revealPath[i * REVEAL_STEPS]), x, y);
-              } else if (t < 1 && revealLen[i] > 1) {
-                const segments = revealLen[i] - 1;
-                const scaled = t * segments;
-                const hop = Math.min(segments - 1, Math.floor(scaled));
-                const local = smoothstep(scaled - hop);
-                const fade = 0.25 + 0.75 * t;
-                context.globalAlpha = Math.min(1, a * fade * (1 - local));
-                context.fillText(glyphAt(revealPath[i * REVEAL_STEPS + hop]), x, y);
-                context.globalAlpha = Math.min(1, a * fade * local);
-                context.fillText(glyphAt(revealPath[i * REVEAL_STEPS + hop + 1]), x, y);
-              } else {
-                revealLen[i] = 0;
-                context.fillText(textPalette[cellA.token], x, y);
-              }
-            } else {
-              context.fillText(textPalette[cellA.token], x, y);
-            }
-          }
-        }
-        if (cellB.token !== 0) {
-          const a = inkAlpha(cellB) * Math.pow(ef, P.biasIn);
-          if (a > 0.006) {
-            context.globalAlpha = Math.min(1, a);
-            context.fillText(textPalette[cellB.token], x, y);
+          if (toAlpha > 0.006) {
+            context.globalAlpha = Math.min(1, toAlpha);
+            paintGlyph(glyphAt(s.b), x, y);
           }
         }
       }
     }
 
-    drawChrome(ef);
+    drawChrome(0);
     drawHud();
     context.globalAlpha = 1;
   }
@@ -457,6 +457,28 @@ export function createField(canvas, params) {
     }, P.glitchMs);
   }
 
+  // The morphospace spans the substrate alphabet, every printable ASCII
+  // character, the typographic set the typesetter emits, the block elements
+  // display type is built from, and every character the document has
+  // committed so far. Characters are appended in a stable order, so indices
+  // already held by cells survive a rebuild.
+  function buildSpace() {
+    const alphabet = ALPHABETS[P.alphabet] ?? ALPHABETS.latin;
+    let printable = "";
+    for (let code = 33; code <= 126; code += 1) printable += String.fromCharCode(code);
+    const typographic = "·—–─│┌┐└┘├┤┬┴┼’‘“”…×█▓▒░▀▄▌▐■□▪▫●○◦•";
+    const committed = textPalette.join("");
+    const chars = Array.from(new Set(Array.from(alphabet + printable + typographic + committed)));
+    space = buildGlyphSpace(chars, metrics.font, metrics.cellW, metrics.cellH, metrics.pixelFace);
+    tokenGlyph = new Int16Array(textPalette.length);
+    for (let t = 0; t < textPalette.length; t += 1) tokenGlyph[t] = space.indexOf(textPalette[t]);
+
+    const eligible = [];
+    const inAlphabet = new Set(Array.from(alphabet));
+    for (let i = 0; i < chars.length; i += 1) if (inAlphabet.has(chars[i])) eligible.push(i);
+    return eligible;
+  }
+
   // ---------- public API ----------
 
   return {
@@ -465,43 +487,27 @@ export function createField(canvas, params) {
     resize(w, h) {
       width = w;
       height = h;
-      const ratio = Math.min(window.devicePixelRatio || 1, 3);
-      snap = ratio === 1;
-      canvas.width = Math.ceil(w * ratio);
-      canvas.height = Math.ceil(h * ratio);
+      ratio = Math.min(window.devicePixelRatio || 1, 3);
+      // The backing store and the CSS box must agree exactly, or the browser
+      // resamples the whole canvas and every glyph edge goes soft.
+      canvas.width = Math.round(w * ratio);
+      canvas.height = Math.round(h * ratio);
+      canvas.style.width = w + "px";
+      canvas.style.height = h + "px";
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       cols = Math.max(10, Math.floor(w / metrics.cellW));
       rows = Math.max(6, Math.ceil(h / metrics.cellH));
       xOffset = Math.floor((w - cols * metrics.cellW) / 2);
 
-      // The space spans the substrate alphabet AND every printable character
-      // the document might use, so a letter of body text can be morphed into
-      // from the murmur — the page condenses out of its own background.
-      const alphabet = ALPHABETS[P.alphabet] ?? ALPHABETS.latin;
-      let printable = "";
-      for (let code = 33; code <= 126; code += 1) printable += String.fromCharCode(code);
-      // Typographic characters the typesetter emits (rules, dashes, bullets)
-      // and any character already committed by the document. Without these,
-      // indexOf() returns -1 for them and the morphospace has no landing site.
-      const typographic = "·—–—─│┌┐└┘├┤┬┴┼’‘“”…×";
-      const committed = textPalette.join("");
-      const chars = Array.from(new Set(Array.from(alphabet + printable + typographic + committed)));
-      space = buildGlyphSpace(chars, metrics.font, metrics.cellW, metrics.cellH);
-
-      const eligible = [];
-      const inAlphabet = new Set(Array.from(alphabet));
-      for (let i = 0; i < chars.length; i += 1) if (inAlphabet.has(chars[i])) eligible.push(i);
+      const eligible = buildSpace();
 
       if (!planes) planes = createPlanes(space);
+      else planes.setSpace(space);
 
       const subParams = { ...P, aspect: metrics.cellH / metrics.cellW };
       if (!substrate) substrate = createSubstrate(space, subParams, eligible);
-      else substrate.setEligible(eligible), substrate.setParams(subParams, []);
+      else substrate.setSpace(space), substrate.setEligible(eligible), substrate.setParams(subParams, []);
       substrate.resize(cols, rows);
-      revealLen = new Uint8Array(cols * rows);
-      revealPath = new Int16Array(cols * rows * REVEAL_STEPS);
-      revealStart = new Float32Array(cols * rows);
-      revealDur = new Float32Array(cols * rows);
 
       const n = cols * rows;
       vigMap = new Float32Array(n);
@@ -515,7 +521,7 @@ export function createField(canvas, params) {
       }
 
       cellChar = new Uint16Array(0);
-      composeView();
+      composeView("instant");
       requestDraw();
     },
 
@@ -543,14 +549,22 @@ export function createField(canvas, params) {
           data.kinds[col] = line.kind;
         }
       }
-      composeView();
+      if (space) {
+        let missing = tokenGlyph.length < textPalette.length;
+        if (!missing) for (let t = 1; t < tokenGlyph.length; t += 1) if (tokenGlyph[t] < 0) { missing = true; break; }
+        if (missing) {
+          const eligible = buildSpace();
+          if (substrate) substrate.setSpace(space), substrate.setEligible(eligible);
+          if (planes) planes.setSpace(space);
+        }
+      }
+      composeView("instant");
       requestDraw();
     },
 
     setScroll(scrollTopPx) {
       const rowFloat = Math.max(0, scrollTopPx / metrics.cellH);
       const delta = Math.abs(rowFloat - lastRowFloat);
-      if (delta > 2) fastUntil = performance.now() + 90;
       // scrolling stirs the medium: the document passing through leaves warmth
       if (substrate && P.scrollHeat > 0 && delta > 0.01 && !reducedMotion) {
         const strength = Math.min(1, delta * 0.5) * P.scrollHeat;
@@ -558,11 +572,17 @@ export function createField(canvas, params) {
         for (let c = 0; c < cols; c += 4) substrate.warm(c, row, 0, -1, strength * 0.35);
       }
       lastRowFloat = rowFloat;
-      const nextCamera = Math.min(Math.floor(rowFloat), Math.max(0, worldRows - 1));
-      frac = Math.min(0.999, Math.max(0, rowFloat - nextCamera));
-      if (nextCamera !== camera) {
-        camera = nextCamera;
-        composeView();
+
+      // The board only ever shows whole rows. A flip needs the scroll to
+      // travel past the midpoint by a margin (hysteresis), so resting on a
+      // boundary never chatters; a long jump always lands on its row.
+      const maxCamera = Math.max(0, worldRows - 1);
+      const candidate = Math.min(maxCamera, Math.round(rowFloat));
+      if (candidate !== camera &&
+          (Math.abs(rowFloat - camera) >= P.flipHysteresis || Math.abs(candidate - camera) > 1)) {
+        const direction = candidate > camera ? 1 : -1;
+        camera = candidate;
+        composeView("flip", direction);
       }
       requestDraw();
     },
@@ -666,31 +686,22 @@ export function createField(canvas, params) {
     // First contact: every letter walks in from the murmur through the
     // morphospace, staggered by distance from the centre so meaning arrives
     // as an expanding wave rather than a curtain.
+    // Workbench/diagnostic: what one cell holds and what it would paint.
+    probe(row, col) {
+      const i = row * cols + col;
+      const token = cellChar[i];
+      const r = substrate ? substrate.read(i, performance.now(), vigMap[i]) : null;
+      return {
+        token, ch: textPalette[token], kind: cellKind[i],
+        glyph: glyphForToken(token), glyphCh: glyphForToken(token) >= 0 ? glyphAt(glyphForToken(token)) : null,
+        committed: substrate ? substrate.isCommitted(i) : null,
+        read: r ? { a: r.a, aCh: glyphAt(r.a), b: r.b, bCh: r.b >= 0 ? glyphAt(r.b) : null, blend: r.blend, alpha: r.alpha } : null,
+      };
+    },
+
     crystallize() {
-      if (reducedMotion || !space) return;
-      const now = performance.now();
-      const cx = cols / 2;
-      const cy = rows * 0.42;
-      const aspect = metrics.cellH / metrics.cellW;
-      revealActive = true;
-      for (let row = 0; row < rows; row += 1) {
-        for (let col = 0; col < cols; col += 1) {
-          const i = row * cols + col;
-          if (cellChar[i] === 0) continue;
-          const target = space.indexOf(textPalette[cellChar[i]]);
-          if (target < 0) continue;
-          const seed = space.byDensity[(Math.random() * Math.min(10, space.size)) | 0];
-          const sequence = space.morph(seed, target, REVEAL_STEPS - 1);
-          const len = Math.min(REVEAL_STEPS, sequence.length);
-          for (let s = 0; s < len; s += 1) revealPath[i * REVEAL_STEPS + s] = sequence[s];
-          revealLen[i] = len;
-          const dx = (col - cx) / aspect;
-          const dy = row - cy;
-          revealStart[i] = now + 120 + Math.hypot(dx, dy) * 11 + Math.random() * 90;
-          revealDur[i] = 520 + Math.random() * 380;
-        }
-      }
-      window.setTimeout(() => { revealActive = false; }, 4200);
+      if (reducedMotion || !space || !substrate) return;
+      driveBoard("reveal", 1, false);
       requestDraw();
     },
 

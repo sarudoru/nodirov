@@ -300,6 +300,7 @@ async function boot() {
     get: () => ({ ...P }),
     query: () => toQuery(P),
     renderAt: (now, dt) => field.renderAt(now, dt),
+    probe: (row, col) => field.probe(row, col),
     planeCount: () => field.planeCount(),
     stats: () => field.stats(),
     glyphCount: () => field.glyphCount(),

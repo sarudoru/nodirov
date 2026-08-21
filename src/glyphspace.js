@@ -109,7 +109,16 @@ function distance(vectors, a, b) {
   return Math.sqrt(sum);
 }
 
-export function buildGlyphSpace(chars, font, cellW, cellH) {
+export function buildGlyphSpace(chars, font, cellW, cellH, pixelFace = false) {
+  // Block elements, box drawing and geometric shapes (U+2500–U+25FF) are
+  // legitimate destinations — display type is built from them — but never
+  // intermediates: a solid block or a box flashing mid-word reads as a
+  // malfunction, not a transformation. Walks pass only through letterforms.
+  const passable = new Uint8Array(chars.length);
+  for (let i = 0; i < chars.length; i += 1) {
+    const code = chars[i].codePointAt(0);
+    passable[i] = code >= 0x2500 && code < 0x2600 ? 0 : 1;
+  }
   const n = chars.length;
   const scale = 2;
   const w = Math.max(8, Math.round(cellW * scale));
@@ -122,7 +131,9 @@ export function buildGlyphSpace(chars, font, cellW, cellH) {
   context.font = font.replace(/^\d+(\.\d+)?px/, `${Math.round(parseFloat(font) * scale)}px`);
   context.textAlign = "center";
   context.textBaseline = "middle";
-  if (context.textRendering !== undefined) context.textRendering = "geometricPrecision";
+  // Measure glyphs the way they will be drawn: untouched edges for a pixel
+  // face, the platform rasterizer's hinting for a vector one.
+  if (context.textRendering !== undefined) context.textRendering = pixelFace ? "geometricPrecision" : "auto";
 
   const vectors = new Float32Array(n * DIMS);
   const density = new Float32Array(n);
@@ -235,32 +246,24 @@ export function buildGlyphSpace(chars, font, cellW, cellH) {
       const bo = b * DIMS;
       const probe = new Float32Array(DIMS);
       const used = new Set([a, b]);
-      // distance-to-target must strictly decrease, so the walk never doubles
-      // back — the eye reads steady progress rather than indecision
       let ceiling = distance(vectors, a, b);
       const kappaDir = Math.sign(density[b] - density[a]);
       let kappaLast = density[a];
 
-      for (let s = 1; s < steps; s += 1) {
-        const t = s / steps;
-        for (let d = 0; d < DIMS; d += 1) {
-          probe[d] = vectors[ao + d] * (1 - t) + vectors[bo + d] * t;
-        }
+      // Candidate nearest the interpolated shape, under a given strictness:
+      //   2  must approach the target AND move monotonically in ink
+      //   1  must approach the target
+      //   0  any unused glyph
+      // A walk asks for the strictest it can get, so short letter-to-letter
+      // flips still show a full ladder of legal forms instead of collapsing
+      // to one hop.
+      const pick = (strictness) => {
         let best = -1;
         let bestScore = Infinity;
         for (let i = 0; i < n; i += 1) {
-          if (used.has(i)) continue;
-          const toTarget = distance(vectors, i, b);
-          // A small plateau is allowed. Requiring strictly monotone approach
-          // truncated ladders to two or three hops, which reads as a swap;
-          // the point of the walk is that the eye SEES it travel.
-          if (toTarget > ceiling * 1.06) continue;
-          // Monotone in ink: at these opacities brightness is almost the only
-          // channel the eye has, so a ladder that brightens then darkens reads
-          // as a glitch however well the shapes match. Forcing the walk to
-          // move steadily along the density axis makes the cell read as
-          // condensing or evaporating — one process, not a flicker.
-          if (kappaDir !== 0 && (density[i] - kappaLast) * kappaDir < -0.012) continue;
+          if (used.has(i) || !passable[i]) continue;
+          if (strictness >= 1 && distance(vectors, i, b) >= ceiling) continue;
+          if (strictness >= 2 && kappaDir !== 0 && (density[i] - kappaLast) * kappaDir < -0.004) continue;
           let sum = 0;
           const io = i * DIMS;
           for (let d = 0; d < DIMS; d += 1) {
@@ -272,7 +275,18 @@ export function buildGlyphSpace(chars, font, cellW, cellH) {
             best = i;
           }
         }
-        if (best < 0) break; // nothing closer remains: settle early
+        return best;
+      };
+
+      for (let s = 1; s < steps; s += 1) {
+        const t = s / steps;
+        for (let d = 0; d < DIMS; d += 1) {
+          probe[d] = vectors[ao + d] * (1 - t) + vectors[bo + d] * t;
+        }
+        let best = pick(2);
+        if (best < 0) best = pick(1);
+        if (best < 0) best = pick(0);
+        if (best < 0) break;
         used.add(best);
         ceiling = Math.min(ceiling, distance(vectors, best, b));
         kappaLast = density[best];
