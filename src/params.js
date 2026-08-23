@@ -81,10 +81,33 @@ export const SCHEMA = [
   { key: "flipCoalesce", group: "Board", label: "coalesce window", type: "range", min: 0, max: 1.5, step: 0.05, def: 0.7,
     help: "a flip arriving while the last is still this far from done lands instantly — continuous scrolling never stacks ladders" },
   { key: "releaseRatio", group: "Board", label: "release speed", type: "range", min: 0.15, max: 1, step: 0.05, def: 0.45,
-    help: "a departing letter sinks back faster than an arriving one rises, so no trail follows the text" },
+    help: "at rest, how fast a departing letter sinks relative to an arriving one rising" },
+  { key: "traceRows", group: "Board", label: "scroll trace", type: "range", min: 0, max: 6, step: 0.25, def: 2, unit: "rows",
+    help: "while scrolling, departing text lingers for this many rows of travel before it is gone" },
   { key: "wheelMs", group: "Board", label: "wheel ease", type: "range", min: 0, max: 700, step: 10, def: 220, unit: "ms" },
   { key: "settleMs", group: "Board", label: "settle ease", type: "range", min: 0, max: 700, step: 10, def: 150, unit: "ms" },
   { key: "scrollHeat", group: "Board", label: "scroll warms field", type: "range", min: 0, max: 1.5, step: 0.05, def: 0.35 },
+
+  // ---- the cursor: a glyph that lives in the grid ----
+  { key: "cursorEmbed", group: "Cursor", label: "embedded cursor", type: "bool", def: true,
+    help: "hide the pointer; the cell under it becomes the cursor glyph" },
+  { key: "cursorGlyph", group: "Cursor", label: "cursor glyph", type: "select", def: "+",
+    options: [["+", "+"], ["·", "·"], ["×", "×"], ["┼", "┼"], ["■", "■"], ["○", "○"]] },
+  { key: "cursorMs", group: "Cursor", label: "cursor flip", type: "range", min: 30, max: 400, step: 10, def: 110, unit: "ms",
+    help: "how fast an oncoming cell becomes the cursor, and how fast it recovers" },
+
+  // ---- paper: the environment the ink lives on ----
+  { key: "grain", group: "Paper", label: "grain", type: "range", min: 0, max: 1, step: 0.02, def: 0.18,
+    help: "paper tooth multiplied into the page" },
+  { key: "grainScale", group: "Paper", label: "grain size", type: "range", min: 1, max: 6, step: 0.5, def: 1.5, unit: "px" },
+  { key: "grainLive", group: "Paper", label: "live grain", type: "bool", def: false,
+    help: "grain shifts every frame (film) instead of sitting still (paper)" },
+  { key: "inkVariance", group: "Paper", label: "ink variance", type: "range", min: 0, max: 1, step: 0.05, def: 0.25,
+    help: "per-cell weight variation, like a ribbon that does not strike evenly" },
+  { key: "baselineJitter", group: "Paper", label: "baseline jitter", type: "range", min: 0, max: 1, step: 0.05, def: 0.12,
+    help: "fraction of cells struck one device pixel high or low — typewriter misregistration" },
+  { key: "bleed", group: "Paper", label: "ink bleed", type: "range", min: 0, max: 1, step: 0.05, def: 0,
+    help: "a faint second impression, offset a hair, as ink spreads into fibre" },
 
   // ---- reading ----
   { key: "shimmerTick", group: "Reading", label: "hover shimmer", type: "range", min: 60, max: 900, step: 10, def: 280, unit: "ms" },

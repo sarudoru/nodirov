@@ -135,3 +135,8 @@ html.js #article.ready .glyph-plane :is(img, video) {
   clip: rect(0 0 0 0);
 }
 html:not(.js) .glyph-plane img { max-width: 100%; height: auto; }
+
+/* The embedded cursor: the pointer itself is invisible; the cell under it
+   becomes the cursor glyph. Links still work — the hand just isn't drawn. */
+html.embed-cursor #scroller,
+html.embed-cursor #scroller * { cursor: none !important; }

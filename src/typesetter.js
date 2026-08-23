@@ -6,7 +6,6 @@
 //
 // The article element is the single source of truth. The field is a renderer.
 
-import { headline } from "./bigtype.js";
 import { K_TEXT, K_FAINT, K_LINK } from "./field.js";
 
 // Parse once at boot; the blueprint keeps element references and raw runs so
@@ -209,32 +208,22 @@ export function typeset(blocks, article, ctx) {
         break;
 
       case "h1": {
-        row = Math.max(4, Math.round(viewRows * 0.26));
+        // The name is a line of type, not a banner: the page is minimal and
+        // the content starts almost at once. Letter-spaced capitals carry
+        // enough weight to read as a heading without taking any room.
+        row = 2;
         const el = block.el;
         el.textContent = "";
-        const sr = document.createElement("span");
-        sr.className = "sr-only";
-        sr.textContent = block.text;
-        el.appendChild(sr);
-
-        // Real block letterforms, set to the available measure. The face
-        // steps down on narrow viewports and falls back to letter-spaced
-        // capitals only when even the condensed face cannot fit.
-        const set = headline(block.text, cols - 2);
-        for (const line of set.lines) {
-          const c = Math.max(0, Math.floor((cols - line.width) / 2));
-          for (let r = 0; r < set.rows; r += 1) {
-            span(el, line.grid[r], row + r, c, false, true);
-            emit(row + r, c, line.grid[r], K_TEXT);
-          }
-          row += set.rows + (set.rows > 1 ? 1 : 0);
-        }
-        row += 2;
+        const text = block.text.toUpperCase();
+        const wide = text.length * 2 - 1 <= contentW;
+        span(el, text, row, left, wide);
+        emit(row, left, wide ? [...text].join(" ") : text, K_TEXT);
+        row += 1;
         break;
       }
 
       case "tagline": {
-        layoutRuns(block, left, contentW, K_TEXT, { center: true, gapAfter: 0 });
+        layoutRuns(block, left, contentW, K_FAINT, { gapAfter: 2 });
         break;
       }
 
@@ -246,7 +235,7 @@ export function typeset(blocks, article, ctx) {
       }
 
       case "interstitial": {
-        row += 6;
+        row += 3;
         const el = block.el;
         el.textContent = "";
         const text = block.runs.map((r) => r.text).join("").toUpperCase();
@@ -267,7 +256,7 @@ export function typeset(blocks, article, ctx) {
             row += 1;
           }
         }
-        row += 6;
+        row += 4;
         break;
       }
 

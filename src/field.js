@@ -44,6 +44,17 @@ export function createField(canvas, params) {
   let ratio = 1;
   let prevChar = new Uint16Array(0);
   let lastFlipAt = -1e9; // when the board last received a flip request
+  let scrollSpeed = 0;   // rows per second, smoothed
+  let lastScrollAt = 0;
+
+  // the embedded cursor: one glyph that lives in the grid
+  let cursorCell = -1;
+
+  // paper: static per-cell handwriting, and a grain tile
+  let inkNoise = new Float32Array(0);
+  let jitterNoise = new Float32Array(0);
+  let grainTile = null;
+  let grainTileScale = 0;
   let tokenGlyph = new Int16Array(0); // text token -> morphospace index
   let lastRowFloat = 0;
 
@@ -185,7 +196,13 @@ export function createField(canvas, params) {
     const crowded = mode === "flip" && now - lastFlipAt < P.flipMs * P.flipCoalesce;
     const instant = mode === "instant" || reducedMotion || crowded;
     if (mode === "flip") lastFlipAt = now; // every request counts: a pause earns the ripple
-    const releaseMs = P.flipMs * P.releaseRatio;
+    // Under continuous scroll, a departing letter lingers for traceRows of
+    // travel — the trace is a distance, so it looks the same at any speed.
+    // At rest it is a fraction of a flip.
+    const releaseMs = crowded
+      ? Math.max(40, Math.min(P.flipMs * 2.5, (P.traceRows / Math.max(scrollSpeed, 0.5)) * 1000))
+      : P.flipMs * P.releaseRatio;
+    const fadeTrace = crowded && P.traceRows > 0;
     const cx = cols / 2;
     const cy = rows * 0.42;
     const aspect = metrics.cellH / metrics.cellW;
@@ -215,12 +232,88 @@ export function createField(canvas, params) {
           if (mode === "reveal") substrate.release(i, now, 0, true);
           substrate.commit(i, glyph, kindAlpha(cellKind[i]), now, delay, instant);
         } else if (before !== 0 || fresh) {
-          // departing letters sink faster than arriving ones rise: no trail
-          substrate.release(i, now, delay * 0.5, instant, releaseMs);
+          // a departing letter sinks: quickly at rest, as a measured trace
+          // while scrolling (dimming in place, never cycling)
+          substrate.release(i, now, delay * 0.5, instant && !fadeTrace, releaseMs, fadeTrace);
         }
       }
     }
+    if (cursorCell >= 0) placeCursor(cursorCell, true);
   }
+
+  // ---------- the embedded cursor ----------
+
+  function cursorGlyph() {
+    return space ? space.indexOf(P.cursorGlyph) : -1;
+  }
+
+  // Give a cell back whatever it should be holding: its letter, or nothing.
+  function restoreCell(i, now, instant) {
+    const token = cellChar[i];
+    if (token !== 0) {
+      const glyph = glyphForToken(token);
+      if (glyph >= 0) substrate.commit(i, glyph, kindAlpha(cellKind[i]), now, 0, instant, P.cursorMs);
+    } else {
+      substrate.release(i, now, 0, instant, P.cursorMs);
+    }
+  }
+
+  function placeCursor(i, reassert = false) {
+    if (!substrate || !P.cursorEmbed) return;
+    const glyph = cursorGlyph();
+    if (glyph < 0) return;
+    const now = performance.now();
+    if (i !== cursorCell) {
+      if (cursorCell >= 0) restoreCell(cursorCell, now, false);
+      cursorCell = i;
+    }
+    // the oncoming cell becomes the cursor — instantly after a board flip so
+    // it never flickers, otherwise through a quick ladder
+    substrate.commit(i, glyph, 1, now, 0, reassert, P.cursorMs);
+    requestDraw();
+  }
+
+  function clearCursor() {
+    if (cursorCell < 0 || !substrate) return;
+    restoreCell(cursorCell, performance.now(), false);
+    cursorCell = -1;
+    requestDraw();
+  }
+
+  // ---------- paper ----------
+
+  function buildGrain() {
+    const size = 192;
+    const tile = document.createElement("canvas");
+    tile.width = size;
+    tile.height = size;
+    const tc = tile.getContext("2d");
+    const img = tc.createImageData(size, size);
+    const d = img.data;
+    for (let k = 0; k < d.length; k += 4) {
+      // paper tooth: mostly white, a few fibres pressing darker
+      const v = 255 - Math.min(60, Math.pow(Math.random(), 2.2) * 70);
+      d[k] = v; d[k + 1] = v; d[k + 2] = v; d[k + 3] = 255;
+    }
+    tc.putImageData(img, 0, 0);
+    grainTile = tile;
+  }
+
+  function drawPaper(now) {
+    if (P.grain <= 0) return;
+    if (!grainTile) buildGrain();
+    const tileCss = (192 * P.grainScale) / ratio;
+    const ox = P.grainLive ? -Math.random() * tileCss : 0;
+    const oy = P.grainLive ? -Math.random() * tileCss : 0;
+    context.save();
+    context.globalCompositeOperation = "multiply";
+    context.globalAlpha = P.grain;
+    for (let y = oy; y < height; y += tileCss) {
+      for (let x = ox; x < width; x += tileCss) context.drawImage(grainTile, x, y, tileCss, tileCss);
+    }
+    context.restore();
+  }
+
 
   // Block elements mean "this much of the cell is ink". A font's █ fills
   // its own advance, not our tracked cell, so on the grid it would read as
@@ -314,20 +407,34 @@ export function createField(canvas, params) {
         // letter settled, a letter sinking back: all the same call.
         const s = substrate.read(i, now, vigMap[i]);
         if (s.alpha <= 0.006) continue;
+
+        // handwriting: a ribbon that does not strike evenly, keys that sit
+        // a hair high or low. Static per cell, snapped to device pixels, so
+        // the page reads as typed rather than rendered, and stays crisp.
+        const weight = 1 - P.inkVariance * inkNoise[i] * 0.35;
+        const yy = P.baselineJitter > 0 && jitterNoise[i] < P.baselineJitter
+          ? y + (inkNoise[i] < 0.5 ? -1 : 1) / ratio
+          : y;
+        const ink = s.alpha * weight;
         if (s.b < 0) {
-          context.globalAlpha = Math.min(1, s.alpha);
-          paintGlyph(glyphAt(s.a), x, y);
+          context.globalAlpha = Math.min(1, ink);
+          paintGlyph(glyphAt(s.a), x, yy);
+          if (P.bleed > 0 && ink > 0.5) {
+            // a second, fainter impression a hair off: ink spreading into fibre
+            context.globalAlpha = Math.min(1, ink * P.bleed * 0.35);
+            paintGlyph(glyphAt(s.a), x + 1 / ratio, yy);
+          }
         } else {
           // cross-fade only between adjacent hops of the morph walk
-          const fromAlpha = s.alpha * (1 - s.blend);
-          const toAlpha = s.alpha * s.blend;
+          const fromAlpha = ink * (1 - s.blend);
+          const toAlpha = ink * s.blend;
           if (fromAlpha > 0.006) {
             context.globalAlpha = Math.min(1, fromAlpha);
-            paintGlyph(glyphAt(s.a), x, y);
+            paintGlyph(glyphAt(s.a), x, yy);
           }
           if (toAlpha > 0.006) {
             context.globalAlpha = Math.min(1, toAlpha);
-            paintGlyph(glyphAt(s.b), x, y);
+            paintGlyph(glyphAt(s.b), x, yy);
           }
         }
       }
@@ -336,6 +443,7 @@ export function createField(canvas, params) {
     drawChrome(0);
     drawHud();
     context.globalAlpha = 1;
+    drawPaper(now);
   }
 
   function chromeRowFor(worldRow, y, alpha) {
@@ -518,6 +626,12 @@ export function createField(canvas, params) {
       substrate.resize(cols, rows);
 
       const n = cols * rows;
+      inkNoise = new Float32Array(n);
+      jitterNoise = new Float32Array(n);
+      for (let i = 0; i < n; i += 1) {
+        inkNoise[i] = Math.random();
+        jitterNoise[i] = Math.random();
+      }
       vigMap = new Float32Array(n);
       for (let r = 0; r < rows; r += 1) {
         for (let c = 0; c < cols; c += 1) {
@@ -573,6 +687,13 @@ export function createField(canvas, params) {
     setScroll(scrollTopPx) {
       const rowFloat = Math.max(0, scrollTopPx / metrics.cellH);
       const delta = Math.abs(rowFloat - lastRowFloat);
+      const tNow = performance.now();
+      if (lastScrollAt > 0) {
+        const dt = Math.max(1, tNow - lastScrollAt);
+        const v = (delta / dt) * 1000;
+        scrollSpeed = dt > 400 ? v : scrollSpeed * 0.6 + v * 0.4;
+      }
+      lastScrollAt = tNow;
       // scrolling stirs the medium: the document passing through leaves warmth
       if (substrate && P.scrollHeat > 0 && delta > 0.01 && !reducedMotion) {
         const strength = Math.min(1, delta * 0.5) * P.scrollHeat;
@@ -597,6 +718,16 @@ export function createField(canvas, params) {
 
     // The cursor warms the medium along its whole path, so a fast sweep
     // leaves a continuous wake rather than a dotted line.
+    // the cursor glyph follows the pointer through the grid
+    pointerAt(x, y) {
+      if (!P.cursorEmbed) return;
+      const col = Math.floor((x - xOffset) / metrics.cellW);
+      const row = Math.floor(y / metrics.cellH);
+      if (col < 0 || col >= cols || row < 0 || row >= rows) { clearCursor(); return; }
+      placeCursor(row * cols + col);
+    },
+    pointerLeft() { clearCursor(); },
+
     touch(x, y, px, py, dt) {
       if (!substrate || reducedMotion) return;
       const col = (x - xOffset) / metrics.cellW;
@@ -725,6 +856,9 @@ export function createField(canvas, params) {
     },
 
     applyParams(next, changed) {
+      if ((changed ?? []).some((k) => k === "grainScale" || k === "grain")) grainTile = null;
+      if ((changed ?? []).includes("cursorEmbed") && !next.cursorEmbed) clearCursor();
+      if ((changed ?? []).includes("cursorGlyph") && cursorCell >= 0) { const c = cursorCell; P = next; placeCursor(c, true); }
       P = next;
       const touched = changed ?? Object.keys(next);
       if (substrate) substrate.setParams({ ...P, aspect: metrics.cellH / metrics.cellW }, touched);

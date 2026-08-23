@@ -54,6 +54,7 @@ export function createSubstrate(space, params, eligible) {
   let inkMode = new Uint8Array(0);    // 0 free, 1 rising to text, 2 falling to murmur
   let inkFrom = new Float32Array(0);
   let inkTo = new Float32Array(0);
+  let fadeOnly = new Uint8Array(0); // release by ink alone: the letter dims, then the murmur takes the cell
 
   let ambientPool = [];
   let rngState = 0x2f6e2b1;
@@ -101,6 +102,7 @@ export function createSubstrate(space, params, eligible) {
     inkMode = new Uint8Array(n);
     inkFrom = new Float32Array(n);
     inkTo = new Float32Array(n);
+    fadeOnly = new Uint8Array(n);
     twPhase = new Float32Array(n);
     twRate = new Float32Array(n);
 
@@ -242,7 +244,15 @@ export function createSubstrate(space, params, eligible) {
         if (now - started[i] >= duration[i]) {
           current[i] = path[i * MAX_STEPS + pathLen[i] - 1];
           pathLen[i] = 0;
-          if (inkMode[i] === 2) inkMode[i] = 0; // released: free again
+          if (inkMode[i] === 2) {
+            inkMode[i] = 0; // released: free again
+            if (fadeOnly[i]) {
+              // the letter has dimmed to murmur level; swap it for a murmur
+              // glyph now, while nobody can see the difference
+              fadeOnly[i] = 0;
+              current[i] = ambientPool[(rnd() * ambientPool.length) | 0];
+            }
+          }
         }
         continue;
       }
@@ -396,18 +406,26 @@ export function createSubstrate(space, params, eligible) {
 
   // Let a cell go: it walks back down into the murmur and the weather
   // reclaims it when the ladder completes.
-  function release(i, now, delay = 0, instant = false, ms = P.flipMs) {
+  // fade: true keeps the letterform and only lets the ink sink — the trace a
+  // scrolling page leaves behind is dimming text, never cycling letters.
+  function release(i, now, delay = 0, instant = false, ms = P.flipMs, fade = false) {
     if (!committed[i] && inkMode[i] !== 1) return;
     committed[i] = 0;
     if (instant) {
       current[i] = ambientPool[(rnd() * ambientPool.length) | 0];
       pathLen[i] = 0;
       inkMode[i] = 0;
+      fadeOnly[i] = 0;
       return;
     }
     const from = displayedGlyph(i, now);
     inkFrom[i] = read(i, now, 1).alpha;
     inkMode[i] = 2;
+    fadeOnly[i] = fade ? 1 : 0;
+    if (fade) {
+      startLadder(i, from, from, 2, now, delay, ms);
+      return;
+    }
     const target = ambientPool[(rnd() * ambientPool.length) | 0];
     startLadder(i, from, target, Math.max(2, P.flipSteps - 2), now, delay, ms);
   }

@@ -208,7 +208,10 @@ function onPointerMove(event) {
   const py = lastPointer.t === 0 ? event.clientY : lastPointer.y;
   lastPointer = { x: event.clientX, y: event.clientY, t: now };
   field.touch(event.clientX, event.clientY, px, py, dt);
-  if (event.pointerType !== "touch") field.shimmerWordAt(event.clientX, event.clientY);
+  if (event.pointerType !== "touch") {
+    field.shimmerWordAt(event.clientX, event.clientY);
+    field.pointerAt(event.clientX, event.clientY);
+  }
 }
 
 function onClick(event) {
@@ -234,6 +237,7 @@ async function loadFont() {
 }
 
 function applyCssVars() {
+  document.documentElement.classList.toggle("embed-cursor", !!P.cursorEmbed);
   const style = document.documentElement.style;
   style.setProperty("--paper", P.paper);
   style.setProperty("--ink", P.ink);
@@ -272,6 +276,8 @@ async function boot() {
   window.addEventListener("resize", onResize);
   window.addEventListener("keydown", onKey);
   window.addEventListener("pointermove", onPointerMove, { passive: true });
+  document.documentElement.addEventListener("mouseleave", () => field.pointerLeft());
+  window.addEventListener("blur", () => field.pointerLeft());
   scroller.addEventListener("click", onClick);
 
   // Discrete wheels jump ~100px per notch, which teleports the pour. Route
