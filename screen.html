@@ -53,6 +53,17 @@
     <script type="module">
       import { createScreen, readOptions } from "./src/screen.js";
       const opt = readOptions();
+      // footage sources are ink-on-paper: dark marks are the form, and the
+      // grid runs finer so line art keeps its detail
+      const isFootage = opt.source !== "a" && opt.source !== "b";
+      if (isFootage) {
+        const q = new URLSearchParams(location.search);
+        if (!q.has("invert")) opt.invert = 1;
+        if (!q.has("cell")) opt.cell = 6;
+        if (!q.has("gamma")) opt.gamma = 0.8;
+        if (!q.has("floor")) opt.floor = 0.1;
+        if (!q.has("dither")) opt.dither = 0.09;
+      }
       document.getElementById("caption").textContent =
         `source ${opt.source} · ${opt.mode === "binary" ? "binary" : "measured ramp"}`;
       const screen = createScreen(document.getElementById("screen"), opt);

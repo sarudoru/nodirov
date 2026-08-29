@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gazania — ASCII card</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{ --page:#f5f5f5; --card:#fafafa; --ink:#151515; --muted:#9a9a9d;
+       --line:#e8e8e6; --chip:#f0f0ee; --mark:#a6a6a4 }
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--page);font-family:Inter,system-ui,sans-serif;
+     min-height:100vh;display:grid;place-items:center;overflow:hidden}
+.stage{display:flex;gap:120px;transform-origin:center center}
+
+/* --- card shell + crop marks ------------------------------------------- */
+.card{position:relative;width:616px;height:910px;background:var(--card);
+      display:flex;flex-direction:column}
+.card i{position:absolute;width:20px;height:20px;border:1px solid var(--mark)}
+.card i:nth-of-type(1){top:-5px;left:-5px;border-right:0;border-bottom:0}
+.card i:nth-of-type(2){top:-5px;right:-5px;border-left:0;border-bottom:0}
+.card i:nth-of-type(3){bottom:-5px;left:-5px;border-right:0;border-top:0}
+.card i:nth-of-type(4){bottom:-5px;right:-5px;border-left:0;border-top:0}
+
+/* --- art ---------------------------------------------------------------- */
+.art{position:relative;height:700px;overflow:hidden}
+.art canvas{display:block;width:100%;height:100%}
+.art::after{content:"";position:absolute;inset:auto 0 0 0;height:130px;pointer-events:none;
+      background:linear-gradient(to bottom,#fafafa00 0%,#fafafab3 60%,#fafafa 100%)}
+img.atlas{display:none}
+
+/* --- copy --------------------------------------------------------------- */
+.body{padding:18px 16px 0}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
+h2{font-family:"Instrument Serif",Georgia,serif;font-weight:400;font-size:27px;line-height:1;
+   letter-spacing:-.005em;color:var(--ink);margin:0}
+.go{flex:0 0 auto;width:27px;height:27px;border-radius:7px;background:#0e0e0e;color:#fff;
+    display:grid;place-items:center;font-size:12px;line-height:1}
+p{margin:22px 0 0;font-size:10px;line-height:1.15;color:var(--muted);max-width:322px}
+
+/* --- action bar --------------------------------------------------------- */
+.bar{margin-top:auto;display:flex;align-items:center;justify-content:space-between;
+     padding:0 16px 28px}
+.seg{display:flex;background:var(--chip);border-radius:8px;padding:2px;height:27px;align-items:center}
+.seg button{border:0;background:transparent;height:23px;padding:0 11px;border-radius:6px;
+     font:500 10px Inter,sans-serif;color:#8e8e91;cursor:pointer}
+.seg button[aria-pressed=true]{background:#fff;color:var(--ink);box-shadow:0 1px 2px #00000012}
+.acts{display:flex;gap:9px}
+.btn{display:flex;align-items:center;gap:6px;height:27px;padding:0 12px;border-radius:8px;
+     border:1px solid var(--line);background:#f2f2f0;color:#4a4a48;
+     font:500 11px Inter,sans-serif;cursor:pointer;white-space:nowrap}
+.btn.solid{background:#0e0e0e;border-color:#0e0e0e;color:#fff}
+.btn svg{width:11px;height:11px;stroke:currentColor;fill:none;stroke-width:1.6;opacity:.85}
+</style>
+</head>
+<body>
+<div class="stage">
+<div class="card"><i></i><i></i><i></i><i></i>
+  <div class="art"><canvas id="c1"></canvas></div>
+  <div class="body">
+    <div class="head"><h2>Every Petal Is A Number.</h2><span class="go">&#8599;</span></div>
+    <p>A photoscanned gazania, resolved entirely in glyphs. Density carries the form; each character keeps the colour of the pixel it replaced.</p>
+  </div>
+  <div class="bar">
+    <div class="seg"><button>1D</button><button>7D</button><button aria-pressed="true">1M</button></div>
+    <div class="acts"><button class="btn">Copy Link</button><button class="btn solid">Share View</button></div>
+  </div>
+</div>
+</div>
+
+<script type="importmap">
+{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { buildFlower } from './flower-scene.js';
+
+const src = document.createElement('canvas');
+src.width = 500; src.height = 560;
+const flower = buildFlower(THREE, src);
+window.__src = src; window.__f = flower;
+
+const RAMP = " .,-^/+=1234567890";
+const hash = (x,y) => { const n = Math.sin(x*127.1 + y*311.7)*43758.5453; return n - Math.floor(n); };
+
+function asciiPass(canvas, source, opt){
+  const view = canvas.getContext('2d');
+  const grid = document.createElement('canvas');
+  const gctx = grid.getContext('2d', {willReadFrequently:true});
+  let cols=0, rows=0, W=0, H=0;
+
+  function layout(){
+    const dpr = Math.min(devicePixelRatio||1, 2);
+    W = canvas.clientWidth; H = canvas.clientHeight;
+    if(!W) return;
+    canvas.width = W*dpr; canvas.height = H*dpr;
+    cols = Math.ceil(W/opt.cw); rows = Math.ceil(H/opt.ch);
+    grid.width = cols; grid.height = rows;
+    gctx.imageSmoothingEnabled = true; gctx.imageSmoothingQuality = 'high';
+    view.setTransform(dpr,0,0,dpr,0,0);
+    view.textBaseline = 'top'; view.font = opt.font;
+  }
+  new ResizeObserver(layout).observe(canvas); layout();
+
+  const t0 = performance.now(); let last = 0, beat = 0;
+  function tick(now){
+    if(now - last < 33) return; last = now; beat = now;
+    if(!cols){ layout(); return; }
+    const t = (now - t0)/1000;
+    if(!source.__drawn && !flower.render(t)) return;   // still loading
+    flower.render(t);
+
+    gctx.clearRect(0,0,cols,rows);
+    gctx.drawImage(source, 0, 0, cols, rows);
+    const px = gctx.getImageData(0,0,cols,rows).data;
+
+    const fade = Math.min(1, t/0.7);
+    view.clearRect(0,0,W,H);
+    const tStart = performance.now(); let drawn = 0;
+
+    for(let y=0,i=0; y<rows; y++) for(let x=0; x<cols; x++, i+=4){
+      const r = px[i], g = px[i+1], b = px[i+2];
+      let lum = (r*0.299 + g*0.587 + b*0.114)/255;
+      if(lum < opt.floor + hash(x,y)*opt.dither) continue;
+      lum = Math.min(1, (lum - opt.floor)/(opt.peak - opt.floor));
+      const ch = RAMP[Math.min(RAMP.length-1, (lum*(RAMP.length-1))|0)];
+
+      /* Keep the source hue, but push saturation up and lightness down so a
+         small glyph on white still reads as its colour rather than as grey. */
+      const mx = Math.max(r,g,b), mn = Math.min(r,g,b);
+      const boost = opt.sat;
+      const cr = Math.round(Math.max(0, mn + (r-mn)*boost) * opt.dim);
+      const cg = Math.round(Math.max(0, mn + (g-mn)*boost) * opt.dim);
+      const cb = Math.round(Math.max(0, mn + (b-mn)*boost) * opt.dim);
+      const a  = 0.34 + Math.pow(lum, 0.45)*0.66;
+      view.fillStyle = `rgba(${cr},${cg},${cb},${(a*fade).toFixed(3)})`;
+      view.fillText(ch, x*opt.cw, y*opt.ch);
+      drawn++;
+    }
+    window.__perf = {cells: cols*rows, drawn, ms:+(performance.now()-tStart).toFixed(1)};
+  }
+  (function raf(){ requestAnimationFrame(raf); tick(performance.now()); })();
+  setInterval(() => { const n = performance.now(); if(n - beat > 500) tick(n); }, 60);
+}
+
+asciiPass(document.getElementById('c1'), src, {
+  cw:4.6, ch:5.4, font:'700 5px ui-monospace,SFMono-Regular,Menlo,monospace',
+  floor:0.030, peak:0.55, dither:0.06, sat:1.75, dim:0.72 });
+
+const stage = document.querySelector('.stage');
+function fit(){
+  const k = Math.min(1, (innerWidth-48)/stage.offsetWidth, (innerHeight-48)/stage.offsetHeight);
+  stage.style.transform = `scale(${k.toFixed(4)})`;
+}
+addEventListener('resize', fit); fit();
+
+window.__save = async (name, which) => {
+  const el = which === 'src' ? src : document.getElementById('c1');
+  const r = await fetch('/save',{method:'POST',headers:{'content-type':'application/json'},
+                                body:JSON.stringify({name, png: el.toDataURL('image/png')})});
+  return r.status;
+};
+</script>
+</body>
+</html>

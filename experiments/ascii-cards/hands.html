@@ -1,0 +1,184 @@
+<!doctype html><meta charset="utf-8"><title>Creation — pose rig</title>
+<style>
+  body{margin:0;background:#0d0d0d;color:#bbb;font:11px ui-monospace,monospace;display:flex}
+  canvas{background:#000}
+  #ui{padding:10px;white-space:pre;max-height:100vh;overflow:auto}
+</style>
+<canvas id="v" width="720" height="810"></canvas>
+<div id="ui">booting…</div>
+<script type="importmap">
+{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VRMLoaderPlugin } from './vendor/three-vrm.module.js';
+const V = THREE.Vector3, ui = m => document.getElementById('ui').textContent = m, D = Math.PI/180;
+
+/* Where the two fingertips must end up. Everything else follows from this. */
+const MEET = new V(0, 1.15, 0.40);   // the near-touch, in world space
+const GAP  = 0.055;                  // metres between fingertips
+
+/* Aim a normalized VRM bone so its own `axis` points at a world target.
+   Normalized VRM bones are axis-aligned in T-pose, so this is convention-proof
+   in a way that hand-guessed Euler angles are not. */
+function aim(node, axis, worldTarget){
+  node.parent.updateMatrixWorld(true);
+  const local = worldTarget.clone().applyMatrix4(
+    new THREE.Matrix4().copy(node.parent.matrixWorld).invert());
+  const dir = local.sub(node.position).normalize();
+  node.quaternion.setFromUnitVectors(axis, dir);
+}
+
+/* T-pose, palms down: right arm lies along +X, left along -X.  Curling a
+   finger sweeps its tip toward -Y, which is a rotation about Z. */
+const FING = ['Middle','Ring','Little'], SEG = ['Proximal','Intermediate','Distal'];
+
+function poseArm(vrm, side, opt){
+  const H = vrm.humanoid, s = side === 'right' ? 1 : -1;
+  const axis = new V(s, 0, 0);
+  const missing = [];
+  const B = n => { const b = H.getNormalizedBoneNode(side + n); if(!b) missing.push(side+n); return b; };
+  const rot = (n, x, y, z) => { const b = B(n); if(b) b.rotation.set(x, y, z); };
+
+  const elbow = MEET.clone().lerp(new V().setFromMatrixPosition(B('UpperArm').matrixWorld), 0.42);
+  aim(B('UpperArm'), axis, elbow);
+  vrm.scene.updateMatrixWorld(true);
+  aim(B('LowerArm'), axis, MEET);
+  vrm.scene.updateMatrixWorld(true);
+  // the hand is left to continue the forearm line; only the wrist is broken
+
+  // index extended and slightly dropped; the other three curl into the palm
+  for(let i=0;i<3;i++) rot('Index'+SEG[i], 0,0,-s*opt.index[i]*D);
+  for(const f of FING) for(let i=0;i<3;i++)
+    rot(f+SEG[i], 0,0,-s*opt.curl*(i?0.95:1)*D);
+  for(let i=0;i<3;i++) rot('Thumb'+SEG[i], 0,-s*opt.thumb*D,-s*18*D);
+  B('Hand').rotateZ(-s*opt.wrist*D);
+  vrm.scene.updateMatrixWorld(true);
+  if(missing.length) console.warn('missing bones:', [...new Set(missing)].join(', '));
+  return [...new Set(missing)];
+}
+
+/* The arm we are not using is still in T-pose and sweeps straight through the
+   camera. Fold it down against the body so it leaves the frame. */
+function tuckArm(vrm, side){
+  const H = vrm.humanoid, sgn = side === 'right' ? 1 : -1;
+  const axis = new V(sgn, 0, 0);
+  for(const b of ['UpperArm','LowerArm']){
+    const n = H.getNormalizedBoneNode(side + b);
+    if(!n) continue;
+    const at = new V().setFromMatrixPosition(n.matrixWorld);
+    aim(n, axis, at.clone().add(new V(sgn*0.08, -1.0, -0.25)));
+    vrm.scene.updateMatrixWorld(true);
+  }
+}
+
+const POSE = {
+  god : { index:[ 4, 3, 2], curl:78, thumb:24, wrist: -6 },  // firm, index straight
+  adam: { index:[18,14, 9], curl:62, thumb:18, wrist: 16 },  // limp wrist, finger droops
+};
+
+const canvas = document.getElementById('v');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+renderer.setPixelRatio(1);
+renderer.setSize(canvas.width, canvas.height, false);   // three never assumes the canvas attrs
+renderer.setClearColor(0x000000, 0);
+/* Torsos sit at the same depth as the hands, so no camera plane and no
+   axis-aligned box can separate them: the only thing that reliably
+   distinguishes "hand" from "everything else" is distance from the meeting
+   point. So each fragment is discarded beyond a radius, with a soft margin
+   so the arms fade out rather than ending on a hard rim. */
+const CLIP_R = { value: 0.300 }, CLIP_SOFT = { value: 0.130 }, CLIP_C = { value: new V() };
+
+function handMaterial(){
+  const m = new THREE.MeshStandardMaterial({
+    color:0xffffff, roughness:1, metalness:0, fog:true, side:THREE.DoubleSide });
+  m.onBeforeCompile = sh => {
+    sh.uniforms.uC = CLIP_C; sh.uniforms.uR = CLIP_R; sh.uniforms.uS = CLIP_SOFT;
+    sh.vertexShader = 'varying vec3 wPos;\n' + sh.vertexShader.replace(
+      '#include <project_vertex>',
+      '#include <project_vertex>\n  wPos = (modelMatrix * vec4(transformed,1.0)).xyz;');
+    sh.fragmentShader = 'varying vec3 wPos;\nuniform vec3 uC;\nuniform float uR;\nuniform float uS;\n'
+      + sh.fragmentShader.replace('#include <dithering_fragment>',
+        `#include <dithering_fragment>
+         float dC = distance(wPos, uC);
+         if(dC > uR + uS) discard;
+         gl_FragColor.rgb *= 1.0 - smoothstep(uR, uR + uS, dC);`);
+  };
+  m.customProgramCacheKey = () => 'handclip';
+  return m;
+}
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, canvas.width/canvas.height, 0.01, 20);
+// Key light rides the camera, so N·L ≈ N·V. That is the facing falloff that
+// makes glyph density drop off toward the silhouette, same as the earlier bake.
+camera.add(new THREE.PointLight(0xffffff, 4.2, 0, 1.2));
+scene.add(camera);
+scene.add(new THREE.AmbientLight(0xffffff, 0.10));
+scene.fog = new THREE.Fog(0x000000, 0.80, 1.45);   // arms dissolve into the ground
+
+const HIDE = ['シャツ','スカート','スニーカー','ネクタイ','ブレザー','ヘアピン','リボン','下着','絆創膏','髪','Body'];
+const loader = new GLTFLoader(); loader.register(p => new VRMLoaderPlugin(p));
+const load = () => new Promise((r,j)=>loader.load('./model.vrm', g=>r(g.userData.vrm), undefined, j));
+
+(async () => {
+  ui('loading two instances…');
+  // Michelangelo's arrangement: Adam reclines lower left, God descends from upper right
+  const insts = [
+    { vrm: await load(), side:'left',  pose:POSE.adam, at:new V(-0.78, 0.62, 0.16), sx:-1 },
+    { vrm: await load(), side:'right', pose:POSE.god,  at:new V( 0.78, 1.58, 0.16), sx: 1 },
+  ];
+  const tips = [];
+
+  for(const it of insts){
+    const { vrm, side } = it;
+    vrm.scene.traverse(o => { if(o.isMesh || o.isSkinnedMesh){
+      if(HIDE.some(c => o.name.includes(c))) o.visible = false;
+      else o.material = handMaterial();
+    }});
+    vrm.scene.position.copy(it.at);
+    vrm.scene.updateMatrixWorld(true);
+    scene.add(vrm.scene);
+
+    // aim, measure, translate — repeat. Moving the body moves the shoulder,
+    // which changes the aim, so one pass does not converge.
+    const tipNode = vrm.humanoid.getNormalizedBoneNode(side + 'IndexDistal');
+    const want = MEET.clone().add(new V(it.sx * GAP/2, 0, 0));
+    const other = side === 'right' ? 'left' : 'right';
+    for(let k=0;k<4;k++){
+      it.missing = poseArm(vrm, side, it.pose);
+      tuckArm(vrm, other);
+      const now = new V().setFromMatrixPosition(tipNode.matrixWorld);
+      vrm.scene.position.add(want.clone().sub(now));
+      vrm.scene.updateMatrixWorld(true);
+    }
+    tips.push(new V().setFromMatrixPosition(tipNode.matrixWorld));
+  }
+
+  const mid = tips[0].clone().add(tips[1]).multiplyScalar(0.5);
+  CLIP_C.value.copy(mid);
+  camera.position.set(mid.x, mid.y, mid.z + 1.05);
+  camera.lookAt(mid);
+  camera.near = 0.05; camera.far = 1.20;
+  camera.updateProjectionMatrix();
+  (function loop(){ requestAnimationFrame(loop); renderer.render(scene, camera); })();
+
+  ui('posed by aiming, then snapped to target\n'
+   + 'tipA  ' + tips[0].toArray().map(v=>v.toFixed(3)) + '\n'
+   + 'tipB  ' + tips[1].toArray().map(v=>v.toFixed(3)) + '\n'
+   + 'gap   ' + tips[0].distanceTo(tips[1]).toFixed(4) + ' m  (target ' + GAP + ')\n'
+   + 'missing: ' + (insts.flatMap(i=>i.missing||[]).join(', ') || 'none') + '\n'
+   + 'STATUS_OK');
+  window.__s = {scene, camera, renderer, tips, mid, THREE, insts, V};
+  window.__chain = () => insts.map(it => {
+    const H = it.vrm.humanoid, S = it.side;
+    return S + '  ' + ['UpperArm','LowerArm','Hand','IndexDistal'].map(b => {
+      const n = H.getNormalizedBoneNode(S + b);
+      if(!n) return b + ':--';
+      const p = new V().setFromMatrixPosition(n.matrixWorld);
+      return b + '(' + p.toArray().map(v=>v.toFixed(2)).join(',') + ' d=' +
+             p.distanceTo(camera.position).toFixed(2) + ')';
+    }).join(' ');
+  }).join('\n');
+})().catch(e => ui('ERROR ' + (e.message||e) + '\n' + (e.stack||'')));
+</script>

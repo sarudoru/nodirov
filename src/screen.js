@@ -20,6 +20,7 @@ const DEFAULTS = {
   dither: 0.13,       // randomness added to the floor: the dissolving edge
   gamma: 0.6,         // alpha curve: solid core, faded fringe
   settle: 2.6,        // seconds the form takes to settle from accent to ink
+  invert: 0,          // 1 = dark marks are the form (ink-on-paper sources)
   grain: 0.16,
   paper: "#fdfdfb",
   ink: "#1a1a1a",
@@ -65,7 +66,8 @@ export function createScreen(canvas, opt) {
   let cellH = 0;
   let font = "";
   let ramp = [];       // glyphs by ink, light -> dense, from the morphospace
-  let sheet = null;
+  let sheet = null;   // sprite-sheet image, or a <video> for footage sources
+  let isVideo = false;
   let sample = null;
   let sampleCtx = null;
   let grainTile = null;
@@ -103,7 +105,7 @@ export function createScreen(canvas, opt) {
     canvas.style.height = height + "px";
     context.setTransform(ratio, 0, 0, ratio, 0, 0);
 
-    const fontSize = Math.max(9, Math.round(opt.cell * 1.55));
+    const fontSize = Math.max(7, Math.round(opt.cell * 1.55));
     font = `${fontSize}px "Geist Mono", Menlo, monospace`;
     cellW = opt.cell;
     cellH = Math.round(fontSize * 1.08);
@@ -135,11 +137,23 @@ export function createScreen(canvas, opt) {
 
   function drawFrame(now) {
     const elapsed = (now - startedAt) / 1000;
-    const frame = reduced ? 6 : Math.floor(elapsed * ATLAS.fps) % ATLAS.frames;
-    const tileW = sheet.naturalWidth / ATLAS.cols;
-    const tileH = sheet.naturalHeight / ATLAS.rows;
-    const sx = (frame % ATLAS.cols) * tileW;
-    const sy = Math.floor(frame / ATLAS.cols) * tileH;
+    let tileW;
+    let tileH;
+    let sx = 0;
+    let sy = 0;
+    if (isVideo) {
+      // the <video> advances itself; every draw samples whatever frame it
+      // is showing, so playback, seeking and looping all come for free
+      tileW = sheet.videoWidth;
+      tileH = sheet.videoHeight;
+      if (!tileW) return;
+    } else {
+      const frame = reduced ? 6 : Math.floor(elapsed * ATLAS.fps) % ATLAS.frames;
+      tileW = sheet.naturalWidth / ATLAS.cols;
+      tileH = sheet.naturalHeight / ATLAS.rows;
+      sx = (frame % ATLAS.cols) * tileW;
+      sy = Math.floor(frame / ATLAS.cols) * tileH;
+    }
 
     // cover-fit the source tile onto the cell grid; the browser's box filter
     // during drawImage IS the sampling
@@ -152,7 +166,9 @@ export function createScreen(canvas, opt) {
     else dw = Math.round(rows * (srcAspect / cellAspect));
     const dx = Math.floor((cols - dw) / 2);
     const dy = Math.floor((rows - dh) / 2);
-    sampleCtx.fillStyle = "#000";
+    // the empty buffer must read as "no form": black normally, white when
+    // dark marks are the form — otherwise letterbox bars become solid ink
+    sampleCtx.fillStyle = opt.invert ? "#fff" : "#000";
     sampleCtx.fillRect(0, 0, cols, rows);
     sampleCtx.drawImage(sheet, sx, sy, tileW, tileH, dx, dy, dw, dh);
     const data = sampleCtx.getImageData(0, 0, cols, rows).data;
@@ -172,6 +188,7 @@ export function createScreen(canvas, opt) {
       const py = Math.round((y * cellH + cellH / 2) * ratio) / ratio;
       for (let x = 0; x < cols; x += 1) {
         let lum = data[(y * cols + x) * 4] / 255;
+        if (opt.invert) lum = 1 - lum;
         // dithered cut-off: the silhouette dissolves instead of stencilling
         if (lum < opt.floor + hash(x, y) * opt.dither) continue;
         lum = Math.min(1, (lum - opt.floor) / (0.98 - opt.floor));
@@ -211,9 +228,26 @@ export function createScreen(canvas, opt) {
 
   return {
     async start() {
-      sheet = new Image();
-      sheet.src = `experiments/ascii-cards/src-${opt.source === "b" ? "b" : "a"}.png`;
-      await sheet.decode();
+      isVideo = opt.source !== "a" && opt.source !== "b";
+      if (isVideo) {
+        const video = document.createElement("video");
+        video.src = `assets/screen/${opt.source.replace(/[^a-z0-9-]/gi, "")}.mp4`;
+        video.muted = true;
+        video.loop = true;
+        video.playsInline = true;
+        video.preload = "auto";
+        await new Promise((resolve, reject) => {
+          video.addEventListener("loadeddata", resolve, { once: true });
+          video.addEventListener("error", reject, { once: true });
+          video.load();
+        });
+        if (!reduced) video.play().catch(() => { /* a paused first frame is fine */ });
+        sheet = video;
+      } else {
+        sheet = new Image();
+        sheet.src = `experiments/ascii-cards/src-${opt.source === "b" ? "b" : "a"}.png`;
+        await sheet.decode();
+      }
       try {
         await Promise.race([
           document.fonts.load('16px "Geist Mono"'),
@@ -230,6 +264,9 @@ export function createScreen(canvas, opt) {
       if (width !== window.innerWidth || height !== window.innerHeight) resize();
       if (!startedAt) startedAt = now;
       drawFrame(now);
+    },
+    seek(seconds) {
+      if (isVideo && sheet) sheet.currentTime = seconds;
     },
     stop() {
       cancelAnimationFrame(rafId);

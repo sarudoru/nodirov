@@ -1,0 +1,118 @@
+<!doctype html><meta charset="utf-8"><title>Saturn — ASCII source</title>
+<style>body{margin:0;background:#0d0d0d;display:flex;gap:12px;padding:12px}
+canvas{background:#000}#ui{color:#999;font:11px ui-monospace,monospace;white-space:pre}</style>
+<canvas id="v" width="640" height="720"></canvas>
+<div id="ui">…</div>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+const ui = m => document.getElementById('ui').textContent = m;
+
+const canvas = document.getElementById('v');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:false});
+renderer.setPixelRatio(1);
+renderer.setSize(canvas.width, canvas.height, false);
+renderer.setClearColor(0x000000, 1);
+
+const scene  = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(30, canvas.width/canvas.height, 0.1, 100);
+camera.position.set(0, 0, 10.2);
+camera.lookAt(0,0,0);
+
+/* Key light rides the camera so brightness tracks how squarely a surface
+   faces us. That is what makes glyph density fall off toward the limb. */
+camera.add(new THREE.PointLight(0xffffff, 30, 0, 1.5));
+scene.add(camera);
+scene.add(new THREE.AmbientLight(0xffffff, 0.04));
+const key = new THREE.DirectionalLight(0xffffff, 0.55); key.position.set(-4, 2.5, 3); scene.add(key);
+
+/* banded planet texture, drawn in a canvas — no external asset */
+function bandTex(){
+  const c = document.createElement('canvas'); c.width = 8; c.height = 256;
+  const x = c.getContext('2d');
+  for(let y=0;y<256;y++){
+    const t = y/255, lat = Math.abs(t-0.5)*2;
+    let v = 0.72 + 0.20*Math.sin(t*Math.PI*17) + 0.10*Math.sin(t*Math.PI*41+1.2);
+    v *= 1 - 0.30*lat*lat;                       // poles darker
+    const g = Math.max(0, Math.min(255, v*255))|0;
+    x.fillStyle = `rgb(${g},${g},${g})`; x.fillRect(0,y,8,1);
+  }
+  const t = new THREE.CanvasTexture(c); t.needsUpdate = true; return t;
+}
+
+/* ring: an annulus whose opacity is banded with a Cassini-like gap */
+function ringTex(){
+  const c = document.createElement('canvas'); c.width = 512; c.height = 8;
+  const x = c.getContext('2d');
+  for(let i=0;i<512;i++){
+    const r = i/511;
+    let a = 0.42 + 0.50*Math.sin(r*Math.PI*26) * (0.55+0.45*Math.sin(r*Math.PI*7));
+    if(r > 0.60 && r < 0.68) a *= 0.10;          // Cassini division
+    if(r < 0.06 || r > 0.98) a = 0;              // clean inner/outer edges
+    a *= Math.min(1, (1-r)*6) * 0.88;            // fade out toward the rim
+    const g = Math.max(0, Math.min(255, a*255))|0;
+    x.fillStyle = `rgb(${g},${g},${g})`; x.fillRect(i,0,1,8);
+  }
+  const t = new THREE.CanvasTexture(c); t.needsUpdate = true; return t;
+}
+
+const planet = new THREE.Mesh(
+  new THREE.SphereGeometry(1.0, 96, 64),
+  new THREE.MeshStandardMaterial({map:bandTex(), roughness:1, metalness:0}));
+planet.scale.y = 0.90;                            // oblate, like the real thing
+
+const rt = ringTex();
+const ring = new THREE.Mesh(
+  new THREE.RingGeometry(1.32, 2.22, 256, 1),
+  new THREE.MeshBasicMaterial({map:rt, alphaMap:rt, transparent:true,
+                               side:THREE.DoubleSide, depthWrite:false}));
+ring.rotation.x = Math.PI/2;
+
+const saturn = new THREE.Group();
+saturn.add(planet); saturn.add(ring);
+saturn.rotation.z = 26.7 * Math.PI/180;           // real axial tilt
+saturn.rotation.x = 0.38;                         // open the rings to the camera
+scene.add(saturn);
+
+let t0 = performance.now();
+(function loop(){
+  requestAnimationFrame(loop);
+  const t = (performance.now()-t0)/1000;
+  planet.rotation.y = t*0.10;
+  saturn.rotation.x = 0.38 + Math.sin(t*0.08)*0.09;
+  renderer.render(scene, camera);
+})();
+
+window.__s = {scene, camera, renderer};
+window.__save = async (name) => {
+  renderer.render(scene, camera);
+  const png = renderer.domElement.toDataURL('image/png');
+  const r = await fetch('/save',{method:'POST',headers:{'content-type':'application/json'},
+                                body:JSON.stringify({name, png})});
+  return r.status;
+};
+window.__ascii = (CW=56, CH=46) => {
+  const {scene, camera, renderer} = window.__s;
+  renderer.render(scene, camera);
+  const gl = renderer.getContext(), W = renderer.domElement.width, H = renderer.domElement.height;
+  const b = new Uint8Array(W*H*4);
+  gl.readPixels(0,0,W,H,gl.RGBA,gl.UNSIGNED_BYTE,b);
+  const RAMP = ' .,-^/+=1234567890';
+  const hash = (x,y) => { const n = Math.sin(x*127.1+y*311.7)*43758.5453; return n-Math.floor(n); };
+  let out = '';
+  for(let y=0;y<CH;y++){
+    let L = '';
+    for(let x=0;x<CW;x++){
+      const px = Math.floor((x+0.5)/CW*W), py = Math.floor((1-(y+0.5)/CH)*H);
+      const i = (py*W+px)*4;
+      let l = (b[i]*0.299 + b[i+1]*0.587 + b[i+2]*0.114)/255;
+      if(l < 0.06 + hash(x,y)*0.10){ L += ' '; continue; }
+      l = Math.min(1, (l-0.06)/0.80);
+      L += RAMP[Math.min(RAMP.length-1, (l*(RAMP.length-1))|0)];
+    }
+    out += L + '\n';
+  }
+  return out;
+};
+ui('saturn ready\nSTATUS_OK');
+</script>

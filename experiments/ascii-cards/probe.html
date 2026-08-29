@@ -1,0 +1,33 @@
+<!doctype html><meta charset="utf-8"><title>VRM probe</title>
+<style>body{margin:0;background:#111;color:#ddd;font:12px ui-monospace,monospace}
+#log{position:fixed;top:0;left:0;padding:8px;max-height:100vh;overflow:auto;white-space:pre}</style>
+<div id="log">loading…</div>
+<script type="importmap">
+{"imports":{"three":"./vendor/three.module.js","three/addons/":"./vendor/addons/"}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { VRMLoaderPlugin } from './vendor/three-vrm.module.js';
+const log = m => document.getElementById('log').textContent += '\n' + m;
+document.getElementById('log').textContent = 'three r' + THREE.REVISION;
+const loader = new GLTFLoader();
+loader.register(p => new VRMLoaderPlugin(p));
+loader.load('./model.vrm',
+  g => { const vrm = g.userData.vrm;
+    window.__vrm = vrm;
+    log('VRM loaded. meta=' + (vrm.meta?.title ?? vrm.meta?.name));
+    const h = vrm.humanoid;
+    log('has humanoid: ' + !!h);
+    const probe = ['rightHand','rightIndexProximal','rightIndexIntermediate','rightIndexDistal',
+                   'leftHand','leftIndexDistal','rightLowerArm','rightUpperArm'];
+    for(const b of probe){ const n = h?.getNormalizedBoneNode?.(b); log('  ' + b + ': ' + (n ? 'ok' : 'MISSING')); }
+    let meshes=[]; vrm.scene.traverse(o=>{ if(o.isSkinnedMesh||o.isMesh) meshes.push(o.name+' ('+(o.geometry?.attributes?.position?.count||0)+' verts)'); });
+    log('meshes:\n  ' + meshes.join('\n  '));
+    const box = new THREE.Box3().setFromObject(vrm.scene);
+    log('bbox: ' + JSON.stringify({min:box.min.toArray().map(v=>+v.toFixed(2)),max:box.max.toArray().map(v=>+v.toFixed(2))}));
+    log('STATUS_OK');
+  },
+  p => {},
+  e => log('LOAD ERROR: ' + e));
+</script>
