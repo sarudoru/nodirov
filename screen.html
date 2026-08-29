@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Sardor Nodirov — the screen</title>
+    <meta name="description" content="Moving pictures in cell state: an animation rendered entirely as characters.">
+    <meta name="robots" content="noindex">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='white'/%3E%3Ctext x='8' y='12.5' font-family='monospace' font-size='13' text-anchor='middle' fill='%23161616'%3E%E2%96%9A%3C/text%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400&display=swap");
+      :root { color-scheme: light; }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; background: #fdfdfb; overscroll-behavior: none; }
+      body { font-family: "Geist Mono", Menlo, monospace; color: #1a1a1a; }
+      #screen { position: fixed; inset: 0; display: block; }
+      /* the only DOM text: real, selectable, focusable */
+      header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-between;
+        padding: 18px 22px;
+        font-size: 11px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        pointer-events: none;
+      }
+      header a { color: inherit; text-decoration: none; border-bottom: 1px solid rgba(26,26,26,0.35); pointer-events: auto; }
+      header a:hover { border-bottom-color: currentColor; }
+      footer {
+        position: fixed;
+        right: 22px;
+        bottom: 16px;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+        color: rgba(26, 26, 26, 0.45);
+        text-transform: uppercase;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="screen" aria-hidden="true"></canvas>
+    <header>
+      <span>The Screen — moving pictures in cell state</span>
+      <a href="index.html">← the field</a>
+    </header>
+    <footer id="caption">source a · measured ramp</footer>
+    <script type="module">
+      import { createScreen, readOptions } from "./src/screen.js";
+      const opt = readOptions();
+      document.getElementById("caption").textContent =
+        `source ${opt.source} · ${opt.mode === "binary" ? "binary" : "measured ramp"}`;
+      const screen = createScreen(document.getElementById("screen"), opt);
+      screen.start();
+      window.__screen = screen; // workbench/diagnostics
+    </script>
+  </body>
+</html>
