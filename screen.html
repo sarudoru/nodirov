@@ -11,35 +11,64 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <style>
       @import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400&display=swap");
-      :root { color-scheme: light; }
+      :root { color-scheme: light; --ink: #1a1a1a; --paper: #fdfdfb; --line: rgba(26,26,26,0.2); --accent: #c8401f; }
       * { box-sizing: border-box; }
-      html, body { height: 100%; margin: 0; background: #fdfdfb; overscroll-behavior: none; }
-      body { font-family: "Geist Mono", Menlo, monospace; color: #1a1a1a; }
+      html, body { height: 100%; margin: 0; background: var(--paper); overscroll-behavior: none; }
+      body { font-family: "Geist Mono", Menlo, monospace; color: var(--ink); }
       #screen { position: fixed; inset: 0; display: block; }
-      /* the only DOM text: real, selectable, focusable */
       header {
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        display: flex;
-        justify-content: space-between;
-        padding: 18px 22px;
-        font-size: 11px;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        pointer-events: none;
+        position: fixed; top: 0; left: 0; right: 0;
+        display: flex; justify-content: space-between; gap: 12px;
+        padding: 18px 22px; font-size: 11px; letter-spacing: 0.14em;
+        text-transform: uppercase; pointer-events: none;
       }
-      header a { color: inherit; text-decoration: none; border-bottom: 1px solid rgba(26,26,26,0.35); pointer-events: auto; }
-      header a:hover { border-bottom-color: currentColor; }
+      header a, header button {
+        pointer-events: auto; color: inherit; background: none; border: none;
+        font: inherit; letter-spacing: inherit; text-transform: inherit; padding: 0;
+        text-decoration: none; border-bottom: 1px solid rgba(26,26,26,0.35); cursor: pointer;
+      }
+      header a:hover, header button:hover { border-bottom-color: currentColor; }
+
+      /* ---- the tuning panel ---- */
+      #panel {
+        position: fixed; top: 52px; right: 16px; width: 248px;
+        max-height: calc(100% - 120px); overflow-y: auto;
+        padding: 12px 14px 10px; background: rgba(253,253,251,0.94);
+        border: 1px solid var(--line); font-size: 10px;
+        display: none;
+      }
+      #panel.open { display: block; }
+      #panel .row { margin-bottom: 9px; }
+      #panel label {
+        display: flex; justify-content: space-between; gap: 8px;
+        color: rgba(26,26,26,0.55); text-transform: uppercase;
+        letter-spacing: 0.08em; font-size: 9px; margin-bottom: 2px;
+      }
+      #panel label b { color: var(--ink); font-weight: 400; font-variant-numeric: tabular-nums; }
+      #panel input[type="range"] {
+        -webkit-appearance: none; appearance: none; width: 100%; height: 12px;
+        background: transparent; cursor: ew-resize;
+      }
+      #panel input[type="range"]::-webkit-slider-runnable-track { height: 1px; background: var(--line); }
+      #panel input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none; width: 8px; height: 8px; margin-top: -3.5px;
+        border-radius: 50%; background: var(--ink);
+      }
+      #panel select, #panel input[type="text"] {
+        width: 100%; padding: 3px 5px; border: 1px solid var(--line);
+        border-radius: 0; background: transparent; color: var(--ink); font: inherit;
+      }
+      #panel .buttons { display: flex; gap: 5px; margin-top: 4px; }
+      #panel .buttons button {
+        flex: 1; padding: 4px 6px; border: 1px solid var(--line); background: none;
+        font: inherit; color: var(--ink); cursor: pointer; text-transform: uppercase;
+        letter-spacing: 0.08em; font-size: 9px;
+      }
+      #panel .buttons button:hover { background: var(--ink); color: var(--paper); }
+      #scrub { width: 100%; margin-top: 2px; }
       footer {
-        position: fixed;
-        right: 22px;
-        bottom: 16px;
-        font-size: 10px;
-        letter-spacing: 0.1em;
-        color: rgba(26, 26, 26, 0.45);
-        text-transform: uppercase;
+        position: fixed; right: 22px; bottom: 16px; font-size: 10px;
+        letter-spacing: 0.1em; color: rgba(26,26,26,0.45); text-transform: uppercase;
       }
     </style>
   </head>
@@ -47,28 +76,146 @@
     <canvas id="screen" aria-hidden="true"></canvas>
     <header>
       <span>The Screen — moving pictures in cell state</span>
-      <a href="index.html">← the field</a>
+      <span>
+        <button id="tune" aria-expanded="false">tune</button>
+        &nbsp;·&nbsp;
+        <a href="index.html">← the field</a>
+      </span>
     </header>
-    <footer id="caption">source a · measured ramp</footer>
+    <aside id="panel" aria-label="rendering controls"></aside>
+    <footer id="caption"></footer>
+
     <script type="module">
-      import { createScreen, readOptions } from "./src/screen.js";
+      import { createScreen, readOptions, CHARSETS } from "./src/screen.js";
+
       const opt = readOptions();
-      // footage sources are ink-on-paper: dark marks are the form, and the
-      // grid runs finer so line art keeps its detail
+      const explicit = new URLSearchParams(location.search);
+      // footage sources are ink-on-paper: dark marks are the form, finer grid
       const isFootage = opt.source !== "a" && opt.source !== "b";
       if (isFootage) {
-        const q = new URLSearchParams(location.search);
-        if (!q.has("invert")) opt.invert = 1;
-        if (!q.has("cell")) opt.cell = 6;
-        if (!q.has("gamma")) opt.gamma = 0.8;
-        if (!q.has("floor")) opt.floor = 0.1;
-        if (!q.has("dither")) opt.dither = 0.09;
+        if (!explicit.has("invert")) opt.invert = 1;
+        if (!explicit.has("cell")) opt.cell = 6;
+        if (!explicit.has("gamma")) opt.gamma = 0.8;
+        if (!explicit.has("floor")) opt.floor = 0.1;
+        if (!explicit.has("dither")) opt.dither = 0.09;
       }
-      document.getElementById("caption").textContent =
-        `source ${opt.source} · ${opt.mode === "binary" ? "binary" : "measured ramp"}`;
+
       const screen = createScreen(document.getElementById("screen"), opt);
+      window.__screen = screen;
+
+      // ---- the panel: every knob of the renderer, applied live ----
+      const CONTROLS = [
+        { key: "source", type: "select", options: ["girl", "a", "b"] },
+        { key: "algorithm", type: "select", options: ["ramp", "diffuse", "quad", "edge", "binary"] },
+        { key: "charset", type: "select", options: Object.keys(CHARSETS) },
+        { key: "custom", type: "text", placeholder: "own characters…" },
+        { key: "cell", type: "range", min: 4, max: 22, step: 1 },
+        { key: "floor", type: "range", min: 0, max: 0.5, step: 0.01 },
+        { key: "dither", type: "range", min: 0, max: 0.5, step: 0.01 },
+        { key: "gamma", type: "range", min: 0.25, max: 2, step: 0.05 },
+        { key: "black", type: "range", min: 0, max: 0.6, step: 0.01 },
+        { key: "white", type: "range", min: 0.4, max: 1, step: 0.01 },
+        { key: "edgeGain", type: "range", min: 0.5, max: 6, step: 0.1 },
+        { key: "colorMode", type: "select", options: ["mono", "source", "duo"] },
+        { key: "invert", type: "range", min: 0, max: 1, step: 1 },
+        { key: "grain", type: "range", min: 0, max: 0.6, step: 0.02 },
+        { key: "settle", type: "range", min: 0, max: 8, step: 0.2 },
+      ];
+
+      const panel = document.getElementById("panel");
+      const caption = document.getElementById("caption");
+      const refreshCaption = () => {
+        caption.textContent = `${opt.source} · ${opt.algorithm} · ${opt.custom ? "custom" : opt.charset}`;
+      };
+
+      for (const c of CONTROLS) {
+        const row = document.createElement("div");
+        row.className = "row";
+        const label = document.createElement("label");
+        const value = document.createElement("b");
+        label.append(document.createTextNode(c.key), value);
+        row.appendChild(label);
+
+        let input;
+        if (c.type === "select") {
+          input = document.createElement("select");
+          for (const o of c.options) {
+            const el = document.createElement("option");
+            el.value = o;
+            el.textContent = o;
+            input.appendChild(el);
+          }
+          input.value = String(opt[c.key]);
+        } else if (c.type === "text") {
+          input = document.createElement("input");
+          input.type = "text";
+          input.placeholder = c.placeholder ?? "";
+          input.value = opt[c.key];
+        } else {
+          input = document.createElement("input");
+          input.type = "range";
+          input.min = c.min;
+          input.max = c.max;
+          input.step = c.step;
+          input.value = opt[c.key];
+        }
+        const show = () => { value.textContent = c.type === "range" ? String(opt[c.key]) : ""; };
+        input.addEventListener("input", () => {
+          const v = c.type === "range" ? parseFloat(input.value) : input.value;
+          if (c.key === "source") {
+            // a source change needs a reload; keep every other knob
+            screen.set(c.key, v);
+            location.search = "?" + screen.query();
+            return;
+          }
+          screen.set(c.key, v);
+          show();
+          refreshCaption();
+        });
+        show();
+        row.appendChild(input);
+        panel.appendChild(row);
+      }
+
+      // transport: play/pause + scrub, and a link that reproduces everything
+      const transport = document.createElement("div");
+      transport.className = "row";
+      transport.innerHTML = `<label>time <b id="tlabel"></b></label><input id="scrub" type="range" min="0" max="10" step="0.05" value="0">`;
+      panel.appendChild(transport);
+      const buttons = document.createElement("div");
+      buttons.className = "buttons";
+      buttons.innerHTML = `<button id="pp">pause</button><button id="link">copy link</button>`;
+      panel.appendChild(buttons);
+
+      const scrub = panel.querySelector("#scrub");
+      const tlabel = panel.querySelector("#tlabel");
+      let scrubbing = false;
+      scrub.addEventListener("input", () => { scrubbing = true; screen.seek(parseFloat(scrub.value)); });
+      scrub.addEventListener("change", () => { scrubbing = false; });
+      setInterval(() => {
+        if (scrubbing) return;
+        scrub.max = String(screen.duration() || 10);
+        scrub.value = String(screen.time());
+        tlabel.textContent = screen.time().toFixed(1) + "s";
+      }, 250);
+
+      panel.querySelector("#pp").addEventListener("click", (e) => {
+        e.target.textContent = screen.playPause() ? "play" : "pause";
+      });
+      panel.querySelector("#link").addEventListener("click", () => {
+        const url = new URL("screen.html" + (screen.query() ? "?" + screen.query() : ""), location.href).href;
+        navigator.clipboard.writeText(url);
+        history.replaceState(null, "", "?" + screen.query());
+      });
+
+      const tuneButton = document.getElementById("tune");
+      tuneButton.addEventListener("click", () => {
+        const open = panel.classList.toggle("open");
+        tuneButton.setAttribute("aria-expanded", String(open));
+      });
+
+      refreshCaption();
       screen.start();
-      window.__screen = screen; // workbench/diagnostics
     </script>
   </body>
 </html>
