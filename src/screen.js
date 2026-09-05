@@ -47,6 +47,8 @@ const DEFAULTS = {
   keyColor: "#796bba",
   keyRange: 0.13,     // rgb distance considered background
   keyFill: 0.3,       // minimum ink for surviving (foreground) pixels
+  matte: 0,           // source carries its alpha as a grey half on the right
+  detail: 0,          // local contrast on the sampled tone (unsharp), 0..2
   model: "gura",      // mmd source: which model
   orbit: 1,           // mmd source: slow auto-orbit when not dragging
   settle: 2.6,
@@ -111,6 +113,7 @@ export function createScreen(canvas, opt) {
   let sample = null;
   let sampleCtx = null;
   let lum = new Float32Array(0);     // post-invert, post-levels reading, 2x grid
+  let blur = new Float32Array(0);    // scratch for the detail pass
   let scratch = new Float32Array(0); // error-diffusion working copy
   let rgb = null;                    // raw sample bytes for colour modes
   let grainTile = null;
@@ -164,6 +167,7 @@ export function createScreen(canvas, opt) {
     sample.height = rows * 2;
     sampleCtx = sample.getContext("2d", { willReadFrequently: true });
     lum = new Float32Array(cols * 2 * rows * 2);
+    blur = new Float32Array(cols * 2 * rows * 2);
     scratch = new Float32Array(cols * 2 * rows * 2);
     buildRamp();
   }
@@ -196,7 +200,7 @@ export function createScreen(canvas, opt) {
       tileW = feed.canvas.width;
       tileH = feed.canvas.height;
     } else if (isVideo) {
-      tileW = sheet.videoWidth;
+      tileW = opt.matte ? sheet.videoWidth / 2 : sheet.videoWidth;
       tileH = sheet.videoHeight;
       if (!tileW) return false;
     } else {
@@ -224,6 +228,14 @@ export function createScreen(canvas, opt) {
     sampleCtx.fillRect(0, 0, sw, sh);
     sampleCtx.drawImage(sheet, sx, sy, tileW, tileH, dx, dy, dw, dh);
     rgb = sampleCtx.getImageData(0, 0, sw, sh).data;
+    let matte = null;
+    if (opt.matte) {
+      // the alpha half, drawn with the same geometry; padding is transparent
+      sampleCtx.fillStyle = "#000";
+      sampleCtx.fillRect(0, 0, sw, sh);
+      sampleCtx.drawImage(sheet, sx + tileW, sy, tileW, tileH, dx, dy, dw, dh);
+      matte = sampleCtx.getImageData(0, 0, sw, sh).data;
+    }
 
     const lo = opt.black;
     const hi = Math.max(opt.black + 0.02, opt.white);
@@ -231,33 +243,49 @@ export function createScreen(canvas, opt) {
     // the background's colour family key out together — the backdrop panel
     // and the lyric text are one family, and both vanish
     const keyRgb = hex(opt.keyColor);
+    const separated = opt.matte || opt.key;
     for (let i = 0; i < sw * sh; i += 1) {
-      const r = rgb[i * 4];
-      const g = rgb[i * 4 + 1];
-      const b = rgb[i * 4 + 2];
-      // true luma, so colour footage reads correctly
-      let v = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 255;
-      if (opt.invert) v = 1 - v;
-      // levels: clamp the wash — greys below black vanish, above white saturate
-      v = Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
-      if (opt.key) {
-        // plain RGB distance: brightness-normalised chromaticity confuses a
-        // dark navy costume with a light purple backdrop; absolute distance
-        // keeps them apart while still catching the backdrop's pale text
+      let r = rgb[i * 4];
+      let g = rgb[i * 4 + 1];
+      let b = rgb[i * 4 + 2];
+
+      // Separation first: how much of this sample is the figure. A baked
+      // matte is authoritative; otherwise plain RGB distance from the key
+      // colour (brightness-normalised chromaticity confuses a dark navy
+      // costume with a light purple backdrop, absolute distance does not).
+      let a = 1;
+      if (matte) {
+        a = matte[i * 4] / 255;
+      } else if (opt.key) {
         const dist = Math.hypot(r - keyRgb[0], g - keyRgb[1], b - keyRgb[2]) / 442;
-        if (dist < opt.keyRange) {
-          v = 0; // background: paper shows through
-        } else if (dist < opt.keyRange * 1.5) {
-          v *= (dist - opt.keyRange) / (opt.keyRange * 0.5); // soft edge
-        } else if (opt.keyFill > 0) {
-          // Keyed foreground: density means "this is the figure", not "this
-          // is bright" — so a near-white face and a navy coat both print, the
-          // colour carried by colorMode:source. Distance past the key edge
-          // sets how solidly the cell fills, biased up by keyFill so even the
-          // palest members of the figure read on white paper.
-          v = Math.min(1, opt.keyFill + Math.min(1, (dist - opt.keyRange * 1.5) / (1 - opt.keyRange * 1.5)) * (1 - opt.keyFill));
+        a = Math.min(1, Math.max(0, (dist - opt.keyRange) / (opt.keyRange * 0.5)));
+      }
+      if (separated) {
+        if (a <= 0.01) {
+          // background: paper shows through, and the colour pass ignores it
+          rgb[i * 4] = rgb[i * 4 + 1] = rgb[i * 4 + 2] = 255;
+          lum[i] = 0;
+          continue;
+        }
+        if (a < 1) {
+          // despill: an edge sample is figure mixed with backdrop; unmix it
+          // so hair and sleeves keep their own colour instead of the key's
+          r = Math.min(255, Math.max(0, (r - (1 - a) * keyRgb[0]) / a));
+          g = Math.min(255, Math.max(0, (g - (1 - a) * keyRgb[1]) / a));
+          b = Math.min(255, Math.max(0, (b - (1 - a) * keyRgb[2]) / a));
+          rgb[i * 4] = r;
+          rgb[i * 4 + 1] = g;
+          rgb[i * 4 + 2] = b;
         }
       }
+
+      // Density second, from the figure's own shading: true luma, polarity,
+      // levels. keyFill is the floor inside the figure, so its darkest
+      // members still print on paper without flattening the rest.
+      let v = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 255;
+      if (opt.invert) v = 1 - v;
+      v = Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
+      if (separated) v = a * (opt.keyFill + (1 - opt.keyFill) * v);
       lum[i] = v;
     }
     return true;
@@ -284,8 +312,34 @@ export function createScreen(canvas, opt) {
     return `rgb(${r},${g},${b})`;
   }
 
+  // Local contrast: tone minus its 3x3 mean, added back scaled. Folds, hair
+  // strands and the seam between costume and skin get their own edge; flat
+  // areas are untouched. Outside a matte the tone is zero and stays zero.
+  function sharpen(amount) {
+    if (amount <= 0) return;
+    const sw = cols * 2;
+    const sh = rows * 2;
+    for (let y = 0; y < sh; y += 1) {
+      const y0 = Math.max(0, y - 1) * sw;
+      const y1 = y * sw;
+      const y2 = Math.min(sh - 1, y + 1) * sw;
+      for (let x = 0; x < sw; x += 1) {
+        const x0 = Math.max(0, x - 1);
+        const x2 = Math.min(sw - 1, x + 1);
+        blur[y1 + x] = (lum[y0 + x0] + lum[y0 + x] + lum[y0 + x2]
+          + lum[y1 + x0] + lum[y1 + x] + lum[y1 + x2]
+          + lum[y2 + x0] + lum[y2 + x] + lum[y2 + x2]) / 9;
+      }
+    }
+    for (let i = 0; i < sw * sh; i += 1) {
+      if (lum[i] <= 0) continue;
+      lum[i] = Math.min(1, Math.max(0, lum[i] + (lum[i] - blur[i]) * amount));
+    }
+  }
+
   function drawFrame(now) {
     if (!sampleSource()) return;
+    sharpen(opt.detail);
     const elapsed = (now - startedAt) / 1000;
     const t = Math.min(1, opt.settle > 0 ? elapsed / opt.settle : 1);
     const inkRgb = hex(opt.ink);

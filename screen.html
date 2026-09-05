@@ -110,17 +110,21 @@
         if (!explicit.has("dither")) opt.dither = 0.09;
       }
       if (opt.source === "dance") {
-        // keyed colour footage: the purple family (panel + lyric text) is
-        // background and keys out; the dancer prints in her own colours,
-        // brightness carrying the form — so NO invert here
+        // colour footage with a baked matte (alpha on the right half of the
+        // clip). The dancer prints in her own colours; inside the matte,
+        // brightness is ink as in plain footage, so the shading survives.
+        // key stays on for the despill colour at the edges.
+        if (!explicit.has("matte")) opt.matte = 1;
         if (!explicit.has("key")) opt.key = 1;
-        if (!explicit.has("invert")) opt.invert = 0;
+        if (!explicit.has("invert")) opt.invert = 1;
         if (!explicit.has("colorMode")) opt.colorMode = "source";
-        if (!explicit.has("keyFill")) opt.keyFill = 0.55;
+        if (!explicit.has("keyFill")) opt.keyFill = 0.1;
         if (!explicit.has("keyRange")) opt.keyRange = 0.2;
         if (!explicit.has("floor")) opt.floor = 0.02;
         if (!explicit.has("dither")) opt.dither = 0.04;
-        if (!explicit.has("gamma")) opt.gamma = 0.7;
+        if (!explicit.has("gamma")) opt.gamma = 0.9;
+        if (!explicit.has("white")) opt.white = 0.92;
+        if (!explicit.has("detail")) opt.detail = 0.8;
         if (!explicit.has("grain")) opt.grain = 0.12;
         if (!explicit.has("cell")) opt.cell = 6;
       }
@@ -164,6 +168,7 @@
         { key: "gamma", type: "range", min: 0.25, max: 2, step: 0.05 },
         { key: "black", type: "range", min: 0, max: 0.6, step: 0.01 },
         { key: "white", type: "range", min: 0.4, max: 1, step: 0.01 },
+        { key: "detail", type: "range", min: 0, max: 2, step: 0.05 },
         { key: "edgeGain", type: "range", min: 0.5, max: 6, step: 0.1 },
         { key: "colorMode", type: "select", options: ["mono", "source", "duo"] },
         { key: "invert", type: "range", min: 0, max: 1, step: 1 },
