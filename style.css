@@ -1,0 +1,214 @@
+@font-face {
+  font-family: "IBM Plex Mono";
+  src: url("assets/fonts/plex-mono.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+/* Departure Mono — a pixel face drawn on a small grid, vendored locally so
+   the substrate never waits on a third party to know its own metrics. */
+@font-face {
+  font-family: "Departure Mono";
+  src: url("assets/fonts/DepartureMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: block;
+}
+
+:root {
+  color-scheme: light;
+  --paper: #f7f6f0;
+  --ink: #292d29;
+  --accent: #c8401f;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: var(--paper);
+  overscroll-behavior: none;
+}
+
+body {
+  color: var(--ink);
+  font-family: "IBM Plex Mono", Menlo, monospace;
+}
+
+#field {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+#scroller {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  outline: none;
+  scrollbar-width: none;
+}
+
+#scroller::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---- No-JS fallback: a plain, readable document ---- */
+
+html:not(.js) #field {
+  display: none;
+}
+
+html:not(.js) #article {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 64px 24px 96px;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+html:not(.js) .hint {
+  opacity: 0.5;
+}
+
+html:not(.js) .interstitial {
+  margin: 48px 0;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.45;
+  font-size: 12px;
+}
+
+/* ---- Field mode: article becomes a transparent, grid-aligned text layer ---- */
+
+html.js #article {
+  position: relative;
+  visibility: hidden; /* until typeset */
+}
+
+html.js #article.ready {
+  visibility: visible;
+}
+
+html.js #article.ready,
+html.js #article.ready * {
+  color: transparent;
+}
+
+html.js #article.ready :is(h1, h2, p, ul, li, header, section) {
+  display: contents;
+}
+
+html.js #article.ready ul {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+html.js #article.ready .gl {
+  position: absolute;
+  margin: 0;
+  white-space: pre;
+  font-family: var(--field-font, "IBM Plex Mono"), Menlo, monospace;
+  font-weight: 400;
+  -webkit-text-size-adjust: none;
+}
+
+html.js #article.ready a {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: transparent;
+}
+
+html:not(.js) ::selection {
+  color: inherit;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Declared media: the real <img>/<video> is the no-JS and screen-reader
+   truth. Once the field renders the figure as glyphs, hide the raster but
+   keep it in the accessibility tree via the caption and alt text. */
+html.js #article.ready .glyph-plane :is(img, video) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+html:not(.js) .glyph-plane img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* The embedded cursor: the pointer itself is invisible; the cell under it
+   becomes the cursor glyph. Links still work — the hand just isn't drawn. */
+html.embed-cursor #scroller,
+html.embed-cursor #scroller * {
+  cursor: none !important;
+}
+
+html.js #article.ready :is(figure, figcaption, nav, .gallery) {
+  display: contents;
+  margin: 0;
+}
+html.js #article.ready :is(a, button) {
+  display: block;
+  pointer-events: none;
+}
+html.js #article.ready :is(a, button) .gl {
+  pointer-events: auto;
+}
+html.js #article.ready button {
+  cursor: pointer;
+  font: inherit;
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+html.js #article.ready .gl[aria-hidden="true"] {
+  user-select: none;
+}
+html.js #article.ready :is(a, button):focus {
+  outline: none;
+}
+html.js #article.ready :is(a, button):focus-visible .gl {
+  outline: 1px dotted var(--accent);
+  outline-offset: 3px;
+}
+html.js #article.ready .glyph-plane :is(img, video) {
+  display: none;
+}
+html:not(.js) #article {
+  max-width: 850px;
+}
+html:not(.js) :is(img, video) {
+  max-width: 100%;
+}
+html:not(.js) nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1em;
+}
+html:not(.js) button[data-motion] {
+  display: none;
+}

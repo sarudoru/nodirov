@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Glyph Field / Workbench</title>
+    <meta name="robots" content="noindex">
+    <style>
+      @font-face { font-family: "IBM Plex Mono"; src: url("assets/fonts/plex-mono.woff2") format("woff2"); font-weight: 400; font-display: swap; }
+
+      :root {
+        --paper: #fdfdfb;
+        --ink: #1a1a1a;
+        --line: rgba(26, 26, 26, 0.16);
+        --line-strong: rgba(26, 26, 26, 0.4);
+        --muted: rgba(26, 26, 26, 0.55);
+        --accent: #c8401f;
+        --panel: 330px;
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: grid;
+        grid-template-columns: var(--panel) minmax(0, 1fr);
+        background: var(--paper);
+        color: var(--ink);
+        font-family: "IBM Plex Mono", Menlo, monospace;
+        font-size: 11px;
+      }
+
+      /* ---- panel ---- */
+      #panel {
+        display: flex;
+        flex-direction: column;
+        border-right: 1px solid var(--line-strong);
+        overflow: hidden;
+      }
+      .panel-head {
+        padding: 14px 16px 12px;
+        border-bottom: 1px solid var(--line-strong);
+      }
+      .panel-head h1 {
+        margin: 0 0 3px;
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .panel-head p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+      #controls { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+
+      .group { border-bottom: 1px solid var(--line); }
+      .group > summary {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 9px 16px;
+        cursor: pointer;
+        list-style: none;
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+        user-select: none;
+      }
+      .group > summary::-webkit-details-marker { display: none; }
+      .group[open] > summary { color: var(--ink); }
+      .group > summary::after { content: "+"; }
+      .group[open] > summary::after { content: "–"; }
+      .group-body { padding: 2px 16px 12px; }
+
+      .row { margin-bottom: 11px; }
+      .row:last-child { margin-bottom: 4px; }
+      .row-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 8px;
+        margin-bottom: 3px;
+      }
+      .row label { color: var(--muted); }
+      .row .val {
+        font-variant-numeric: tabular-nums;
+        color: var(--ink);
+      }
+      .row .help {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: 9px;
+        line-height: 1.4;
+        opacity: 0.85;
+      }
+      .row.changed label { color: var(--accent); }
+
+      input[type="range"] {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 100%;
+        height: 14px;
+        background: transparent;
+        cursor: ew-resize;
+      }
+      input[type="range"]::-webkit-slider-runnable-track {
+        height: 1px;
+        background: var(--line-strong);
+      }
+      input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        width: 9px;
+        height: 9px;
+        margin-top: -4px;
+        border-radius: 50%;
+        background: var(--ink);
+      }
+      input[type="range"]:focus-visible { outline: 1px solid var(--accent); }
+
+      select, input[type="text"] {
+        width: 100%;
+        padding: 4px 6px;
+        border: 1px solid var(--line-strong);
+        border-radius: 0;
+        background: transparent;
+        color: var(--ink);
+        font: inherit;
+      }
+      input[type="color"] {
+        width: 100%;
+        height: 22px;
+        padding: 0;
+        border: 1px solid var(--line-strong);
+        background: transparent;
+        cursor: pointer;
+      }
+      .switch { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+      .switch input { margin: 0; accent-color: var(--accent); }
+
+      /* ---- actions ---- */
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        padding: 10px 16px;
+        border-top: 1px solid var(--line-strong);
+      }
+      button {
+        flex: 1 1 auto;
+        padding: 5px 9px;
+        border: 1px solid var(--line-strong);
+        border-radius: 0;
+        background: transparent;
+        color: var(--ink);
+        font: inherit;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      button:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+      button.hot { border-color: var(--accent); color: var(--accent); }
+      button.hot:hover { background: var(--accent); color: var(--paper); }
+      button:active { transform: translateY(1px); }
+
+      .presets {
+        display: flex;
+        gap: 5px;
+        padding: 0 16px 10px;
+      }
+      .presets select { flex: 1; }
+
+      /* ---- stage ---- */
+      #stage {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        background:
+          repeating-conic-gradient(rgba(26,26,26,0.03) 0% 25%, transparent 0% 50%) 50% / 16px 16px;
+      }
+      .stage-bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--paper);
+      }
+      .stage-bar .spacer { flex: 1; }
+      .stage-bar code {
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 10px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .sizes { display: flex; gap: 4px; }
+      .sizes button { flex: 0 0 auto; padding: 3px 8px; font-size: 10px; }
+      .sizes button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+      #frameWrap {
+        flex: 1;
+        display: grid;
+        place-items: center;
+        min-height: 0;
+        padding: 12px;
+      }
+      iframe {
+        width: 100%;
+        height: 100%;
+        border: 1px solid var(--line);
+        background: var(--paper);
+      }
+      #stats {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 2px 8px;
+        padding: 8px 16px 12px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 9px;
+        font-variant-numeric: tabular-nums;
+      }
+      #stats b { display: block; color: var(--ink); font-weight: 400; font-size: 12px; }
+
+      #toast {
+        position: fixed;
+        right: 16px;
+        bottom: 14px;
+        padding: 6px 12px;
+        border: 1px solid var(--ink);
+        background: var(--paper);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.25s;
+      }
+      #toast.on { opacity: 1; }
+
+      @media (max-width: 900px) {
+        body { grid-template-columns: 1fr; grid-template-rows: 46vh 1fr; }
+        #panel { border-right: 0; border-bottom: 1px solid var(--line-strong); }
+      }
+    </style>
+  </head>
+  <body>
+    <aside id="panel">
+      <div class="panel-head">
+        <h1>Glyph Workbench</h1>
+        <p>Every knob is live. Hold <strong>compare</strong> to A/B against a snapshot.</p>
+      </div>
+      <div id="controls"></div>
+      <div class="presets">
+        <select id="presetList"><option value="">- presets -</option></select>
+        <button id="presetSave">save</button>
+        <button id="presetDelete">del</button>
+      </div>
+      <div class="actions">
+        <button id="compare" class="hot">compare</button>
+        <button id="snapshot">snap</button>
+        <button id="reset">reset all</button>
+        <button id="reveal">ripple</button>
+        <button id="stir">stir</button>
+        <button id="copyLink">copy link</button>
+        <button id="copyJson">copy json</button>
+        <button id="pasteJson">paste json</button>
+      </div>
+      <div id="stats"></div>
+    </aside>
+
+    <section id="stage">
+      <div class="stage-bar">
+        <div class="sizes">
+          <button data-w="0" aria-pressed="true">fill</button>
+          <button data-w="1280">1280</button>
+          <button data-w="834">834</button>
+          <button data-w="390">390</button>
+        </div>
+        <button id="reload" style="flex:0 0 auto;padding:3px 8px;font-size:10px">reload</button>
+        <span class="spacer"></span>
+        <code id="urlOut">index.html</code>
+      </div>
+      <div id="frameWrap"><iframe id="frame" title="field preview"></iframe></div>
+    </section>
+
+    <div id="toast"></div>
+
+    <script type="module">
+      import { SCHEMA, defaults, fromQuery, toQuery } from "./src/params.js";
+
+      const frame = document.getElementById("frame");
+      const controls = document.getElementById("controls");
+      const urlOut = document.getElementById("urlOut");
+      const toastEl = document.getElementById("toast");
+
+      let params = fromQuery(window.location.search);
+      let snapshot = { ...params };
+      let api = null;
+      const inputs = new Map();
+
+      const toast = (msg) => {
+        toastEl.textContent = msg;
+        toastEl.classList.add("on");
+        clearTimeout(toast.t);
+        toast.t = setTimeout(() => toastEl.classList.remove("on"), 1400);
+      };
+
+      // ---- build the controls from the schema ----
+      const groups = new Map();
+      for (const entry of SCHEMA) {
+        if (!groups.has(entry.group)) groups.set(entry.group, []);
+        groups.get(entry.group).push(entry);
+      }
+
+      for (const [name, entries] of groups) {
+        const details = document.createElement("details");
+        details.className = "group";
+        details.open = true;
+        const summary = document.createElement("summary");
+        summary.textContent = name;
+        details.appendChild(summary);
+        const body = document.createElement("div");
+        body.className = "group-body";
+
+        for (const entry of entries) {
+          const row = document.createElement("div");
+          row.className = "row";
+          row.dataset.key = entry.key;
+
+          if (entry.type === "bool") {
+            const label = document.createElement("label");
+            label.className = "switch";
+            const input = document.createElement("input");
+            input.type = "checkbox";
+            input.checked = params[entry.key];
+            input.addEventListener("change", () => set(entry.key, input.checked));
+            label.append(input, document.createTextNode(entry.label));
+            row.appendChild(label);
+            inputs.set(entry.key, input);
+          } else {
+            const top = document.createElement("div");
+            top.className = "row-top";
+            const label = document.createElement("label");
+            label.textContent = entry.label;
+            const val = document.createElement("span");
+            val.className = "val";
+            top.append(label, val);
+            row.appendChild(top);
+
+            let input;
+            if (entry.type === "range") {
+              input = document.createElement("input");
+              input.type = "range";
+              input.min = entry.min;
+              input.max = entry.max;
+              input.step = entry.step;
+              input.value = params[entry.key];
+              input.addEventListener("input", () => set(entry.key, parseFloat(input.value)));
+            } else if (entry.type === "color") {
+              input = document.createElement("input");
+              input.type = "color";
+              input.value = params[entry.key];
+              input.addEventListener("input", () => set(entry.key, input.value));
+            } else {
+              input = document.createElement("select");
+              for (const [value, text] of entry.options) {
+                const option = document.createElement("option");
+                option.value = value;
+                option.textContent = text;
+                input.appendChild(option);
+              }
+              input.value = params[entry.key];
+              input.addEventListener("change", () => set(entry.key, input.value));
+            }
+            row.appendChild(input);
+            inputs.set(entry.key, input);
+            row.querySelector(".val").dataset.for = entry.key;
+          }
+
+          if (entry.help) {
+            const help = document.createElement("p");
+            help.className = "help";
+            help.textContent = entry.help;
+            row.appendChild(help);
+          }
+          body.appendChild(row);
+        }
+        details.appendChild(body);
+        controls.appendChild(details);
+      }
+
+      function renderValue(entry) {
+        const row = controls.querySelector(`.row[data-key="${entry.key}"]`);
+        if (!row) return;
+        const val = row.querySelector(".val");
+        if (val) {
+          const raw = params[entry.key];
+          val.textContent = entry.type === "range"
+            ? `${Number(raw).toFixed(entry.step < 0.01 ? 3 : entry.step < 1 ? 2 : 0)}${entry.unit ? " " + entry.unit : ""}`
+            : raw;
+        }
+        row.classList.toggle("changed", params[entry.key] !== entry.def);
+      }
+
+      function syncInputs() {
+        for (const entry of SCHEMA) {
+          const input = inputs.get(entry.key);
+          if (!input) continue;
+          if (entry.type === "bool") input.checked = params[entry.key];
+          else input.value = params[entry.key];
+          renderValue(entry);
+        }
+        urlOut.textContent = "index.html" + (toQuery(params) ? "?" + toQuery(params) : "");
+      }
+
+      function push(patch) {
+        if (api) api.set(patch);
+      }
+
+      function set(key, value) {
+        params[key] = value;
+        const entry = SCHEMA.find((e) => e.key === key);
+        renderValue(entry);
+        urlOut.textContent = "index.html" + (toQuery(params) ? "?" + toQuery(params) : "");
+        push({ [key]: value });
+      }
+
+      function applyAll(next) {
+        params = { ...next };
+        syncInputs();
+        push({ ...params });
+      }
+
+      // ---- the frame ----
+      function loadFrame() {
+        const query = toQuery(params);
+        frame.src = "index.html" + (query ? "?" + query : "");
+      }
+
+      frame.addEventListener("load", () => {
+        api = null;
+        const win = frame.contentWindow;
+        const grab = () => {
+          if (win !== frame.contentWindow || !win.__glyph) return;
+          api = win.__glyph;
+          api.set({ ...params });
+        };
+        if (win.__glyph) grab();
+        else win.addEventListener("glyph-ready", grab, {once:true});
+      });
+      document.getElementById("reload").addEventListener("click", loadFrame);
+
+      // ---- actions ----
+      document.getElementById("reset").addEventListener("click", () => {
+        applyAll(defaults());
+        toast("reset to defaults");
+      });
+
+      document.getElementById("snapshot").addEventListener("click", () => {
+        snapshot = { ...params };
+        toast("snapshot taken");
+      });
+
+      const compare = document.getElementById("compare");
+      let held = null;
+      const holdOn = (event) => {
+        event.preventDefault();
+        if (held) return;
+        held = { ...params };
+        push({ ...snapshot });
+        compare.textContent = "snapshot";
+      };
+      const holdOff = () => {
+        if (!held) return;
+        push({ ...held });
+        held = null;
+        compare.textContent = "compare";
+      };
+      compare.addEventListener("pointerdown", holdOn);
+      window.addEventListener("pointerup", holdOff);
+      compare.addEventListener("pointerleave", holdOff);
+
+      document.getElementById("reveal").addEventListener("click", () => {
+        if (api && api.reveal) api.reveal();
+      });
+
+      // Drive a curved stroke through the field so the wake can be judged
+      // without needing a steady hand on the iframe.
+      document.getElementById("stir").addEventListener("click", () => {
+        const win = frame.contentWindow;
+        if (!api || !api.touch) return;
+        const w = frame.clientWidth;
+        const h = frame.clientHeight;
+        let px = w * 0.12;
+        let py = h * 0.5;
+        let step = 0;
+        const run = () => {
+          for (let k = 0; k < 3 && step < 90; k += 1, step += 1) {
+            const t = step / 90;
+            const x = w * (0.12 + t * 0.76);
+            const y = h * (0.5 + Math.sin(t * Math.PI * 2.4) * 0.28);
+            api.touch(x, y, px, py, 16);
+            px = x;
+            py = y;
+          }
+          if (step < 90) win.requestAnimationFrame(run);
+        };
+        run();
+      });
+
+      // live telemetry from the substrate
+      const statsEl = document.getElementById("stats");
+      setInterval(() => {
+        if (!api || !api.stats) return;
+        const s = api.stats();
+        if (!s) return;
+        statsEl.innerHTML =
+          `<div><b>${s.cells}</b>cells</div>` +
+          `<div><b>${s.moving}</b>morphing</div>` +
+          `<div><b>${s.frameMs.toFixed(1)} ms</b>frame work</div>` +
+          `<div><b>${(api.glyphCount ? api.glyphCount() : 0)}</b>glyphs</div>`;
+      }, 300);
+
+      document.getElementById("copyLink").addEventListener("click", () => {
+        const query = toQuery(params);
+        const url = new URL("index.html" + (query ? "?" + query : ""), window.location.href).href;
+        navigator.clipboard.writeText(url).then(() => toast("link copied"));
+      });
+
+      document.getElementById("copyJson").addEventListener("click", () => {
+        navigator.clipboard.writeText(JSON.stringify(params, null, 2)).then(() => toast("json copied"));
+      });
+
+      document.getElementById("pasteJson").addEventListener("click", async () => {
+        try {
+          const text = await navigator.clipboard.readText();
+          const next = { ...defaults(), ...JSON.parse(text) };
+          applyAll(next);
+          toast("json applied");
+        } catch {
+          toast("clipboard has no valid json");
+        }
+      });
+
+      // ---- presets ----
+      const STORE = "glyph-lab-presets";
+      const presetList = document.getElementById("presetList");
+      const readPresets = () => {
+        try { return JSON.parse(localStorage.getItem(STORE) ?? "{}"); } catch { return {}; }
+      };
+      const writePresets = (all) => localStorage.setItem(STORE, JSON.stringify(all));
+
+      function refreshPresets(selected = "") {
+        const all = readPresets();
+        presetList.innerHTML = '<option value="">- presets -</option>';
+        for (const name of Object.keys(all).sort()) {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = name;
+          presetList.appendChild(option);
+        }
+        presetList.value = selected;
+      }
+
+      presetList.addEventListener("change", () => {
+        const all = readPresets();
+        if (all[presetList.value]) {
+          applyAll({ ...defaults(), ...all[presetList.value] });
+          toast(`loaded “${presetList.value}”`);
+        }
+      });
+
+      document.getElementById("presetSave").addEventListener("click", () => {
+        const name = prompt("preset name");
+        if (!name) return;
+        const all = readPresets();
+        all[name] = { ...params };
+        writePresets(all);
+        refreshPresets(name);
+        toast(`saved “${name}”`);
+      });
+
+      document.getElementById("presetDelete").addEventListener("click", () => {
+        const name = presetList.value;
+        if (!name) return;
+        const all = readPresets();
+        delete all[name];
+        writePresets(all);
+        refreshPresets();
+        toast(`deleted “${name}”`);
+      });
+
+      // ---- stage sizes ----
+      for (const button of document.querySelectorAll(".sizes button")) {
+        button.addEventListener("click", () => {
+          for (const other of document.querySelectorAll(".sizes button")) {
+            other.setAttribute("aria-pressed", other === button ? "true" : "false");
+          }
+          const w = parseInt(button.dataset.w, 10);
+          frame.style.width = w ? w + "px" : "100%";
+          frame.style.maxWidth = "100%";
+        });
+      }
+
+      refreshPresets();
+      syncInputs();
+      loadFrame();
+    </script>
+  </body>
+</html>
