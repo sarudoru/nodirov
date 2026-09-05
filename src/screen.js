@@ -47,6 +47,8 @@ const DEFAULTS = {
   keyColor: "#796bba",
   keyRange: 0.13,     // rgb distance considered background
   keyFill: 0.3,       // minimum ink for surviving (foreground) pixels
+  model: "gura",      // mmd source: which model
+  orbit: 1,           // mmd source: slow auto-orbit when not dragging
   settle: 2.6,
   grain: 0.16,
   paper: "#fdfdfb",
@@ -105,6 +107,7 @@ export function createScreen(canvas, opt) {
   let ramp = [];
   let sheet = null;
   let isVideo = false;
+  let feed = null; // a live-rendered canvas source (see mmd.js)
   let sample = null;
   let sampleCtx = null;
   let lum = new Float32Array(0);     // post-invert, post-levels reading, 2x grid
@@ -188,7 +191,11 @@ export function createScreen(canvas, opt) {
     let tileH;
     let sx = 0;
     let sy = 0;
-    if (isVideo) {
+    if (feed) {
+      feed.render(performance.now());
+      tileW = feed.canvas.width;
+      tileH = feed.canvas.height;
+    } else if (isVideo) {
       tileW = sheet.videoWidth;
       tileH = sheet.videoHeight;
       if (!tileW) return false;
@@ -211,8 +218,9 @@ export function createScreen(canvas, opt) {
     else dw = Math.max(2, Math.round(sh * (srcAspect / cellAspect) / 2) * 2);
     const dx = Math.floor((sw - dw) / 2);
     const dy = Math.floor((sh - dh) / 2);
-    // the empty buffer must read as "no form" under the current polarity
-    sampleCtx.fillStyle = opt.invert ? "#fff" : "#000";
+    // the empty buffer must read as "no form": under a chroma key that is the
+    // key colour itself, otherwise the dark or light end of the polarity
+    sampleCtx.fillStyle = opt.key ? opt.keyColor : opt.invert ? "#fff" : "#000";
     sampleCtx.fillRect(0, 0, sw, sh);
     sampleCtx.drawImage(sheet, sx, sy, tileW, tileH, dx, dy, dw, dh);
     rgb = sampleCtx.getImageData(0, 0, sw, sh).data;
@@ -465,9 +473,16 @@ export function createScreen(canvas, opt) {
   }
 
   return {
+    attachFeed(next) {
+      feed = next;
+      sheet = next.canvas;
+    },
+
     async start() {
-      isVideo = opt.source !== "a" && opt.source !== "b";
-      if (isVideo) {
+      isVideo = !feed && opt.source !== "a" && opt.source !== "b";
+      if (feed) {
+        // already rendered by the feed; nothing to load here
+      } else if (isVideo) {
         const video = document.createElement("video");
         video.src = `assets/screen/${opt.source.replace(/[^a-z0-9-]/gi, "")}.mp4`;
         video.muted = true;
@@ -508,15 +523,28 @@ export function createScreen(canvas, opt) {
     query: () => toQuery(opt),
 
     playPause() {
+      if (feed) { paused = feed.playPause(); return paused; }
       paused = !paused;
       if (isVideo && sheet) (paused ? sheet.pause() : sheet.play().catch(() => {}));
       return paused;
     },
     seek(seconds) {
-      if (isVideo && sheet) sheet.currentTime = seconds;
+      if (feed) feed.seek(seconds);
+      else if (isVideo && sheet) sheet.currentTime = seconds;
     },
-    duration: () => (isVideo && sheet ? sheet.duration || 0 : ATLAS.frames / ATLAS.fps),
-    time: () => (isVideo && sheet ? sheet.currentTime : 0),
+    duration: () => (feed ? feed.duration() : isVideo && sheet ? sheet.duration || 0 : ATLAS.frames / ATLAS.fps),
+    time: () => (feed ? feed.time() : isVideo && sheet ? sheet.currentTime : 0),
+    // sound must follow a user gesture; the page's toggle calls this
+    setSound(on) {
+      if (feed) return feed.setSound(on);
+      if (isVideo && sheet) {
+        sheet.muted = !on;
+        if (on) sheet.play().catch(() => {});
+        return on;
+      }
+      return false;
+    },
+    hasSound: () => !!feed || (isVideo && opt.source === "dance"),
 
     renderAt(now) {
       if (!sheet || !sampleCtx) return;

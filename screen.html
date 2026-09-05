@@ -9,6 +9,14 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='white'/%3E%3Ctext x='8' y='12.5' font-family='monospace' font-size='13' text-anchor='middle' fill='%23161616'%3E%E2%96%9A%3C/text%3E%3C/svg%3E">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+      }
+    </script>
     <style>
       @import url("https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400&display=swap");
       :root { color-scheme: light; --ink: #1a1a1a; --paper: #fdfdfb; --line: rgba(26,26,26,0.2); --accent: #c8401f; }
@@ -77,6 +85,8 @@
     <header>
       <span>The Screen — moving pictures in cell state</span>
       <span>
+        <button id="sound" aria-pressed="false" hidden>sound</button>
+        <span id="soundSep" hidden>&nbsp;·&nbsp;</span>
         <button id="tune" aria-expanded="false">tune</button>
         &nbsp;·&nbsp;
         <a href="index.html">← the field</a>
@@ -115,12 +125,36 @@
         if (!explicit.has("cell")) opt.cell = 6;
       }
 
-      const screen = createScreen(document.getElementById("screen"), opt);
+      if (opt.source === "mmd") {
+        if (!explicit.has("invert")) opt.invert = 0;
+        if (!explicit.has("key")) opt.key = 0;
+        if (!explicit.has("colorMode")) opt.colorMode = "source";
+        if (!explicit.has("floor")) opt.floor = 0.05;
+        if (!explicit.has("dither")) opt.dither = 0.05;
+        if (!explicit.has("gamma")) opt.gamma = 0.85;
+        if (!explicit.has("cell")) opt.cell = 6;
+        if (!explicit.has("grain")) opt.grain = 0.12;
+      }
+
+      const screenCanvas = document.getElementById("screen");
+      const screen = createScreen(screenCanvas, opt);
       window.__screen = screen;
+
+      // the native 3D source: the glyph canvas itself is the orbit surface,
+      // so dragging the picture turns the dancer
+      let feed = null;
+      if (opt.source === "mmd") {
+        const { createMmdFeed } = await import("./src/mmd.js");
+        feed = await createMmdFeed({ model: opt.model, orbitTarget: screenCanvas });
+        feed.setOrbit(!!opt.orbit);
+        screen.attachFeed(feed);
+      }
 
       // ---- the panel: every knob of the renderer, applied live ----
       const CONTROLS = [
-        { key: "source", type: "select", options: ["dance", "girl", "a", "b"] },
+        { key: "source", type: "select", options: ["mmd", "dance", "girl", "a", "b"] },
+        { key: "model", type: "select", options: ["gura", "miku"] },
+        { key: "orbit", type: "range", min: 0, max: 1, step: 1 },
         { key: "algorithm", type: "select", options: ["ramp", "diffuse", "quad", "edge", "binary"] },
         { key: "charset", type: "select", options: Object.keys(CHARSETS) },
         { key: "custom", type: "text", placeholder: "own characters…" },
@@ -181,13 +215,14 @@
         const show = () => { value.textContent = c.type === "range" ? String(opt[c.key]) : ""; };
         input.addEventListener("input", () => {
           const v = c.type === "range" ? parseFloat(input.value) : input.value;
-          if (c.key === "source") {
+          if (c.key === "source" || c.key === "model") {
             // a source change needs a reload; keep every other knob
             screen.set(c.key, v);
             location.search = "?" + screen.query();
             return;
           }
           screen.set(c.key, v);
+          if (c.key === "orbit" && feed) feed.setOrbit(!!v);
           show();
           refreshCaption();
         });
@@ -233,8 +268,20 @@
         tuneButton.setAttribute("aria-expanded", String(open));
       });
 
+      const soundButton = document.getElementById("sound");
+      soundButton.addEventListener("click", () => {
+        const on = soundButton.getAttribute("aria-pressed") !== "true";
+        const now = screen.setSound(on);
+        soundButton.setAttribute("aria-pressed", String(now));
+        soundButton.textContent = now ? "mute" : "sound";
+      });
+
       refreshCaption();
-      screen.start();
+      await screen.start();
+      if (screen.hasSound()) {
+        soundButton.hidden = false;
+        document.getElementById("soundSep").hidden = false;
+      }
     </script>
   </body>
 </html>
