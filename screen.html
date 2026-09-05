@@ -99,13 +99,28 @@
         if (!explicit.has("floor")) opt.floor = 0.1;
         if (!explicit.has("dither")) opt.dither = 0.09;
       }
+      if (opt.source === "dance") {
+        // keyed colour footage: the purple family (panel + lyric text) is
+        // background and keys out; the dancer prints in her own colours,
+        // brightness carrying the form — so NO invert here
+        if (!explicit.has("key")) opt.key = 1;
+        if (!explicit.has("invert")) opt.invert = 0;
+        if (!explicit.has("colorMode")) opt.colorMode = "source";
+        if (!explicit.has("keyFill")) opt.keyFill = 0.55;
+        if (!explicit.has("keyRange")) opt.keyRange = 0.2;
+        if (!explicit.has("floor")) opt.floor = 0.02;
+        if (!explicit.has("dither")) opt.dither = 0.04;
+        if (!explicit.has("gamma")) opt.gamma = 0.7;
+        if (!explicit.has("grain")) opt.grain = 0.12;
+        if (!explicit.has("cell")) opt.cell = 6;
+      }
 
       const screen = createScreen(document.getElementById("screen"), opt);
       window.__screen = screen;
 
       // ---- the panel: every knob of the renderer, applied live ----
       const CONTROLS = [
-        { key: "source", type: "select", options: ["girl", "a", "b"] },
+        { key: "source", type: "select", options: ["dance", "girl", "a", "b"] },
         { key: "algorithm", type: "select", options: ["ramp", "diffuse", "quad", "edge", "binary"] },
         { key: "charset", type: "select", options: Object.keys(CHARSETS) },
         { key: "custom", type: "text", placeholder: "own characters…" },
@@ -118,6 +133,10 @@
         { key: "edgeGain", type: "range", min: 0.5, max: 6, step: 0.1 },
         { key: "colorMode", type: "select", options: ["mono", "source", "duo"] },
         { key: "invert", type: "range", min: 0, max: 1, step: 1 },
+        { key: "key", type: "range", min: 0, max: 1, step: 1 },
+        { key: "keyColor", type: "text", placeholder: "#796bba" },
+        { key: "keyRange", type: "range", min: 0.02, max: 0.3, step: 0.01 },
+        { key: "keyFill", type: "range", min: 0, max: 0.6, step: 0.02 },
         { key: "grain", type: "range", min: 0, max: 0.6, step: 0.02 },
         { key: "settle", type: "range", min: 0, max: 8, step: 0.2 },
       ];

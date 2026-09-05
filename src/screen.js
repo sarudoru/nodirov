@@ -43,6 +43,10 @@ const DEFAULTS = {
   edgeGain: 2.2,      // edge mode: gradient magnitude amplifier
   colorMode: "mono",  // mono | source | duo
   invert: 0,
+  key: 0,             // 1 = chroma-key the background away
+  keyColor: "#796bba",
+  keyRange: 0.13,     // rgb distance considered background
+  keyFill: 0.3,       // minimum ink for surviving (foreground) pixels
   settle: 2.6,
   grain: 0.16,
   paper: "#fdfdfb",
@@ -67,7 +71,7 @@ export function readOptions(search = window.location.search) {
     if (typeof DEFAULTS[key] === "number") {
       const v = parseFloat(raw);
       if (Number.isFinite(v)) out[key] = v;
-    } else if (["paper", "ink", "accent"].includes(key)) {
+    } else if (["paper", "ink", "accent", "keyColor"].includes(key)) {
       if (/^[0-9a-fA-F]{6}$/.test(raw)) out[key] = "#" + raw;
     } else {
       out[key] = raw;
@@ -215,12 +219,37 @@ export function createScreen(canvas, opt) {
 
     const lo = opt.black;
     const hi = Math.max(opt.black + 0.02, opt.white);
+    // chroma key in normalized chromaticity, so lighter and darker members of
+    // the background's colour family key out together — the backdrop panel
+    // and the lyric text are one family, and both vanish
+    const keyRgb = hex(opt.keyColor);
     for (let i = 0; i < sw * sh; i += 1) {
+      const r = rgb[i * 4];
+      const g = rgb[i * 4 + 1];
+      const b = rgb[i * 4 + 2];
       // true luma, so colour footage reads correctly
-      let v = (rgb[i * 4] * 0.2126 + rgb[i * 4 + 1] * 0.7152 + rgb[i * 4 + 2] * 0.0722) / 255;
+      let v = (r * 0.2126 + g * 0.7152 + b * 0.0722) / 255;
       if (opt.invert) v = 1 - v;
       // levels: clamp the wash — greys below black vanish, above white saturate
       v = Math.min(1, Math.max(0, (v - lo) / (hi - lo)));
+      if (opt.key) {
+        // plain RGB distance: brightness-normalised chromaticity confuses a
+        // dark navy costume with a light purple backdrop; absolute distance
+        // keeps them apart while still catching the backdrop's pale text
+        const dist = Math.hypot(r - keyRgb[0], g - keyRgb[1], b - keyRgb[2]) / 442;
+        if (dist < opt.keyRange) {
+          v = 0; // background: paper shows through
+        } else if (dist < opt.keyRange * 1.5) {
+          v *= (dist - opt.keyRange) / (opt.keyRange * 0.5); // soft edge
+        } else if (opt.keyFill > 0) {
+          // Keyed foreground: density means "this is the figure", not "this
+          // is bright" — so a near-white face and a navy coat both print, the
+          // colour carried by colorMode:source. Distance past the key edge
+          // sets how solidly the cell fills, biased up by keyFill so even the
+          // palest members of the figure read on white paper.
+          v = Math.min(1, opt.keyFill + Math.min(1, (dist - opt.keyRange * 1.5) / (1 - opt.keyRange * 1.5)) * (1 - opt.keyFill));
+        }
+      }
       lum[i] = v;
     }
     return true;
