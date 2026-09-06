@@ -17,10 +17,7 @@ export function parseArticle(article) {
   function runsOf(el) {
     const runs = [];
     for (const node of el.childNodes) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.textContent.replace(/\s+/g, " ");
-        if (text) runs.push({ text, a: null });
-      } else if (
+      if (
         node.nodeType === Node.ELEMENT_NODE &&
         ["A", "BUTTON"].includes(node.tagName)
       ) {
@@ -28,7 +25,10 @@ export function parseArticle(article) {
           text: node.textContent.replace(/\s+/g, " ").trim(),
           a: node,
         });
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
+      } else if (
+        node.nodeType === Node.TEXT_NODE ||
+        node.nodeType === Node.ELEMENT_NODE
+      ) {
         const text = node.textContent.replace(/\s+/g, " ");
         if (text) runs.push({ text, a: null });
       }
@@ -62,11 +62,7 @@ export function parseArticle(article) {
           figure: child.querySelector("figure"),
         });
       } else if (tag === "HEADER" || tag === "SECTION") {
-        if (tag === "SECTION")
-          blocks.push({ type: "sectionStart", id: child.id });
         walk(child);
-      } else if (tag === "H1") {
-        blocks.push({ type: "h1", el: child, text: child.textContent.trim() });
       } else if (tag === "H2") {
         blocks.push({ type: "h2", el: child, text: child.textContent.trim() });
       } else if (tag === "P") {
@@ -77,13 +73,6 @@ export function parseArticle(article) {
             ? "interstitial"
             : "p";
         blocks.push({ type, el: child, runs: runsOf(child) });
-      } else if (tag === "FIGURE" && child.dataset.glyph) {
-        blocks.push({
-          type: "plane",
-          el: child,
-          rows: parseInt(child.dataset.rows ?? "16", 10),
-          caption: child.querySelector("figcaption")?.textContent.trim() ?? "",
-        });
       } else if (tag === "UL") {
         for (const li of child.children) {
           blocks.push({ type: "li", el: li, runs: runsOf(li) });
@@ -113,28 +102,29 @@ export function typeset(blocks, article, ctx) {
     adv,
     fontSize,
     xOffset,
-    measure = 66,
+    measure,
+    pad,
+    spacing,
   } = ctx;
   const contentW = Math.min(cols - 4, measure);
   const left = Math.floor((cols - contentW) / 2);
 
   const lines = [];
-  const sections = [{ row: 0, id: "hero", label: "beginning" }];
+  const sections = [{ row: 0, id: "hero" }];
   const links = [];
   let row = 0;
 
-  const spacing = (cellW - adv).toFixed(2);
-  const spacingWide = (2 * cellW - adv).toFixed(2);
+  const spacingWide = (spacing + cellW).toFixed(2);
 
   function span(el, text, r, c, wide, hidden) {
     const s = document.createElement("span");
     s.className = "gl";
     s.textContent = text;
-    s.style.left = (xOffset + c * cellW + (cellW - adv) / 2).toFixed(2) + "px";
+    s.style.left = (xOffset + c * cellW + pad).toFixed(2) + "px";
     s.style.top = r * cellH + "px";
     s.style.fontSize = fontSize + "px";
     s.style.lineHeight = cellH + "px";
-    s.style.letterSpacing = (wide ? spacingWide : spacing) + "px";
+    s.style.letterSpacing = (wide ? spacingWide : spacing.toFixed(2)) + "px";
     if (hidden) s.setAttribute("aria-hidden", "true");
     el.appendChild(s);
     return s;
@@ -154,7 +144,8 @@ export function typeset(blocks, article, ctx) {
   }
 
   // Wrap runs into lines of pieces; a piece is {text, a}.
-  function wrapRuns(runs, widthLimit) {
+  function wrapRuns(runs, limit) {
+    const widthLimit = Math.max(1, limit);
     const words = [];
     for (const run of runs) {
       for (const part of run.text.split(/(\s+)/)) {
@@ -217,7 +208,7 @@ export function typeset(blocks, article, ctx) {
     }
     flush();
     // wrapped lines lost their breaking space; remember it for DOM copy fidelity
-    for (let i = 0; i < out.length - 1; i += 1) out[i].brokeAfter = true;
+    for (let i = 0; i < out.length - 1; i++) out[i].brokeAfter = true;
     return out;
   }
 
@@ -314,24 +305,6 @@ export function typeset(blocks, article, ctx) {
         row += 3;
         break;
       }
-      case "sectionStart":
-        break;
-
-      case "h1": {
-        // The name is a line of type, not a banner: the page is minimal and
-        // the content starts almost at once. Letter-spaced capitals carry
-        // enough weight to read as a heading without taking any room.
-        row = 2;
-        const el = block.el;
-        el.textContent = "";
-        const text = block.text.toUpperCase();
-        const wide = text.length * 2 - 1 <= contentW;
-        span(el, text, row, left, wide);
-        emit(row, left, wide ? [...text].join(" ") : text, K_TEXT);
-        row += 1;
-        break;
-      }
-
       case "tagline": {
         layoutRuns(block, left, contentW, K_FAINT, { gapAfter: 2 });
         break;
@@ -378,11 +351,7 @@ export function typeset(blocks, article, ctx) {
         emit(row + 1, left, "─".repeat(width), K_FAINT);
         row += 3;
         const section = el.closest("section");
-        sections.push({
-          row: row - 3,
-          id: section ? section.id : "",
-          label: block.text.toLowerCase(),
-        });
+        sections.push({ row: row - 3, id: section ? section.id : "" });
         break;
       }
 
@@ -390,26 +359,6 @@ export function typeset(blocks, article, ctx) {
         layoutRuns(block, left, Math.min(70, contentW), K_TEXT, {
           gapAfter: 2,
         });
-        break;
-      }
-
-      case "plane": {
-        const el = block.el;
-        const planeRows = Math.max(4, block.rows);
-        const planeCols = Math.min(contentW, cols - 4);
-        const c = Math.floor((cols - planeCols) / 2);
-        row += 2;
-        // The region is reserved here; the plane writes the glyphs each frame.
-        // Screen readers and no-JS get the real <img>/<figcaption> instead.
-        if (ctx.placePlane) ctx.placePlane(el, row, c, planeCols, planeRows);
-        row += planeRows + 1;
-        if (block.caption) {
-          const width = Math.min(block.caption.length, contentW);
-          const cc = Math.floor((cols - width) / 2);
-          emit(row, cc, block.caption.slice(0, width), K_FAINT);
-          row += 1;
-        }
-        row += 2;
         break;
       }
 
@@ -439,34 +388,11 @@ export function typeset(blocks, article, ctx) {
       }
 
       case "li": {
-        const el = block.el;
-        el.textContent = "";
-        span(el, "·", row, left, false, true);
-        emit(row, left, "·", K_FAINT);
-        // re-wrap runs at reduced width with a hanging indent of 2
-        const saved = row;
-        const wrapped = wrapRuns(block.runs, contentW - 2);
-        for (const pieces of wrapped) {
-          let c = left + 2;
-          pieces.forEach((piece, k) => {
-            const domText =
-              piece.text +
-              (k === pieces.length - 1 && pieces.brokeAfter ? " " : "");
-            if (piece.a) {
-              const id = linkIdFor(piece.a);
-              if (!piece.a.parentNode) el.appendChild(piece.a);
-              span(piece.a, domText, row, c, false);
-              emit(row, c, piece.text, K_LINK, id);
-            } else {
-              span(el, domText, row, c, false);
-              emit(row, c, piece.text, K_TEXT);
-            }
-            c += piece.text.length;
-          });
-          row += 1;
-        }
-        if (row === saved) row += 1;
-        row += 1;
+        const start = row;
+        layoutRuns(block, left + 2, contentW - 2, K_TEXT, { gapAfter: 1 });
+        span(block.el, "·", start, left, false, true);
+        emit(start, left, "·", K_FAINT);
+        if (row === start) row += 2;
         break;
       }
     }
@@ -479,6 +405,7 @@ export function typeset(blocks, article, ctx) {
   // Only their text spans receive pointer events, including wrapped labels.
   for (const control of links) {
     const spans = [...control.querySelectorAll(".gl")];
+    if (!spans.length) continue;
     const x = Math.min(...spans.map((s) => parseFloat(s.style.left)));
     const y = Math.min(...spans.map((s) => parseFloat(s.style.top)));
     const right = Math.max(

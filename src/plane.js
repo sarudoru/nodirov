@@ -47,7 +47,7 @@ export function createPlanes(space, invalidate = () => {}) {
         el.dataset.mediaState = "unavailable";
         const status = document.createElement("span");
         status.className = "sr-only";
-        status.textContent = "This study is unavailable.";
+        status.textContent = "This picture is unavailable.";
         el.appendChild(status);
         invalidate();
       });
@@ -55,7 +55,7 @@ export function createPlanes(space, invalidate = () => {}) {
         "aria-label",
         el.querySelector("img")?.alt ||
           media.getAttribute("aria-label") ||
-          "Character study",
+          "Picture",
       );
       if (kind === "video") {
         media.muted = true;
@@ -91,8 +91,9 @@ export function createPlanes(space, invalidate = () => {}) {
       if (!p.dirty && (!live || now - p.lastSample < 1000 / 24)) continue;
       if (!p.dirty && p.kind === "video" && p.media.currentTime === p.lastTime)
         continue;
-      const sample = sampler.sample(p.media, p.cols, p.rows, p.options);
+      const sample = sampler.sample(p.media, p.cols, p.rows, p.options, p.sample);
       if (!sample) continue;
+      p.sample = sample;
       p.frame = sampler.toGlyphs(sample, current, p.options, p.frame);
       p.dirty = false;
       p.lastSample = now;
@@ -105,7 +106,7 @@ export function createPlanes(space, invalidate = () => {}) {
     for (const p of planes) {
       if (!p.visible) continue;
       if (p.failed) {
-        const label = "[ study unavailable ]";
+        const label = "[ picture unavailable ]";
         const c =
           col - p.col - Math.max(0, Math.floor((p.cols - label.length) / 2));
         if (

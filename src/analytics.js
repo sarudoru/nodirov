@@ -15,12 +15,28 @@ export const POSTHOG = {
 };
 
 let ph = null;
+let configured = false;
+// calls made before the script arrives wait here, then run in order
+let pending = [];
+
+function run(call) {
+  if (ph) call(ph);
+  else if (configured) pending.push(call);
+  else return false;
+  return true;
+}
 
 export function startAnalytics(config = POSTHOG, traits = {}) {
-  if (!config.key || ph) return;
+  if (!config.key || configured) return;
+  configured = true;
   const script = document.createElement("script");
   script.async = true;
   script.src = `${config.assets}/static/array.js`;
+  script.onerror = () => {
+    pending = [];
+    configured = false;
+    console.warn("Analytics did not load.");
+  };
   script.onload = () => {
     ph = window.posthog;
     ph.init(config.key, {
@@ -32,37 +48,30 @@ export function startAnalytics(config = POSTHOG, traits = {}) {
       capture_performance: true,
       autocapture: true,
       enable_heatmaps: true,
-      session_recording: {
-        // there is one input on the page, the message box, and its text
-        // arrives as an event anyway
-        maskAllInputs: true,
-        maskTextSelector: null,
-      },
+      // there is one input on the page, the message box, and its text
+      // arrives as an event anyway
+      session_recording: { maskAllInputs: true },
       persistence: "localStorage+cookie",
     });
-    ph.register({
+    const locale = {
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       language: navigator.language,
-      languages: navigator.languages?.join(","),
-      ...traits,
-    });
-    ph.setPersonProperties({
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      language: navigator.language,
-    });
+    };
+    ph.register({ ...locale, languages: navigator.languages?.join(","), ...traits });
+    ph.setPersonProperties(locale);
+    for (const call of pending) call(ph);
+    pending = [];
   };
   document.head.appendChild(script);
 }
 
-// true when analytics is running and the event was handed to PostHog
+// true when analytics is configured: the event goes out now, or as soon as
+// the script is up
 export function track(event, properties = {}) {
-  if (!ph) return false;
-  ph.capture(event, properties);
-  return true;
+  return run((p) => p.capture(event, properties));
 }
 
 // A visitor who leaves an address becomes a person we can answer.
 export function identify(contact, properties = {}) {
-  if (!ph || !contact) return;
-  ph.identify(contact, { contact, ...properties });
+  if (contact) run((p) => p.identify(contact, { contact, ...properties }));
 }

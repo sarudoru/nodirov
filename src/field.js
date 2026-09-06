@@ -20,8 +20,7 @@ export function createField(canvas, params) {
     xOffset = 0,
     ratio = 1;
   let camera = 0,
-    scrollPhase = 0,
-    worldRows = 0;
+    scrollPhase = 0;
   let reducedMotion = false,
     mediaPaused = false,
     visible = true;
@@ -46,12 +45,26 @@ export function createField(canvas, params) {
   }
   const glyphAt = (i) => space.chars[i] || " ";
   const kindAlpha = (kind) => (kind === K_FAINT ? P.faintAlpha : P.textAlpha);
+  // the resting field never prints darker than this
+  const restCeiling = () => P.alpha * 2.5;
+
+  // The canvas reports colours in its own normalised form; keep the two
+  // typographic inks in that form so the atlas fast path always matches.
+  let inkStyle = "";
+  let accentStyle = "";
+  function normaliseInks() {
+    context.fillStyle = P.ink;
+    inkStyle = context.fillStyle;
+    context.fillStyle = P.accent;
+    accentStyle = context.fillStyle;
+  }
+  normaliseInks();
 
   // Cache the two typographic inks. Source-colored media uses the same font.
   let atlases = new Map();
   function paintGlyph(ch, x, y) {
     const color = context.fillStyle;
-    if (color !== P.ink && color !== P.accent) {
+    if (color !== inkStyle && color !== accentStyle) {
       context.fillText(ch, x, y);
       return;
     }
@@ -151,7 +164,7 @@ export function createField(canvas, params) {
               occupied = true;
               continue;
             }
-            const note = inbox?.at(camera + row + next, col, now);
+            const note = inbox?.at(camera + row + next, col, now, !reducedMotion);
             if (note) {
               context.fillStyle = note.accent ? P.accent : P.ink;
               context.globalAlpha = note.ink * weight;
@@ -170,18 +183,17 @@ export function createField(canvas, params) {
           }
         }
         if (!occupied) {
-          const cell = substrate.read(i, now, vigMap[i]);
           // A document cell can be in the other half of a reduced-motion step.
           if (ta || tb) continue;
+          const cell = substrate.read(i, now, vigMap[i]);
+          const alpha = Math.min(restCeiling(), cell.alpha);
           context.fillStyle = P.ink;
-          context.globalAlpha = Math.min(P.alpha * 2.5, cell.alpha);
+          context.globalAlpha = alpha;
           if (cell.b < 0) paintGlyph(glyphAt(cell.a), x, y);
           else {
-            context.globalAlpha =
-              Math.min(P.alpha * 2.5, cell.alpha) * (1 - cell.blend);
+            context.globalAlpha = alpha * (1 - cell.blend);
             paintGlyph(glyphAt(cell.a), x, y);
-            context.globalAlpha =
-              Math.min(P.alpha * 2.5, cell.alpha) * cell.blend;
+            context.globalAlpha = alpha * cell.blend;
             paintGlyph(glyphAt(cell.b), x, y);
           }
         }
@@ -308,8 +320,7 @@ export function createField(canvas, params) {
       buildVignette();
       requestDraw();
     },
-    setWorld(lines, totalRows) {
-      worldRows = totalRows;
+    setWorld(lines) {
       worldData = new Map();
       for (const line of lines) {
         let data = worldData.get(line.row);
@@ -410,6 +421,7 @@ export function createField(canvas, params) {
     },
     applyParams(next, changed = []) {
       P = next;
+      normaliseInks();
       atlases.clear();
       if (substrate)
         substrate.setParams(
@@ -462,10 +474,8 @@ export function createField(canvas, params) {
     cols: () => cols,
     rows: () => rows,
     camera: () => camera,
-    worldRows: () => worldRows,
     xOffset: () => xOffset,
     requestDraw,
     start,
-    stop,
   };
 }

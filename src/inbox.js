@@ -11,10 +11,11 @@ const REST_INK = 0.2;
 const BLINK_MS = 530;
 // a real character after the text, so a trailing newline still makes a line
 // box and the caret can be measured at the end of the text
-const END = "\u00a0";
+const END = " ";
 
 export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
   const textarea = form.querySelector("textarea");
+  const status = form.querySelector("[aria-live]");
   const mirror = document.createElement("div");
   mirror.className = "inbox-mirror";
   mirror.setAttribute("aria-hidden", "true");
@@ -29,8 +30,12 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
   let selected = new Set();
   let notice = new Map();
   let lastValue = "";
+  let composing = false;
 
   const key = (r, c) => r * region.cols + c;
+  const inside = (p) =>
+    p.row >= 0 && p.row < region.rows && p.col >= 0 && p.col < region.cols;
+  const focused = () => document.activeElement === textarea;
   // a fixed resting glyph per cell; the box never churns on its own
   const rest = (i) => {
     let h = Math.imul(i + 1, 0x9e3779b1);
@@ -41,41 +46,55 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
   };
 
   function styleBox(el) {
-    const { cellW, cellH, adv, fontSize } = metrics;
+    const { cellW, cellH, fontSize, pad, spacing } = metrics;
     Object.assign(el.style, {
       left: (xOffset + region.col * cellW).toFixed(2) + "px",
       top: region.worldRow * cellH + "px",
       width: region.cols * cellW + "px",
       height: region.rows * cellH + "px",
-      paddingLeft: ((cellW - adv) / 2).toFixed(2) + "px",
+      paddingLeft: pad.toFixed(2) + "px",
       fontSize: fontSize + "px",
       lineHeight: cellH + "px",
-      letterSpacing: (cellW - adv).toFixed(2) + "px",
+      letterSpacing: spacing.toFixed(2) + "px",
     });
   }
 
-  // Read the browser's own layout of the text back into cells.
-  function relayout() {
-    if (!region || !metrics) return;
+  // Where the browser put character i of the mirrored text, in cells.
+  const range = document.createRange();
+  function place(i) {
+    range.setStart(mirror.firstChild, i);
+    range.setEnd(mirror.firstChild, i + 1);
+    const rect = range.getBoundingClientRect();
     const box = mirror.getBoundingClientRect();
-    const pad = (metrics.cellW - metrics.adv) / 2;
-    const range = document.createRange();
-    const place = (i) => {
-      range.setStart(mirror.firstChild, i);
-      range.setEnd(mirror.firstChild, i + 1);
-      const rect = range.getBoundingClientRect();
-      return {
-        row: Math.round((rect.top - box.top) / metrics.cellH),
-        col: Math.round((rect.left - box.left - pad) / metrics.cellW),
-      };
+    return {
+      row: Math.round((rect.top - box.top) / metrics.cellH),
+      col: Math.round((rect.left - box.left - metrics.pad) / metrics.cellW),
     };
+  }
+
+  function layoutCaret() {
+    caret = place(textarea.selectionEnd);
+    selected = new Set();
+    for (let i = textarea.selectionStart; i < textarea.selectionEnd; i++) {
+      const p = place(i);
+      if (inside(p)) selected.add(key(p.row, p.col));
+    }
+  }
+
+  // Read the browser's own layout of the text back into cells. An edit that
+  // would need more rows than the box has is refused, with the selection
+  // put back where it was; a composition in progress is never touched.
+  function layoutText() {
+    if (!region || !metrics) return;
     mirror.textContent = textarea.value + END;
-    // more lines than the box has rows: refuse the edit
     if (
-      textarea.value.length > lastValue.length &&
+      !composing &&
+      textarea.value !== lastValue &&
       place(textarea.value.length).row >= region.rows
     ) {
+      const at = Math.min(textarea.selectionStart, lastValue.length);
       textarea.value = lastValue;
+      textarea.setSelectionRange(at, at);
       mirror.textContent = lastValue + END;
     }
     lastValue = textarea.value;
@@ -83,38 +102,40 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
     cells = new Map();
     const text = textarea.value;
     for (let i = 0; i < text.length; i++) {
-      const ch = text[i];
-      if (ch === "\n") continue;
-      const { row, col } = place(i);
-      if (row < region.rows && col >= 0 && col < region.cols)
-        cells.set(key(row, col), ch);
+      if (text[i] === "\n") continue;
+      const p = place(i);
+      if (inside(p)) cells.set(key(p.row, p.col), text[i]);
     }
-    caret = place(textarea.selectionEnd);
-    selected = new Set();
-    for (let i = textarea.selectionStart; i < textarea.selectionEnd; i++) {
-      const { row, col } = place(i);
-      selected.add(key(row, col));
-    }
+    layoutCaret();
     invalidate();
   }
 
   function setNotice(text) {
     notice = new Map();
+    if (status) status.textContent = text;
     if (!text || !region) return;
     const row = Math.floor(region.rows / 2);
     const col = Math.max(0, Math.floor((region.cols - text.length) / 2));
     [...text].forEach((ch, i) => notice.set(key(row, col + i), ch));
   }
 
-  textarea.addEventListener("input", relayout);
-  const focused = () => document.activeElement === textarea;
+  textarea.addEventListener("input", layoutText);
+  textarea.addEventListener("compositionstart", () => {
+    composing = true;
+  });
+  textarea.addEventListener("compositionend", () => {
+    composing = false;
+    layoutText();
+  });
   textarea.addEventListener("focus", () => {
     setNotice("");
     invalidate();
   });
   textarea.addEventListener("blur", invalidate);
   document.addEventListener("selectionchange", () => {
-    if (document.activeElement === textarea) relayout();
+    if (!focused() || !region) return;
+    layoutCaret();
+    invalidate();
   });
   textarea.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
@@ -129,11 +150,15 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
       textarea.focus();
       return;
     }
-    onSend?.(text);
-    textarea.value = "";
-    textarea.blur();
-    relayout();
-    setNotice("sent. thank you.");
+    const result = onSend?.(text);
+    if (result === "sent") {
+      textarea.value = "";
+      textarea.blur();
+      layoutText();
+      setNotice("sent. thank you.");
+    } else if (status) {
+      status.textContent = "Your mail app should open with the message.";
+    }
     invalidate();
   });
 
@@ -149,11 +174,12 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
       region = { worldRow, col, cols, rows };
       styleBox(textarea);
       styleBox(mirror);
-      relayout();
+      layoutText();
     },
-    // what the field paints at a cell: a typed character, a notice, or a
-    // resting glyph; `cursor` asks for the blinking line at the cell's left
-    at(worldRow, col, now) {
+    // What the field paints at a cell: a typed character, a notice, or a
+    // resting glyph. `cursor` asks for the line at the cell's left; it blinks
+    // only while the field is animating, otherwise it stays lit.
+    at(worldRow, col, now, blink = true) {
       if (!region) return null;
       const r = worldRow - region.worldRow;
       const c = col - region.col;
@@ -163,7 +189,7 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
         focused() &&
         caret?.row === r &&
         caret.col === c &&
-        Math.floor(now / BLINK_MS) % 2 === 0;
+        (!blink || Math.floor(now / BLINK_MS) % 2 === 0);
       const typed = cells.get(k);
       if (typed) return { ch: typed, ink: 1, accent: selected.has(k), cursor };
       const note = notice.get(k);

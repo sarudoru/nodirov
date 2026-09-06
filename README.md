@@ -52,7 +52,7 @@ and PostHog's server-side GeoIP for country and city. The page adds
 
 Messages are `message_sent` events. An address in the text identifies the
 sender as a person in PostHog. Without analytics, sending opens the mail
-client with the text filled in.
+client with the text filled in and the box keeps the text.
 
 ## Files
 
@@ -65,6 +65,7 @@ client with the text filled in.
 | `src/field.js` | Fixed cell coordinates, glyph cache, drawing, frame scheduling |
 | `src/plane.js` | Media loading, sampling cadence, playback lifecycle |
 | `src/media.js` | Luminance and colour into glyphs, ordered dither |
+| `src/bigtype.js` | The block letterforms of the name |
 | `src/inbox.js` | The message box |
 | `src/analytics.js` | PostHog |
 | `src/substrate.js` | Ambient cell changes and pointer response (at rest by default) |
@@ -73,34 +74,35 @@ client with the text filled in.
 | `lab.html` | Live tuning, comparisons, presets, frame timing |
 | `tests/browser.cjs` | Browser regression checks |
 
-## Declare media
+## The picture
 
-```html
-<figure data-glyph="video" data-src="assets/screen/clip.mp4"
-        data-fit="cover" data-invert="true" data-gamma="1.4"
-        data-dither="0.3" data-color="mono" data-ramp=" .,:;=+*#%@">
-  <video muted loop playsinline preload="none" aria-label="What it shows">
-    <source src="assets/screen/clip.mp4" type="video/mp4">
-  </video>
-  <figcaption>001 / TITLE</figcaption>
-</figure>
-```
-
-Use a same-origin file. For a still, use `data-glyph="image"` with an `img`
-and alt text. `data-invert="true"` is for a light subject on black. `color`
-is `mono` or `source`. `ramp` runs from sparse to dense. `dither` spreads
-flat tones across neighbouring glyphs.
+The hero's `figure` declares the picture. Its `data-` attributes tune the
+sampling: `fit` (`cover` or `contain`), `invert` (`true` for a light subject
+on black), `gamma`, `dither` (spreads flat tones across neighbouring
+glyphs), `color` (`mono` or `source`), and `ramp` (characters from sparse to
+dense). The `video` inside is the no-JS fallback and the source of the
+frames; use a same-origin file. For a still, use `data-glyph="image"` with
+`data-src` and an `img` with alt text.
 
 ## Browser checks
 
-The checks need Playwright and a Chromium. Start the local server first.
+The checks need Playwright and a Chromium. The repository has no
+`package.json` on purpose; install Playwright anywhere and point at it:
 
 ```sh
-node tests/browser.cjs
+npm install --prefix ~/.playwright playwright && npx --prefix ~/.playwright playwright install chromium
 ```
 
-`PLAYWRIGHT_MODULE` points at an existing Playwright package, `BROWSER_PATH`
-at a Chromium binary, `SITE_URL` at a server other than port 4190.
+Start the local server, then:
+
+```sh
+PLAYWRIGHT_MODULE=~/.playwright/node_modules/playwright node tests/browser.cjs
+```
+
+`BROWSER_PATH` overrides the Chromium binary, `SITE_URL` the server (default
+port 4190). In a page the checks and the lab reach the renderer through
+`window.__glyph`: `renderAt(now)` draws one frame at a given time,
+`probe(row, col)` reads a cell, `inbox()` reports the message box.
 
 ## Credits
 

@@ -13,7 +13,7 @@ export function createSampler() {
     if (!palette.has(key)) palette.set(key, `rgb(${key})`);
     return palette.get(key);
   }
-  function sample(source, cols, rows, options = {}) {
+  function sample(source, cols, rows, options = {}, out = null) {
     const sw = source.videoWidth || source.naturalWidth || source.width;
     const sh = source.videoHeight || source.naturalHeight || source.height;
     if (!sw || !sh) return null;
@@ -33,8 +33,9 @@ export function createSampler() {
     context.imageSmoothingQuality = "high";
     context.drawImage(source, (cols - dw) / 2, (rows - dh) / 2, dw, dh);
     const pixels = context.getImageData(0, 0, cols, rows).data;
-    const luma = new Float32Array(cols * rows);
-    const colors = new Array(cols * rows);
+    const n = cols * rows;
+    const luma = out?.luma?.length === n ? out.luma : new Float32Array(n);
+    const colors = out?.colors?.length === n ? out.colors : new Array(n);
     for (let i = 0; i < luma.length; i++) {
       const r = pixels[i * 4],
         g = pixels[i * 4 + 1],
@@ -55,9 +56,11 @@ export function createSampler() {
     const n = field.cols * field.rows;
     const glyphs = out?.glyphs?.length === n ? out.glyphs : new Int16Array(n);
     const ink = out?.ink?.length === n ? out.ink : new Float32Array(n);
-    const ramp = [...(options.ramp || ".,:;=+*#%@")].map((ch) =>
-      space.indexOf(ch),
-    );
+    // a ramp character the font cannot draw would punch a hole in the picture
+    const ramp = [...(options.ramp || "")]
+      .map((ch) => space.indexOf(ch))
+      .filter((i) => i >= 0);
+    if (!ramp.length) ramp.push(...[...".,:;=+*#%@"].map((ch) => space.indexOf(ch)));
     // an ordered dither keeps flat highlights from printing as one solid
     // glyph: neighbouring cells take turns one step apart
     const dither = options.dither || 0;

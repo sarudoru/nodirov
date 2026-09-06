@@ -68,15 +68,11 @@ html:not(.js) #field {
 }
 
 html:not(.js) #article {
-  max-width: 640px;
+  max-width: 850px;
   margin: 0 auto;
   padding: 64px 24px 96px;
   font-size: 15px;
   line-height: 1.7;
-}
-
-html:not(.js) .hint {
-  opacity: 0.5;
 }
 
 html:not(.js) .interstitial {
@@ -145,29 +141,14 @@ html:not(.js) ::selection {
   white-space: nowrap;
 }
 
-/* Declared media: the real <img>/<video> is the no-JS and screen-reader
-   truth. Once the field renders the figure as glyphs, hide the raster but
-   keep it in the accessibility tree via the caption and alt text. */
+/* Declared media: the real <img>/<video> is the no-JS truth. Once the
+   field renders the figure as glyphs the raster goes; the figure keeps its
+   label and caption for screen readers. */
 html.js #article.ready .glyph-plane :is(img, video) {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-}
-html:not(.js) .glyph-plane img {
-  max-width: 100%;
-  height: auto;
+  display: none;
 }
 
-/* The embedded cursor: the pointer itself is invisible; the cell under it
-   becomes the cursor glyph. Links still work - the hand just isn't drawn. */
-html.embed-cursor #scroller,
-html.embed-cursor #scroller * {
-  cursor: none !important;
-}
-
-html.js #article.ready :is(figure, figcaption, nav, .gallery) {
+html.js #article.ready :is(figure, figcaption, nav) {
   display: contents;
   margin: 0;
 }
@@ -194,12 +175,6 @@ html.js #article.ready :is(a, button):focus {
 html.js #article.ready :is(a, button):focus-visible .gl {
   outline: 1px dotted var(--accent);
   outline-offset: 3px;
-}
-html.js #article.ready .glyph-plane :is(img, video) {
-  display: none;
-}
-html:not(.js) #article {
-  max-width: 850px;
 }
 html:not(.js) :is(img, video) {
   max-width: 100%;

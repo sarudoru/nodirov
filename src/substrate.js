@@ -68,6 +68,9 @@ export function createSubstrate(space, params, eligible) {
     if (ambientPool.length === 0) ambientPool = space.byDensity.slice(0, 8);
   }
 
+  let heatLive = false;
+  let waveLive = false;
+
   function resize(nextCols, nextRows) {
     cols = nextCols;
     rows = nextRows;
@@ -81,6 +84,7 @@ export function createSubstrate(space, params, eligible) {
     wavePrev = new Float32Array(n);
     waveNext = new Float32Array(n);
 
+    shelter = new Float32Array(n).fill(1);
     current = new Int16Array(n);
     path = new Int16Array(n * MAX_STEPS);
     pathLen = new Uint8Array(n);
@@ -92,7 +96,7 @@ export function createSubstrate(space, params, eligible) {
     twRate = new Float32Array(n);
 
     buildAmbientPool();
-    for (let i = 0; i < n; i += 1) {
+    for (let i = 0; i < n; i++) {
       current[i] = ambientPool[(rnd() * ambientPool.length) | 0];
       lit[i] = rnd() < P.density ? 1 : 0;
       twPhase[i] = rnd();
@@ -106,14 +110,16 @@ export function createSubstrate(space, params, eligible) {
   // path, not just at its destination, so a fast sweep leaves a continuous
   // wake instead of a dotted line.
   function warm(col, row, vx, vy, strength) {
+    if (!(P.warmGain > 0)) return;
+    heatLive = true;
     const radius = P.warmRadius;
     const r2 = radius * radius;
     const c0 = Math.max(0, Math.floor(col - radius));
     const c1 = Math.min(cols - 1, Math.ceil(col + radius));
     const r0 = Math.max(0, Math.floor(row - radius));
     const r1 = Math.min(rows - 1, Math.ceil(row + radius));
-    for (let r = r0; r <= r1; r += 1) {
-      for (let c = c0; c <= c1; c += 1) {
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
         const dx = c - col;
         const dy = (r - row) * P.aspect;
         const d2 = dx * dx + dy * dy;
@@ -129,10 +135,11 @@ export function createSubstrate(space, params, eligible) {
   }
 
   function impulse(col, row, strength) {
+    if (col < 0 || col >= cols || row < 0 || row >= rows || !strength) return;
     const i = (row | 0) * cols + (col | 0);
-    if (i < 0 || i >= n) return;
     wave[i] += strength;
     wavePrev[i] -= strength * 0.5;
+    waveLive = true;
   }
 
   // --- simulation ------------------------------------------------------
@@ -143,37 +150,47 @@ export function createSubstrate(space, params, eligible) {
     // heat: 5-point diffusion, then exponential cooling
     const diffuse = P.heatDiffuse * k;
     const cool = Math.pow(P.heatCool, k);
-    for (let r = 0; r < rows; r += 1) {
+    let heatLeft = 0;
+    if (heatLive) for (let r = 0; r < rows; r++) {
       const up = r > 0 ? -cols : 0;
       const down = r < rows - 1 ? cols : 0;
-      for (let c = 0; c < cols; c += 1) {
+      for (let c = 0; c < cols; c++) {
         const i = r * cols + c;
         const left = c > 0 ? -1 : 0;
         const right = c < cols - 1 ? 1 : 0;
         const laplace = heat[i + up] + heat[i + down] + heat[i + left] + heat[i + right] - 4 * heat[i];
         heatNext[i] = (heat[i] + diffuse * laplace) * cool;
+        heatLeft += heatNext[i];
       }
     }
-    const swapHeat = heat;
-    heat = heatNext;
-    heatNext = swapHeat;
+    if (heatLive) {
+      const swapHeat = heat;
+      heat = heatNext;
+      heatNext = swapHeat;
+      if (heatLeft < 1e-4) {
+        heat.fill(0);
+        heatLive = false;
+      }
+    }
 
-    // flow simply slackens; direction matters, magnitude decays
-    const slack = Math.pow(P.flowDecay, k);
-    for (let i = 0; i < n; i += 1) {
-      flowX[i] *= slack;
-      flowY[i] *= slack;
+    // flow slackens; direction matters, magnitude decays
+    if (heatLive) {
+      const slack = Math.pow(P.flowDecay, k);
+      for (let i = 0; i < n; i++) {
+        flowX[i] *= slack;
+        flowY[i] *= slack;
+      }
     }
 
     // wave equation with damping: expanding rings from clicks
-    if (P.waveSpeed > 0) {
+    if (waveLive && P.waveSpeed > 0) {
       const c2 = P.waveSpeed * P.waveSpeed * k;
       const damp = Math.pow(P.waveDamp, k);
       let energy = 0;
-      for (let r = 0; r < rows; r += 1) {
+      for (let r = 0; r < rows; r++) {
         const up = r > 0 ? -cols : 0;
         const down = r < rows - 1 ? cols : 0;
-        for (let c = 0; c < cols; c += 1) {
+        for (let c = 0; c < cols; c++) {
           const i = r * cols + c;
           const left = c > 0 ? -1 : 0;
           const right = c < cols - 1 ? 1 : 0;
@@ -186,7 +203,11 @@ export function createSubstrate(space, params, eligible) {
       wavePrev = wave;
       wave = waveNext;
       waveNext = swapPrev;
-      if (energy < 0.01) wave.fill(0), wavePrev.fill(0);
+      if (energy < 0.01) {
+        wave.fill(0);
+        wavePrev.fill(0);
+        waveLive = false;
+      }
     }
   }
 
@@ -215,7 +236,7 @@ export function createSubstrate(space, params, eligible) {
     const steps = Math.max(2, Math.round(P.morphSteps - energy * 1.5));
     const sequence = space.morph(current[i], target, steps);
     const len = Math.min(MAX_STEPS, sequence.length);
-    for (let s = 0; s < len; s += 1) path[i * MAX_STEPS + s] = sequence[s];
+    for (let s = 0; s < len; s++) path[i * MAX_STEPS + s] = sequence[s];
     pathLen[i] = len;
     started[i] = now;
     duration[i] = (P.morphMs * (1 - energy * P.hasteGain)) * (0.75 + rnd() * 0.5);
@@ -223,7 +244,7 @@ export function createSubstrate(space, params, eligible) {
 
   function stepTransitions(now, dt) {
     const perCell = dt / 1000;
-    for (let i = 0; i < n; i += 1) {
+    for (let i = 0; i < n; i++) {
       if (!lit[i]) continue;
       if (pathLen[i] > 0) {
         if (now - started[i] >= duration[i]) {
@@ -248,7 +269,7 @@ export function createSubstrate(space, params, eligible) {
       // above it the field liquefies. A lazy hover does nothing; a real
       // gesture finds the melting point. Shelter raises the activation
       // energy near text, so protection is exponential and never touches ink.
-      const calm = shelter.length ? 1 - shelter[i] : 0;
+      const calm = shelter.length === n ? 1 - shelter[i] : 0;
       const rate = P.restRate
         * Math.exp(P.rateKnee * energy - 3.6 * calm)
         * (bursting[i] ? P.burstGain : 1);
@@ -258,6 +279,7 @@ export function createSubstrate(space, params, eligible) {
 
   function step(now, dt) {
     stepSimulation(dt);
+    if (!(P.restRate > 0)) return;
     stepTransitions(now, dt);
   }
 
@@ -308,6 +330,7 @@ export function createSubstrate(space, params, eligible) {
       out.a = path[i * MAX_STEPS];
       out.b = -1;
       out.blend = 0;
+      out.alpha = murmur;
       return out;
     }
     const scaled = eased * segments;
@@ -346,17 +369,15 @@ export function createSubstrate(space, params, eligible) {
       allowed = next && next.length ? next.slice() : null;
       buildAmbientPool();
     },
-    heatAt: (i) => heat[i],
-    cellCount: () => n,
     setParams(next, changed) {
       P = next;
       const touched = changed ?? [];
       if (touched.includes("ambientBand")) buildAmbientPool();
       if (touched.includes("density")) {
-        for (let i = 0; i < n; i += 1) lit[i] = rnd() < P.density ? 1 : 0;
+        for (let i = 0; i < n; i++) lit[i] = rnd() < P.density ? 1 : 0;
       }
       if (touched.includes("twMin") || touched.includes("twMax")) {
-        for (let i = 0; i < n; i += 1) {
+        for (let i = 0; i < n; i++) {
           twRate[i] = 1 / ((P.twMin + rnd() * Math.max(0.1, P.twMax - P.twMin)) * 1000);
         }
       }
@@ -366,7 +387,7 @@ export function createSubstrate(space, params, eligible) {
       let hot = 0;
       let moving = 0;
       let totalHeat = 0;
-      for (let i = 0; i < n; i += 1) {
+      for (let i = 0; i < n; i++) {
         totalHeat += heat[i];
         if (heat[i] > 0.05) hot += 1;
         if (pathLen[i] > 0) moving += 1;

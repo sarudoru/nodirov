@@ -18,8 +18,6 @@
 const SAMPLE_W = 6;
 const SAMPLE_H = 8;
 const DIMS = SAMPLE_W * SAMPLE_H;
-const NEIGHBOURS = 7;
-const MAX_PATH = 6;
 
 // Rasterize one glyph and return {coverage, density, angle, anisotropy}.
 function analyze(context, ch, w, h) {
@@ -37,9 +35,9 @@ function analyze(context, ch, w, h) {
 
   // first pass: bin into the low-resolution shape vector, and accumulate the
   // ink centroid for the structure tensor
-  for (let y = 0; y < h; y += 1) {
+  for (let y = 0; y < h; y++) {
     const by = Math.min(SAMPLE_H - 1, (y * SAMPLE_H / h) | 0);
-    for (let x = 0; x < w; x += 1) {
+    for (let x = 0; x < w; x++) {
       const ink = 1 - pixels[(y * w + x) * 4] / 255;
       if (ink <= 0.01) continue;
       const bx = Math.min(SAMPLE_W - 1, (x * SAMPLE_W / w) | 0);
@@ -56,7 +54,7 @@ function analyze(context, ch, w, h) {
 
   // normalize bins to 0..1 by their maximum possible ink
   const perBin = (w / SAMPLE_W) * (h / SAMPLE_H);
-  for (let i = 0; i < DIMS; i += 1) coverage[i] = Math.min(1, coverage[i] / perBin);
+  for (let i = 0; i < DIMS; i++) coverage[i] = Math.min(1, coverage[i] / perBin);
 
   mx /= total;
   my /= total;
@@ -67,8 +65,8 @@ function analyze(context, ch, w, h) {
   let sxx = 0;
   let syy = 0;
   let sxy = 0;
-  for (let y = 0; y < h; y += 1) {
-    for (let x = 0; x < w; x += 1) {
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
       const ink = 1 - pixels[(y * w + x) * 4] / 255;
       if (ink <= 0.01) continue;
       const dx = x - mx;
@@ -102,7 +100,7 @@ function distance(vectors, a, b) {
   let sum = 0;
   const ao = a * DIMS;
   const bo = b * DIMS;
-  for (let i = 0; i < DIMS; i += 1) {
+  for (let i = 0; i < DIMS; i++) {
     const d = vectors[ao + i] - vectors[bo + i];
     sum += d * d;
   }
@@ -115,7 +113,7 @@ export function buildGlyphSpace(chars, font, cellW, cellH, pixelFace = false) {
   // intermediates: a solid block or a box flashing mid-word reads as a
   // malfunction, not a transformation. Walks pass only through letterforms.
   const passable = new Uint8Array(chars.length);
-  for (let i = 0; i < chars.length; i += 1) {
+  for (let i = 0; i < chars.length; i++) {
     const code = chars[i].codePointAt(0);
     passable[i] = code >= 0x2500 && code < 0x2600 ? 0 : 1;
   }
@@ -141,66 +139,13 @@ export function buildGlyphSpace(chars, font, cellW, cellH, pixelFace = false) {
   const anisotropy = new Float32Array(n);
   const index = new Map();
 
-  for (let i = 0; i < n; i += 1) {
+  for (let i = 0; i < n; i++) {
     const info = analyze(context, chars[i], w, h);
     vectors.set(info.coverage, i * DIMS);
     density[i] = info.density;
     angle[i] = info.angle;
     anisotropy[i] = info.anisotropy;
     index.set(chars[i], i);
-  }
-
-  // --- k-nearest-neighbour graph ---
-  const neighbours = new Int16Array(n * NEIGHBOURS).fill(-1);
-  const neighbourDist = new Float32Array(n * NEIGHBOURS);
-  const scratch = new Array(n);
-  for (let i = 0; i < n; i += 1) {
-    for (let j = 0; j < n; j += 1) scratch[j] = { j, d: i === j ? Infinity : distance(vectors, i, j) };
-    scratch.sort((a, b) => a.d - b.d);
-    for (let k = 0; k < NEIGHBOURS; k += 1) {
-      neighbours[i * NEIGHBOURS + k] = scratch[k].j;
-      neighbourDist[i * NEIGHBOURS + k] = scratch[k].d;
-    }
-  }
-
-  // --- all-pairs shortest paths (Floyd–Warshall over the kNN graph) ---
-  // n is ~100, so this is ~1e6 operations at boot: a few milliseconds, once.
-  // The payoff is O(1) lookup of the next hop for any transition at runtime.
-  const INF = 1e9;
-  const dist = new Float32Array(n * n).fill(INF);
-  const next = new Int16Array(n * n).fill(-1);
-  for (let i = 0; i < n; i += 1) {
-    dist[i * n + i] = 0;
-    next[i * n + i] = i;
-    for (let k = 0; k < NEIGHBOURS; k += 1) {
-      const j = neighbours[i * NEIGHBOURS + k];
-      if (j < 0) continue;
-      const d = neighbourDist[i * NEIGHBOURS + k];
-      if (d < dist[i * n + j]) {
-        dist[i * n + j] = d;
-        next[i * n + j] = j;
-        // keep the graph undirected so paths exist in both directions
-        if (d < dist[j * n + i]) {
-          dist[j * n + i] = d;
-          next[j * n + i] = i;
-        }
-      }
-    }
-  }
-  for (let k = 0; k < n; k += 1) {
-    const kn = k * n;
-    for (let i = 0; i < n; i += 1) {
-      const inn = i * n;
-      const ik = dist[inn + k];
-      if (ik >= INF) continue;
-      for (let j = 0; j < n; j += 1) {
-        const alt = ik + dist[kn + j];
-        if (alt < dist[inn + j]) {
-          dist[inn + j] = alt;
-          next[inn + j] = next[inn + k];
-        }
-      }
-    }
   }
 
   // density ordering: the ink ramp, discovered from the font rather than guessed
@@ -214,25 +159,6 @@ export function buildGlyphSpace(chars, font, cellW, cellH, pixelFace = false) {
     anisotropy,
     indexOf: (ch) => index.get(ch) ?? -1,
     byDensity,
-
-    // The geodesic between two glyphs, as an array of glyph indices
-    // (inclusive of both ends). Falls back to a direct hop if the graph is
-    // disconnected or the walk runs long.
-    path(a, b) {
-      if (a === b || a < 0 || b < 0) return [b];
-      let cursor = a;
-      const out = [a];
-      let guard = 0;
-      while (cursor !== b && guard < MAX_PATH) {
-        const step = next[cursor * n + b];
-        if (step < 0 || step === cursor) break;
-        cursor = step;
-        out.push(cursor);
-        guard += 1;
-      }
-      if (out[out.length - 1] !== b) out.push(b);
-      return out;
-    },
 
     // The morph sequence between two glyphs: interpolate their shape vectors
     // and snap each intermediate point to the nearest real glyph. Unlike the
@@ -260,13 +186,13 @@ export function buildGlyphSpace(chars, font, cellW, cellH, pixelFace = false) {
       const pick = (strictness) => {
         let best = -1;
         let bestScore = Infinity;
-        for (let i = 0; i < n; i += 1) {
+        for (let i = 0; i < n; i++) {
           if (used.has(i) || !passable[i]) continue;
           if (strictness >= 1 && distance(vectors, i, b) >= ceiling) continue;
           if (strictness >= 2 && kappaDir !== 0 && (density[i] - kappaLast) * kappaDir < -0.004) continue;
           let sum = 0;
           const io = i * DIMS;
-          for (let d = 0; d < DIMS; d += 1) {
+          for (let d = 0; d < DIMS; d++) {
             const diff = vectors[io + d] - probe[d];
             sum += diff * diff;
           }
@@ -278,9 +204,9 @@ export function buildGlyphSpace(chars, font, cellW, cellH, pixelFace = false) {
         return best;
       };
 
-      for (let s = 1; s < steps; s += 1) {
+      for (let s = 1; s < steps; s++) {
         const t = s / steps;
-        for (let d = 0; d < DIMS; d += 1) {
+        for (let d = 0; d < DIMS; d++) {
           probe[d] = vectors[ao + d] * (1 - t) + vectors[bo + d] * t;
         }
         let best = pick(2);
@@ -314,7 +240,7 @@ export function buildGlyphSpace(chars, font, cellW, cellH, pixelFace = false) {
     forFlow(theta, targetDensity, minAnisotropy = 0.25) {
       let best = -1;
       let bestScore = -Infinity;
-      for (let i = 0; i < n; i += 1) {
+      for (let i = 0; i < n; i++) {
         if (anisotropy[i] < minAnisotropy) continue;
         // orientation is modulo π: a stroke has no head or tail
         let delta = angle[i] - theta;

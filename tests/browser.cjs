@@ -135,7 +135,7 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4190";
       });
     assert.equal(
       selected,
-      "Lapwing ↗ - founder · 2025 – now. Real-time AI companions.",
+      "Lapwing ↗ - founder · 2025 - now. Real-time AI companions.",
     );
 
     // The message box: typing lands in cells, the caret follows, the box
@@ -166,10 +166,18 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4190";
       mailto = route.request().url();
       route.abort();
     });
+    // Without analytics the mail client takes the message and the box keeps
+    // the text; the live region tells a screen reader what happened.
+    const before = await page.locator("#note").inputValue();
     await page.keyboard.press("Meta+Enter");
     await page.waitForTimeout(200);
-    assert.equal(await page.locator("#note").inputValue(), "");
-    assert.equal(await page.evaluate(() => __glyph.inbox().focused), false);
+    assert.equal(await page.locator("#note").inputValue(), before);
+    assert.match(
+      await page.evaluate(
+        () => document.querySelector("form[data-inbox] [aria-live]").textContent,
+      ),
+      /mail/,
+    );
 
     for (const width of [320, 390, 768, 1440]) {
       await page.setViewportSize({ width, height: 844 });

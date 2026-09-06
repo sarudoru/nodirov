@@ -102,7 +102,7 @@ function glyphOf(face, ch) {
 export function measure(text, faceName = "block7") {
   const face = FACES[faceName];
   let width = 0;
-  for (let i = 0; i < text.length; i += 1) {
+  for (let i = 0; i < text.length; i++) {
     const glyph = glyphOf(face, text[i]);
     if (!glyph) return -1;
     width += glyph[0].length + (i < text.length - 1 ? face.gap : 0);
@@ -114,57 +114,13 @@ export function measure(text, faceName = "block7") {
 export function render(text, faceName = "block7", fill = "█") {
   const face = FACES[faceName];
   const out = new Array(face.rows).fill("");
-  for (let i = 0; i < text.length; i += 1) {
+  for (let i = 0; i < text.length; i++) {
     const glyph = glyphOf(face, text[i]);
     if (!glyph) continue;
-    for (let r = 0; r < face.rows; r += 1) {
+    for (let r = 0; r < face.rows; r++) {
       out[r] += glyph[r];
       if (i < text.length - 1) out[r] += " ".repeat(face.gap);
     }
   }
   return fill === "█" ? out : out.map((row) => row.replaceAll("█", fill));
-}
-
-// Set a headline into a given column width: pick the widest face that fits,
-// break on spaces, and return laid-out lines. Falls back to letter-spaced
-// plain text when even the condensed face cannot fit a single word.
-export function headline(text, maxCols, fill = "█") {
-  const words = text.split(/\s+/).filter(Boolean);
-
-  for (const faceName of ["block7", "block5"]) {
-    const face = FACES[faceName];
-    if (words.some((w) => measure(w, faceName) < 0)) continue;
-    if (words.some((w) => measure(w, faceName) > maxCols)) continue;
-
-    // greedy line breaking on the cell grid
-    const lines = [];
-    let line = "";
-    for (const word of words) {
-      const candidate = line ? line + " " + word : word;
-      if (measure(candidate, faceName) <= maxCols) {
-        line = candidate;
-      } else {
-        if (line) lines.push(line);
-        line = word;
-      }
-    }
-    if (line) lines.push(line);
-
-    return {
-      face: faceName,
-      rows: face.rows,
-      lines: lines.map((l) => ({ text: l, grid: render(l, faceName, fill), width: measure(l, faceName) })),
-    };
-  }
-
-  // last resort: the name in letter-spaced capitals, one word per line
-  return {
-    face: "plain",
-    rows: 1,
-    lines: words.map((w) => {
-      const spaced = Array.from(w.toUpperCase()).join(" ");
-      const text = spaced.length <= maxCols ? spaced : w.toUpperCase();
-      return { text, grid: [text], width: text.length };
-    }),
-  };
 }

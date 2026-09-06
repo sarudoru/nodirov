@@ -131,8 +131,6 @@
         background: transparent;
         cursor: pointer;
       }
-      .switch { display: flex; align-items: center; gap: 7px; cursor: pointer; }
-      .switch input { margin: 0; accent-color: var(--accent); }
 
       /* ---- actions ---- */
       .actions {
@@ -320,55 +318,43 @@
           row.className = "row";
           row.dataset.key = entry.key;
 
-          if (entry.type === "bool") {
-            const label = document.createElement("label");
-            label.className = "switch";
-            const input = document.createElement("input");
-            input.type = "checkbox";
-            input.checked = params[entry.key];
-            input.addEventListener("change", () => set(entry.key, input.checked));
-            label.append(input, document.createTextNode(entry.label));
-            row.appendChild(label);
-            inputs.set(entry.key, input);
-          } else {
-            const top = document.createElement("div");
-            top.className = "row-top";
-            const label = document.createElement("label");
-            label.textContent = entry.label;
-            const val = document.createElement("span");
-            val.className = "val";
-            top.append(label, val);
-            row.appendChild(top);
+          const top = document.createElement("div");
+          top.className = "row-top";
+          const label = document.createElement("label");
+          label.textContent = entry.label;
+          const val = document.createElement("span");
+          val.className = "val";
+          top.append(label, val);
+          row.appendChild(top);
 
-            let input;
-            if (entry.type === "range") {
-              input = document.createElement("input");
-              input.type = "range";
-              input.min = entry.min;
-              input.max = entry.max;
-              input.step = entry.step;
-              input.value = params[entry.key];
-              input.addEventListener("input", () => set(entry.key, parseFloat(input.value)));
-            } else if (entry.type === "color") {
-              input = document.createElement("input");
-              input.type = "color";
-              input.value = params[entry.key];
-              input.addEventListener("input", () => set(entry.key, input.value));
-            } else {
-              input = document.createElement("select");
-              for (const [value, text] of entry.options) {
-                const option = document.createElement("option");
-                option.value = value;
-                option.textContent = text;
-                input.appendChild(option);
-              }
-              input.value = params[entry.key];
-              input.addEventListener("change", () => set(entry.key, input.value));
+          let input;
+          if (entry.type === "range") {
+            input = document.createElement("input");
+            input.type = "range";
+            input.min = entry.min;
+            input.max = entry.max;
+            input.step = entry.step;
+            input.value = params[entry.key];
+            input.addEventListener("input", () => set(entry.key, parseFloat(input.value)));
+          } else if (entry.type === "color") {
+            input = document.createElement("input");
+            input.type = "color";
+            input.value = params[entry.key];
+            input.addEventListener("input", () => set(entry.key, input.value));
+          } else {
+            input = document.createElement("select");
+            for (const [value, text] of entry.options) {
+              const option = document.createElement("option");
+              option.value = value;
+              option.textContent = text;
+              input.appendChild(option);
             }
-            row.appendChild(input);
-            inputs.set(entry.key, input);
-            row.querySelector(".val").dataset.for = entry.key;
+            input.value = params[entry.key];
+            input.addEventListener("change", () => set(entry.key, input.value));
           }
+          row.appendChild(input);
+          inputs.set(entry.key, input);
+          row.querySelector(".val").dataset.for = entry.key;
 
           if (entry.help) {
             const help = document.createElement("p");
@@ -399,8 +385,7 @@
         for (const entry of SCHEMA) {
           const input = inputs.get(entry.key);
           if (!input) continue;
-          if (entry.type === "bool") input.checked = params[entry.key];
-          else input.value = params[entry.key];
+          input.value = params[entry.key];
           renderValue(entry);
         }
         urlOut.textContent = "index.html" + (toQuery(params) ? "?" + toQuery(params) : "");

@@ -142,7 +142,7 @@ export const SCHEMA = [
     group: "Change",
     label: "burst intensity",
     type: "range",
-    min: 1,
+    min: 0,
     max: 20,
     step: 0.5,
     def: 0,
@@ -574,11 +574,9 @@ export function fromQuery(search = window.location.search) {
       const value = parseFloat(raw);
       if (Number.isFinite(value))
         out[key] = Math.min(entry.max, Math.max(entry.min, value));
-    } else if (entry.type === "bool") {
-      out[key] = raw === "1" || raw === "true";
     } else if (entry.type === "color") {
       if (/^#?[0-9a-fA-F]{6}$/.test(raw))
-        out[key] = raw.startsWith("#") ? raw : "#" + raw;
+        out[key] = (raw.startsWith("#") ? raw : "#" + raw).toLowerCase();
     } else if (entry.type === "select") {
       if (entry.options.some(([v]) => v === raw)) out[key] = raw;
     }
@@ -594,13 +592,7 @@ export function toQuery(params) {
     if (value === entry.def) continue;
     query.set(
       entry.key,
-      entry.type === "bool"
-        ? value
-          ? "1"
-          : "0"
-        : entry.type === "color"
-          ? String(value).replace("#", "")
-          : String(value),
+      entry.type === "color" ? String(value).replace("#", "") : String(value),
     );
   }
   return query.toString();

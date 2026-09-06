@@ -5,14 +5,7 @@ import { createField } from "./field.js";
 import { createInbox } from "./inbox.js";
 import { parseArticle, typeset } from "./typesetter.js";
 import { POSTHOG, startAnalytics, track, identify } from "./analytics.js";
-import {
-  fromQuery,
-  toQuery,
-  defaults,
-  needsRelayout,
-  FONTS,
-  SCHEMA,
-} from "./params.js";
+import { fromQuery, needsRelayout, FONTS, BY_KEY } from "./params.js";
 
 const canvas = document.getElementById("field");
 const scroller = document.getElementById("scroller");
@@ -25,17 +18,18 @@ let P = fromQuery();
 let motionPaused = false;
 const field = createField(canvas, P);
 
-// Messages go to PostHog as events; without analytics they open the mail
-// client with the text filled in, so the box always delivers.
+// Messages go to PostHog as events. Without analytics the mail client opens
+// with the text filled in; the box keeps the text then, since a mail handler
+// may be missing.
 function sendMessage(text) {
-  const contact = text.match(/[^\s@]+@[^\s@]+\.[^\s@]+/)?.[0];
+  const contact = text.match(/[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)*\.[a-z]{2,}/i)?.[0];
   identify(contact);
-  const delivered = track("message_sent", { message: text, contact });
-  if (!delivered)
-    window.open(
-      `mailto:sardor@nodirov.com?subject=${encodeURIComponent("From nodirov.com")}&body=${encodeURIComponent(text)}`,
-      "_self",
-    );
+  if (track("message_sent", { message: text, contact })) return "sent";
+  window.open(
+    `mailto:sardor@nodirov.com?subject=${encodeURIComponent("From nodirov.com")}&body=${encodeURIComponent(text)}`,
+    "_self",
+  );
+  return "mail";
 }
 
 const inboxForm = article.querySelector("form[data-inbox]");
@@ -78,13 +72,18 @@ function computeMetrics() {
 
   const tracking = grid ? grid.tracking : P.tracking;
   const leading = grid ? grid.leading : P.leading;
+  const cellW = Math.round(adv + fontSize * tracking);
   return {
     fontSize,
     adv,
     font,
     pixelFace: !!grid,
-    cellW: Math.round(adv + fontSize * tracking),
+    cellW,
     cellH: Math.round(fontSize * leading),
+    // a glyph sits centred in its cell: this much on the left, and this much
+    // added after every character
+    pad: (cellW - adv) / 2,
+    spacing: cellW - adv,
   };
 }
 
@@ -104,11 +103,13 @@ function layout() {
     adv: metrics.adv,
     fontSize: metrics.fontSize,
     xOffset: field.xOffset(),
+    pad: metrics.pad,
+    spacing: metrics.spacing,
     measure: P.measure,
     placePlane: (el, r, c, cc, rr) => field.placePlane(el, r, c, cc, rr),
     placeInbox: (el, r, c, cc, rr) => inbox?.place(r, c, cc, rr),
   });
-  field.setWorld(layoutResult.lines, layoutResult.worldRows);
+  field.setWorld(layoutResult.lines);
 
   bindLinks(layoutResult.links);
   article.classList.add("ready");
@@ -126,16 +127,16 @@ function currentSection() {
 }
 
 function bindLinks(links) {
-  links.forEach((a, id) => {
-    if (a.dataset.bound) return;
+  for (const a of links) {
+    if (a.dataset.bound) continue;
     a.dataset.bound = "1";
-    const on = () => field.hoverLink(id, true);
-    const off = () => field.hoverLink(id, false);
+    const on = () => field.hoverLink(layoutResult.links.indexOf(a), true);
+    const off = () => field.hoverLink(-1, false);
     a.addEventListener("mouseenter", on);
     a.addEventListener("mouseleave", off);
     a.addEventListener("focus", on);
     a.addEventListener("blur", off);
-  });
+  }
 }
 
 const anim = { raf: 0, target: null, lastWrite: -1 };
@@ -348,6 +349,7 @@ async function boot() {
   scroller.addEventListener(
     "wheel",
     (event) => {
+      const base = anim.target !== null ? anim.target : scroller.scrollTop;
       window.cancelAnimationFrame(anim.raf);
       anim.target = null;
       if (event.ctrlKey || !P.wheelMs) return;
@@ -358,7 +360,6 @@ async function boot() {
         event.deltaMode === 1
           ? event.deltaY * metrics.cellH
           : event.deltaY * scroller.clientHeight;
-      const base = anim.target !== null ? anim.target : scroller.scrollTop;
       animateScrollTo(base + delta, P.wheelMs);
     },
     { passive: false },
@@ -399,8 +400,8 @@ async function boot() {
         motionPaused ? "Resume motion" : "Pause motion",
       );
       const hero = blocks.find((b) => b.type === "hero");
-      const run = hero.nav.runs.find((r) => r.a === button);
-      run.text = motionPaused ? "[ resume motion ]" : "[ pause motion ]";
+      const run = hero?.nav.runs.find((r) => r.a === button);
+      if (run) run.text = motionPaused ? "[ resume motion ]" : "[ pause motion ]";
       const top = scroller.scrollTop;
       layout();
       scroller.scrollTop = top;
@@ -423,10 +424,7 @@ async function boot() {
 
   // The workbench (lab.html) drives this page live, same-origin.
   window.__glyph = {
-    schema: SCHEMA,
-    defaults,
     get: () => ({ ...P }),
-    query: () => toQuery(P),
     renderAt: (now, dt) => field.renderAt(now, dt),
     probe: (row, col) => field.probe(row, col),
     planeCount: () => field.planeCount(),
@@ -435,13 +433,16 @@ async function boot() {
     media: () => field.mediaStats(),
     glyphCount: () => field.glyphCount(),
     touch: (x, y, px, py, dt) => field.touch(x, y, px, py, dt),
-    strike: (x, y) => field.strike(x, y),
     reveal: () => field.strike(innerWidth / 2, innerHeight / 2),
     set(patch) {
       const changed = Object.keys(patch);
+      for (const key of changed) {
+        const entry = BY_KEY.get(key);
+        if (entry?.type === "range")
+          patch[key] = Math.min(entry.max, Math.max(entry.min, patch[key]));
+      }
       P = { ...P, ...patch };
       applyCssVars();
-      field.applyParams(P, changed);
       if (needsRelayout(patch)) {
         if (patch.font) {
           loadFont().then(() => {

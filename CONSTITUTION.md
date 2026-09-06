@@ -26,12 +26,12 @@ Without JavaScript, the browser shows the plain document. A renderer startup err
 
 ## Motion has an owner
 
-The ambient field, image studies, and videos share one frame scheduler. Media updates only inside the viewport. A resize retains each media element and its playback position.
+The ambient field and the video share one frame scheduler. Media updates only inside the viewport. A resize retains the media element and its playback position.
 
 The motion control pauses animation. Reduced motion presents still media. Hidden tabs pause all playback.
 
 ## Experiments stay connected
 
-A new study declares its source, caption, and settings in HTML. It uses the existing media sampler and cell renderer.
+A picture declares its source, caption, and settings in HTML. It uses the existing media sampler and cell renderer.
 
-The lab contains the active renderer settings. The screen study retains detailed algorithm comparisons as a separate inspection tool.
+The lab contains the active renderer settings.
