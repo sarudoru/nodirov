@@ -1,4 +1,6 @@
 // Sample at character resolution. Aspect uses the physical size of a cell.
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+
 export function createSampler() {
   const canvas = document.createElement("canvas");
   const context = canvas.getContext("2d", { willReadFrequently: true });
@@ -24,9 +26,8 @@ export function createSampler() {
       options.fit === "contain"
         ? Math.min(cols / sw, (rows * aspect) / sh)
         : Math.max(cols / sw, (rows * aspect) / sh);
-    const zoom = options.animate ? 1.2 : 1;
-    const dw = sw * scale * zoom,
-      dh = (sh * scale * zoom) / aspect;
+    const dw = sw * scale,
+      dh = (sh * scale) / aspect;
     context.fillStyle = options.invert ? "#000" : "#fff";
     context.fillRect(0, 0, cols, rows);
     context.imageSmoothingQuality = "high";
@@ -43,15 +44,10 @@ export function createSampler() {
         options.invert ? brightness : 1 - brightness,
         options.gamma || 1,
       );
-      if (options.color === "source")
-        colors[i] =
-          g > r * 0.85
-            ? rgb(r * 0.5, g * 0.85, b * 0.4)
-            : rgb(r * 0.92, g * 0.7, b * 0.5);
-      else if (options.color === "blue") colors[i] = "#536b9a";
-      else if (options.color === "duo")
-        colors[i] = luma[i] > 0.5 ? "#514d66" : "#9d6259";
-      else colors[i] = "";
+      colors[i] =
+        options.color === "source"
+          ? rgb(r * 0.92, g * 0.75, b * 0.55)
+          : "";
     }
     return { luma, colors, cols, rows };
   }
@@ -62,6 +58,9 @@ export function createSampler() {
     const ramp = [...(options.ramp || ".,:;=+*#%@")].map((ch) =>
       space.indexOf(ch),
     );
+    // an ordered dither keeps flat highlights from printing as one solid
+    // glyph: neighbouring cells take turns one step apart
+    const dither = options.dither || 0;
     for (let i = 0; i < n; i++) {
       const tone = field.luma[i];
       if (tone < 0.065) {
@@ -69,13 +68,13 @@ export function createSampler() {
         ink[i] = 0;
         continue;
       }
-      let slot = Math.min(ramp.length - 1, Math.floor(tone * ramp.length));
-      if (
-        options.animate &&
-        slot >= 5 &&
-        (i * 13 + (options.phase || 0)) % 7 < 2
-      )
-        slot = 5 + ((i + (options.phase || 0)) % Math.max(1, ramp.length - 5));
+      const x = i % field.cols;
+      const y = (i - x) / field.cols;
+      const noise = (BAYER[(y & 3) * 4 + (x & 3)] / 16 - 0.5) * dither;
+      const slot = Math.max(
+        0,
+        Math.min(ramp.length - 1, Math.floor((tone + noise) * ramp.length)),
+      );
       glyphs[i] = ramp[slot];
       ink[i] =
         options.color === "source"
@@ -91,9 +90,4 @@ export function createSampler() {
     };
   }
   return { sample, toGlyphs };
-}
-export function toGlyphFrame(source, space, cols, rows, options = {}) {
-  const sampler = createSampler(),
-    field = sampler.sample(source, cols, rows, options);
-  return field ? sampler.toGlyphs(field, space, options) : null;
 }

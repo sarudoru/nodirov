@@ -1,7 +1,7 @@
 // The typesetter compiles the semantic HTML article into two aligned outputs:
 //
-//   1. field lines  — {row, col, text, kind, linkId} consumed by the canvas
-//   2. positioned DOM spans — transparent, grid-aligned text laid over the
+//   1. field lines  - {row, col, text, kind, linkId} consumed by the canvas
+//   2. positioned DOM spans - transparent, grid-aligned text laid over the
 //      canvas so selection, find-in-page, focus, and links stay native
 //
 // The article element is the single source of truth. The field is a renderer.
@@ -61,19 +61,6 @@ export function parseArticle(article) {
           })),
           figure: child.querySelector("figure"),
         });
-      } else if (child.classList.contains("gallery")) {
-        blocks.push({
-          type: "gallery",
-          items: [...child.children].map((el) => ({
-            el,
-            caption: el.querySelector("figcaption"),
-            captionText: el.querySelector("figcaption").textContent.trim(),
-            paragraphs: [...el.querySelectorAll("p")].map((el) => ({
-              el,
-              runs: runsOf(el),
-            })),
-          })),
-        });
       } else if (tag === "HEADER" || tag === "SECTION") {
         if (tag === "SECTION")
           blocks.push({ type: "sectionStart", id: child.id });
@@ -86,11 +73,9 @@ export function parseArticle(article) {
         const cls = child.classList;
         const type = cls.contains("tagline")
           ? "tagline"
-          : cls.contains("hint")
-            ? "hint"
-            : cls.contains("interstitial")
-              ? "interstitial"
-              : "p";
+          : cls.contains("interstitial")
+            ? "interstitial"
+            : "p";
         blocks.push({ type, el: child, runs: runsOf(child) });
       } else if (tag === "FIGURE" && child.dataset.glyph) {
         blocks.push({
@@ -329,36 +314,6 @@ export function typeset(blocks, article, ctx) {
         row += 3;
         break;
       }
-      case "gallery": {
-        const columns = contentW >= 90 ? 2 : 1;
-        const cardWidth =
-          columns === 2 ? Math.floor((contentW - 6) / 2) : contentW;
-        const start = row + 2;
-        let end = start;
-        let groupStart = start;
-        block.items.forEach((item, index) => {
-          if (index % columns === 0) groupStart = end;
-          row = groupStart;
-          const col =
-            left + (columns === 2 ? (index % columns) * (cardWidth + 6) : 0);
-          emit(row, col, "+" + "─".repeat(cardWidth - 2) + "+", K_FAINT);
-          row += 2;
-          const height = Math.max(4, Number(item.el.dataset.rows || 29));
-          ctx.placePlane(item.el, row, col, cardWidth, height);
-          row += height + 1;
-          layoutRuns(
-            { el: item.caption, runs: [{ text: item.captionText, a: null }] },
-            col,
-            cardWidth,
-            K_TEXT,
-          );
-          for (const para of item.paragraphs)
-            layoutRuns(para, col, cardWidth, K_FAINT);
-          end = Math.max(end, row + 3);
-        });
-        row = end;
-        break;
-      }
       case "sectionStart":
         break;
 
@@ -379,16 +334,6 @@ export function typeset(blocks, article, ctx) {
 
       case "tagline": {
         layoutRuns(block, left, contentW, K_FAINT, { gapAfter: 2 });
-        break;
-      }
-
-      case "hint": {
-        // pinned near the bottom of the first viewport if we are still in it
-
-        layoutRuns(block, left, contentW, K_FAINT, {
-          center: true,
-          gapAfter: 0,
-        });
         break;
       }
 

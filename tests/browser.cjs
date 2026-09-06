@@ -22,23 +22,15 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4190";
   try {
     await page.goto(base);
     await page.waitForFunction(() => window.__glyph?.media()[0].ready);
-    assert.equal(await page.locator("h1").getAttribute("aria-label"), null);
     assert.equal(
       await page.locator("h1 .sr-only").innerText(),
       "Sardor Nodirov",
     );
-    assert.equal(await page.evaluate(() => __glyph.planeCount()), 3);
-    assert.ok(
-      await page.evaluate(() =>
-        __glyph
-          .media()
-          .filter((p) => p.id !== "flower")
-          .every((p) => !p.ready && p.paused),
-      ),
-    );
+    assert.equal(await page.evaluate(() => __glyph.planeCount()), 1);
+    await page.waitForFunction(() => __glyph.media()[0].time > 0.1);
 
     // Every control must be reachable through the native keyboard order.
-    for (let i = 0; i < 4; i++) await page.keyboard.press("Tab");
+    for (let i = 0; i < 5; i++) await page.keyboard.press("Tab");
     assert.equal(
       await page.evaluate(() => document.activeElement.tagName),
       "BUTTON",
@@ -103,16 +95,9 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4190";
       "Reading must settle on one row",
     );
 
-    await page.goto(base + "/#studies");
-    await page.waitForFunction(() =>
-      window.__glyph
-        ?.media()
-        .filter((p) => p.id !== "flower")
-        .every((p) => p.ready && !p.paused && p.time > 0.1),
-    );
-    await page.screenshot({ path: "tmp/studies-verified.png" });
+    // The video pauses once it leaves the viewport and survives a resize.
     const videoTime = await page
-      .locator("#portrait video")
+      .locator("#portraits video")
       .evaluate((video) => {
         video.dataset.identity = "same-source";
         return video.currentTime;
@@ -120,12 +105,12 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4190";
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.waitForTimeout(350);
     assert.equal(
-      await page.locator("#portrait video").getAttribute("data-identity"),
+      await page.locator("#portraits video").getAttribute("data-identity"),
       "same-source",
     );
     assert.ok(
       await page
-        .locator("#portrait video")
+        .locator("#portraits video")
         .evaluate((video, t) => video.currentTime >= t, videoTime),
     );
     await page.evaluate(() => {
@@ -133,17 +118,12 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4190";
     });
     await page.waitForTimeout(350);
     assert.ok(
-      await page.evaluate(() =>
-        __glyph
-          .media()
-          .filter((p) => p.id !== "flower")
-          .every((p) => p.paused),
-      ),
+      await page.evaluate(() => __glyph.media().every((p) => p.paused)),
     );
 
     // Text remains selectable in document order, including spaces around links.
     const selected = await page
-      .locator("#work > p")
+      .locator("#work li")
       .first()
       .evaluate((el) => {
         const range = document.createRange();
@@ -155,8 +135,41 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4190";
       });
     assert.equal(
       selected,
-      "I care about systems with clear internal rules, interfaces that explain themselves, and products that respect the person on the other side of the screen.",
+      "Lapwing ↗ - founder · 2025 – now. Real-time AI companions.",
     );
+
+    // The message box: typing lands in cells, the caret follows, the box
+    // refuses more lines than it has rows, and submitting clears it.
+    await page.evaluate(() => {
+      location.hash = "message";
+    });
+    await page.waitForTimeout(350);
+    await page.locator("#note").click();
+    await page.keyboard.type("hello there");
+    let inbox = await page.evaluate(() => __glyph.inbox());
+    assert.equal(inbox.typed, 11);
+    assert.deepEqual(inbox.caret, { row: 0, col: 11 });
+    assert.equal(inbox.focused, true);
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("second line");
+    inbox = await page.evaluate(() => __glyph.inbox());
+    assert.deepEqual(inbox.caret, { row: 1, col: 11 });
+    const rows = await page.locator("form[data-inbox]").getAttribute("data-rows");
+    await page.keyboard.type("\n".repeat(Number(rows) + 2));
+    assert.ok(
+      (await page.locator("#note").inputValue()).split("\n").length <=
+        Number(rows),
+      "The box keeps its text inside its rows",
+    );
+    let mailto = "";
+    await page.route("mailto:**", (route) => {
+      mailto = route.request().url();
+      route.abort();
+    });
+    await page.keyboard.press("Meta+Enter");
+    await page.waitForTimeout(200);
+    assert.equal(await page.locator("#note").inputValue(), "");
+    assert.equal(await page.evaluate(() => __glyph.inbox().focused), false);
 
     for (const width of [320, 390, 768, 1440]) {
       await page.setViewportSize({ width, height: 844 });
@@ -192,21 +205,11 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4190";
       viewport: { width: 1280, height: 900 },
     });
     reduced.on("pageerror", (e) => errors.push(e.message));
-    await reduced.goto(base + "/#studies");
-    await reduced.waitForFunction(() =>
-      window.__glyph
-        ?.media()
-        .filter((p) => p.id !== "flower")
-        .every((p) => p.ready),
-    );
+    await reduced.goto(base + "/#hero");
+    await reduced.waitForFunction(() => window.__glyph?.media()[0].ready);
     await reduced.waitForTimeout(100);
     assert.ok(
-      await reduced.evaluate(() =>
-        __glyph
-          .media()
-          .filter((p) => p.id !== "flower")
-          .every((p) => p.paused),
-      ),
+      await reduced.evaluate(() => __glyph.media().every((p) => p.paused)),
     );
     const stillFrames = await reduced.evaluate(
       () => __glyph.stats().renderedFrames,
@@ -222,7 +225,8 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4190";
     await plain.goto(base);
     assert.equal(await plain.locator("h1").innerText(), "Sardor Nodirov");
     assert.equal(await plain.locator("#field").isVisible(), false);
-    assert.ok(await plain.locator("#flower img").isVisible());
+    assert.ok(await plain.locator("#portraits video").isVisible());
+    assert.ok(await plain.locator("#note").isVisible());
     await plain.close();
 
     await page.goto(base + "/lab.html");
@@ -237,18 +241,10 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4190";
     await labFrame.waitForFunction(() => __glyph.stats().cellH === 22);
     await page.locator("#reset").click();
     await labFrame.waitForFunction(() => __glyph.get().size === 14);
-    await page.screenshot({ path: "tmp/lab-verified.png" });
 
-    await page.goto(base + "/screen.html?source=girl");
-    await page.waitForTimeout(700);
-    await page.locator("#tune").click();
-    assert.equal(
-      await page.locator("#tune").getAttribute("aria-expanded"),
-      "true",
-    );
     assert.deepEqual(errors, []);
     console.log(
-      "PASS: fixed glyph origins, scroll settlement, keyboard controls, selection, media lifecycle, responsive layouts, reduced motion, no-JS, lab, screen.",
+      "PASS: fixed glyph origins, scroll settlement, keyboard controls, selection, video lifecycle, message box, responsive layouts, reduced motion, no-JS, lab.",
     );
   } finally {
     await browser.close();

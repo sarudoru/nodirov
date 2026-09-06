@@ -1,6 +1,6 @@
 // Display type for the grid.
 //
-// Headlines are set in real block letterforms — not letters built out of
+// Headlines are set in real block letterforms - not letters built out of
 // their own character, which is a pun that costs legibility. A cell is a
 // pixel here in the literal sense: the grid's own tracking and leading
 // separate the blocks, so a headline reads the way type reads on an LED

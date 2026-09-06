@@ -1,6 +1,6 @@
 // The glyph morphospace.
 //
-// A character set has no inherent order — 'a' is not "next to" 'b' in any
+// A character set has no inherent order - 'a' is not "next to" 'b' in any
 // visual sense. So we build the geometry ourselves: every glyph is rasterized
 // once at boot, reduced to a low-resolution coverage vector, and placed in a
 // metric space where distance means *looks different*. From that we derive:
@@ -62,7 +62,7 @@ function analyze(context, ch, w, h) {
   my /= total;
 
   // second pass: second moments of the ink distribution. The principal axis
-  // of this covariance matrix is the glyph's dominant stroke direction —
+  // of this covariance matrix is the glyph's dominant stroke direction  - 
   // '|' resolves to vertical, '-' to horizontal, '/' and '\' to the diagonals.
   let sxx = 0;
   let syy = 0;
@@ -111,7 +111,7 @@ function distance(vectors, a, b) {
 
 export function buildGlyphSpace(chars, font, cellW, cellH, pixelFace = false) {
   // Block elements, box drawing and geometric shapes (U+2500–U+25FF) are
-  // legitimate destinations — display type is built from them — but never
+  // legitimate destinations - display type is built from them - but never
   // intermediates: a solid block or a box flashing mid-word reads as a
   // malfunction, not a transformation. Walks pass only through letterforms.
   const passable = new Uint8Array(chars.length);
@@ -238,7 +238,7 @@ export function buildGlyphSpace(chars, font, cellW, cellH, pixelFace = false) {
     // and snap each intermediate point to the nearest real glyph. Unlike the
     // graph geodesic this guarantees a fixed number of steps, so transitions
     // have predictable duration, and every consecutive pair is close in shape
-    // — which is what makes the cross-fade read as deformation.
+    // - which is what makes the cross-fade read as deformation.
     morph(a, b, steps) {
       if (a < 0 || b < 0 || a === b) return [b];
       const out = [a];
@@ -296,7 +296,7 @@ export function buildGlyphSpace(chars, font, cellW, cellH, pixelFace = false) {
       return out;
     },
 
-    // Nearest glyph to a target ink density — used for ramps and for mapping
+    // Nearest glyph to a target ink density - used for ramps and for mapping
     // simulation energy onto characters.
     atDensity(target) {
       let lo = 0;

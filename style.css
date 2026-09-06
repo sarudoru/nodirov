@@ -4,7 +4,7 @@
   font-weight: 400;
   font-display: swap;
 }
-/* Departure Mono — a pixel face drawn on a small grid, vendored locally so
+/* Departure Mono - a pixel face drawn on a small grid, vendored locally so
    the substrate never waits on a third party to know its own metrics. */
 @font-face {
   font-family: "Departure Mono";
@@ -161,7 +161,7 @@ html:not(.js) .glyph-plane img {
 }
 
 /* The embedded cursor: the pointer itself is invisible; the cell under it
-   becomes the cursor glyph. Links still work — the hand just isn't drawn. */
+   becomes the cursor glyph. Links still work - the hand just isn't drawn. */
 html.embed-cursor #scroller,
 html.embed-cursor #scroller * {
   cursor: none !important;

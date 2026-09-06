@@ -9,6 +9,9 @@
 
 const REST_INK = 0.2;
 const BLINK_MS = 530;
+// a real character after the text, so a trailing newline still makes a line
+// box and the caret can be measured at the end of the text
+const END = "\u00a0";
 
 export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
   const textarea = form.querySelector("textarea");
@@ -24,7 +27,6 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
   let cells = new Map();
   let caret = null;
   let selected = new Set();
-  let focused = false;
   let notice = new Map();
   let lastValue = "";
 
@@ -55,28 +57,29 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
   // Read the browser's own layout of the text back into cells.
   function relayout() {
     if (!region || !metrics) return;
-    const value = textarea.value;
-    mirror.textContent = value + "​";
-    // more lines than the box has rows: refuse the edit
-    if (mirror.scrollHeight > region.rows * metrics.cellH + 1 && value.length > lastValue.length) {
-      textarea.value = lastValue;
-      mirror.textContent = lastValue + "​";
-    }
-    lastValue = textarea.value;
-
-    const node = mirror.firstChild;
     const box = mirror.getBoundingClientRect();
     const pad = (metrics.cellW - metrics.adv) / 2;
     const range = document.createRange();
     const place = (i) => {
-      range.setStart(node, i);
-      range.setEnd(node, i + 1);
+      range.setStart(mirror.firstChild, i);
+      range.setEnd(mirror.firstChild, i + 1);
       const rect = range.getBoundingClientRect();
       return {
         row: Math.round((rect.top - box.top) / metrics.cellH),
         col: Math.round((rect.left - box.left - pad) / metrics.cellW),
       };
     };
+    mirror.textContent = textarea.value + END;
+    // more lines than the box has rows: refuse the edit
+    if (
+      textarea.value.length > lastValue.length &&
+      place(textarea.value.length).row >= region.rows
+    ) {
+      textarea.value = lastValue;
+      mirror.textContent = lastValue + END;
+    }
+    lastValue = textarea.value;
+
     cells = new Map();
     const text = textarea.value;
     for (let i = 0; i < text.length; i++) {
@@ -104,15 +107,12 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
   }
 
   textarea.addEventListener("input", relayout);
+  const focused = () => document.activeElement === textarea;
   textarea.addEventListener("focus", () => {
-    focused = true;
     setNotice("");
     invalidate();
   });
-  textarea.addEventListener("blur", () => {
-    focused = false;
-    invalidate();
-  });
+  textarea.addEventListener("blur", invalidate);
   document.addEventListener("selectionchange", () => {
     if (document.activeElement === textarea) relayout();
   });
@@ -160,7 +160,7 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
       if (r < 0 || r >= region.rows || c < 0 || c >= region.cols) return null;
       const k = key(r, c);
       const cursor =
-        focused &&
+        focused() &&
         caret?.row === r &&
         caret.col === c &&
         Math.floor(now / BLINK_MS) % 2 === 0;
@@ -170,6 +170,6 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
       if (note) return { ch: note, ink: 1, accent: true, cursor: false };
       return { ch: rest(k), ink: REST_INK, accent: false, cursor };
     },
-    focused: () => focused,
+    state: () => ({ typed: cells.size, caret, focused: focused() }),
   };
 }

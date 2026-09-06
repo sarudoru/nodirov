@@ -3,7 +3,7 @@
 // One law governs the whole field: every cell has a temperature. Temperature
 // decides how dense a glyph the cell wants to hold, how quickly it changes,
 // and how brightly it burns. A separate flow vector decides which way its
-// strokes lean. The cursor does not "trigger an effect" — it warms the medium,
+// strokes lean. The cursor does not "trigger an effect" - it warms the medium,
 // and the medium answers the only way it can: by changing glyphs.
 //
 //   heat   diffuses and cools     -> density, transition rate, opacity
@@ -18,7 +18,7 @@ const MAX_STEPS = 8;
 
 export function createSubstrate(space, params, eligible) {
   let P = params;
-  // indices of glyphs the resting field is allowed to draw from — the space
+  // indices of glyphs the resting field is allowed to draw from - the space
   // itself is wider, because reveals morph into arbitrary text characters
   let allowed = eligible && eligible.length ? eligible.slice() : null;
   let cols = 0;
@@ -273,7 +273,7 @@ export function createSubstrate(space, params, eligible) {
     out.energy = energy;
 
     // The cursor's entire signature is a change in turnover rate. A
-    // screenshot taken under the pointer is identical to one at rest — this
+    // screenshot taken under the pointer is identical to one at rest - this
     // is what keeps disturbance from becoming the lantern glow cliche.
     let alpha = P.alpha * (1 + energy * P.heatAlpha) * vignetteValue;
     if (P.twAmp > 0) {
@@ -292,7 +292,7 @@ export function createSubstrate(space, params, eligible) {
 
     // The Solari law: a drum spins fast, then decelerates into its landing.
     // Progress through the ladder is quadratically eased so early hops flick
-    // past and the last one arrives slowly — the eye can predict the landing
+    // past and the last one arrives slowly - the eye can predict the landing
     // before it happens, which is what makes a change feel *settled* rather
     // than merely finished. The tail of the duration is held still on the
     // final glyph so the arrival has a beat.

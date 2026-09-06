@@ -33,7 +33,7 @@ export function createPlanes(space, invalidate = () => {}) {
           fit: el.dataset.fit || "cover",
           color: el.dataset.color || "mono",
           ramp: el.dataset.ramp || "",
-          animate: el.dataset.animate === "true",
+          dither: Number(el.dataset.dither || 0),
         },
       };
       const ready = () => {
@@ -87,23 +87,13 @@ export function createPlanes(space, invalidate = () => {}) {
   function update(now = performance.now()) {
     for (const p of planes) {
       if (!p.ready || !p.cols || !p.visible) continue;
-      const live =
-        !paused &&
-        (p.options.animate || (p.kind === "video" && !p.media.paused));
+      const live = !paused && p.kind === "video" && !p.media.paused;
       if (!p.dirty && (!live || now - p.lastSample < 1000 / 24)) continue;
       if (!p.dirty && p.kind === "video" && p.media.currentTime === p.lastTime)
         continue;
-      const options = {
-        ...p.options,
-        phase: paused ? 0 : Math.floor(now / 170),
-      };
-      // Static art keeps its sampled color and tone; only its digits evolve.
-      if (p.dirty || p.kind === "video" || !p.sample) {
-        const sample = sampler.sample(p.media, p.cols, p.rows, options);
-        if (!sample) continue;
-        p.sample = sample;
-      }
-      p.frame = sampler.toGlyphs(p.sample, current, options, p.frame);
+      const sample = sampler.sample(p.media, p.cols, p.rows, p.options);
+      if (!sample) continue;
+      p.frame = sampler.toGlyphs(sample, current, p.options, p.frame);
       p.dirty = false;
       p.lastSample = now;
       p.lastTime = p.media.currentTime;

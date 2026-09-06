@@ -1,94 +1,108 @@
 # nodirov.com
 
-A personal website made from one fixed grid of characters. Text, pictures, and controls share the same cells.
+A personal website made from one fixed grid of characters. The text, the
+moving portrait, and the message box share the same cells.
 
 ## Run locally
 
-Run this command from the project root:
+From the project root:
 
 ```sh
 python3 -m http.server 4190 --bind 127.0.0.1
 ```
 
-Open [the site](http://127.0.0.1:4190/). Open [the lab](http://127.0.0.1:4190/lab.html) to adjust the renderer.
+Open [the site](http://127.0.0.1:4190/). Open [the lab](http://127.0.0.1:4190/lab.html)
+to tune the renderer live.
 
-This is a static site. It needs no application server, package install, or build step.
+This is a static site: no build step, no package install, no server code.
+GitHub Pages serves it at the domain in `CNAME`.
 
 ## How it works
 
-`index.html` contains the semantic document. Without JavaScript, the browser shows that document with the original media.
+`index.html` is the semantic document. Without JavaScript the browser shows
+it as plain HTML with the real video and a normal textarea.
 
-The typesetter assigns a world row and column to each character. It also positions transparent text spans for selection, links, and keyboard focus.
+The typesetter assigns a world row and column to every character and lays
+transparent, grid-aligned spans over the canvas, so selection, links,
+find-in-page, and keyboard focus stay native.
 
-Native scrolling determines which world rows reach the viewport. Each screen cell blends between adjacent world rows at a fixed origin. After input stops, the scroll position settles to a whole row for clear text. New wheel input cancels that settlement.
+Native scrolling decides which world rows are in view. Each screen cell
+blends between two adjacent world rows at a fixed origin; nothing translates
+by pixels. When input stops, the scroll position settles on a whole row.
 
-Media regions use the same coordinates and font. The sampler accounts for the physical aspect ratio of each cell. Media never covers committed text.
+Media regions declared with `data-glyph` are sampled at character
+resolution into the same cells. The video loads when it nears the viewport
+and pauses when it leaves. The ambient field is at rest by default; the
+video is the page's only animation. The knobs in `src/params.js` bring the
+field back to life from `lab.html`.
 
-The ambient field runs at up to 60 frames per second. Media sampling runs at up to 24 frames per second. The renderer caches glyphs for the main text colors. Videos load near the viewport and pause outside it. Hidden tabs stop the renderer and video playback.
+The message box is a real `<textarea>` placed invisibly over its cells. A
+hidden mirror with the same metrics reports the browser's own line breaks,
+so the drawn text, the caret, and click-to-place agree. Untyped cells hold
+faint resting glyphs; typed characters replace them; a line blinks at the
+caret.
 
-The motion button pauses the entire field. Reduced motion also stops ambient animation and video playback. Each video retains a still frame.
+## Analytics and messages
+
+`src/analytics.js` starts PostHog when `POSTHOG.key` is set. Empty key,
+nothing loads. With a key: pageviews, autocapture, heatmaps, web vitals,
+session replay, person profiles, referrer and UTM, device, locale, timezone,
+and PostHog's server-side GeoIP for country and city. The page adds
+`section_reached`, `motion_toggled`, and `message_sent`.
+
+Messages are `message_sent` events. An address in the text identifies the
+sender as a person in PostHog. Without analytics, sending opens the mail
+client with the text filled in.
 
 ## Files
 
 | File | Responsibility |
 | --- | --- |
-| `index.html` | Content, navigation, and media declarations |
-| `style.css` | Plain document, native focus, and transparent text spans |
-| `src/main.js` | Startup, native scroll, resize, navigation, and motion controls |
-| `src/typesetter.js` | Responsive placement of text, the hero, and study cards |
-| `src/field.js` | Fixed cell coordinates, glyph cache, drawing, and frame scheduling |
-| `src/plane.js` | Media loading, sampling, playback, and source reuse |
-| `src/media.js` | Color and luminance conversion into glyphs |
-| `src/substrate.js` | Ambient character changes and pointer response |
+| `index.html` | Content, media declaration, the message form |
+| `style.css` | Plain document, transparent spans, the invisible textarea |
+| `src/main.js` | Boot, native scroll, resize, navigation, motion toggle, message delivery |
+| `src/typesetter.js` | Placement of text, the hero, media, and the message box |
+| `src/field.js` | Fixed cell coordinates, glyph cache, drawing, frame scheduling |
+| `src/plane.js` | Media loading, sampling cadence, playback lifecycle |
+| `src/media.js` | Luminance and colour into glyphs, ordered dither |
+| `src/inbox.js` | The message box |
+| `src/analytics.js` | PostHog |
+| `src/substrate.js` | Ambient cell changes and pointer response (at rest by default) |
 | `src/glyphspace.js` | Font measurement and transitions between related glyphs |
-| `src/params.js` | Defaults, lab controls, and URL settings |
-| `lab.html` | Live tuning, comparisons, presets, and frame timing |
-| `screen.html` | Detailed inspection of the original motion studies |
+| `src/params.js` | Defaults, lab controls, URL settings |
+| `lab.html` | Live tuning, comparisons, presets, frame timing |
 | `tests/browser.cjs` | Browser regression checks |
 
-## Add a study
-
-Add a figure inside `.gallery` in `index.html`:
+## Declare media
 
 ```html
-<figure id="new-study" data-glyph="video"
-        data-src="assets/screen/new-study.mp4"
-        data-fit="contain" data-color="source" data-gamma="0.8">
-  <video muted loop playsinline preload="none" controls
-         aria-label="Describe the source">
-    <source src="assets/screen/new-study.mp4" type="video/mp4">
+<figure data-glyph="video" data-src="assets/screen/clip.mp4"
+        data-fit="cover" data-invert="true" data-gamma="1.4"
+        data-dither="0.3" data-color="mono" data-ramp=" .,:;=+*#%@">
+  <video muted loop playsinline preload="none" aria-label="What it shows">
+    <source src="assets/screen/clip.mp4" type="video/mp4">
   </video>
-  <figcaption>004 / NEW STUDY</figcaption>
-  <p>A short caption.</p>
+  <figcaption>001 / TITLE</figcaption>
 </figure>
 ```
 
-Use a same-origin media file. For images, use `data-glyph="image"` and an `img` element with alt text.
-
-Set `data-invert="true"` for a light subject on black. The default maps dark subjects on white into ink.
-
-The available color modes are `source`, `mono`, `duo`, and `blue`. `data-ramp` specifies the characters from sparse to dense.
-
-The gazania uses the prototype's existing source image. Its digits change while its silhouette stays still. The portrait and abstract form use video.
+Use a same-origin file. For a still, use `data-glyph="image"` with an `img`
+and alt text. `data-invert="true"` is for a light subject on black. `color`
+is `mono` or `source`. `ramp` runs from sparse to dense. `dither` spreads
+flat tones across neighbouring glyphs.
 
 ## Browser checks
 
-The checks need Playwright and a Chromium installation. Start the local server first.
+The checks need Playwright and a Chromium. Start the local server first.
 
 ```sh
 node tests/browser.cjs
 ```
 
-For an existing Playwright installation, set `PLAYWRIGHT_MODULE` to its package path. For an existing Chromium binary, set `BROWSER_PATH`.
+`PLAYWRIGHT_MODULE` points at an existing Playwright package, `BROWSER_PATH`
+at a Chromium binary, `SITE_URL` at a server other than port 4190.
 
-The checks cover fixed glyph origins, row settlement, keyboard controls, selection, video lifecycle, responsive widths, reduced motion, plain HTML, and lab controls.
+## Credits
 
-## Prototype history
-
-The integrated renderer comes from `glyph-v4-tv` at `1216fd2`. The earlier homepage remains in Git history at `b52a705`.
-
-The separate card implementations remain on the prototype branch. This site includes their required media without their unrelated interface shells or missing Three.js dependencies.
-
-The gazania source comes from the prototype's Poly Haven flower study. The portrait clip is the existing found-footage source. Its original creator is not recorded in this repository.
-
-Local font licenses are in `assets/fonts`. The normal site loads its font locally. Optional comparison fonts in the lab use Google Fonts.
+The portrait clip is found footage; its creator is not recorded here. Font
+licences are in `assets/fonts`.

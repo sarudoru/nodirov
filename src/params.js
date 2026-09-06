@@ -235,7 +235,7 @@ export const SCHEMA = [
     max: 0.999,
     step: 0.001,
     def: 0.9,
-    help: "per-frame retention — higher lingers longer",
+    help: "per-frame retention - higher lingers longer",
   },
   {
     key: "heatCeiling",
@@ -256,7 +256,7 @@ export const SCHEMA = [
     max: 8,
     step: 0.1,
     def: 0,
-    help: "leave at 0 — the cursor's signature is turnover, not brightness",
+    help: "leave at 0 - the cursor's signature is turnover, not brightness",
   },
   {
     key: "rateKnee",
@@ -267,7 +267,7 @@ export const SCHEMA = [
     max: 8,
     step: 0.1,
     def: 5.2,
-    help: "exponential steepness — a lazy hover does nothing, a real gesture melts the field",
+    help: "exponential steepness - a lazy hover does nothing, a real gesture melts the field",
   },
   {
     key: "densityGain",
@@ -532,7 +532,7 @@ export const FONTS = {
   geist: { family: "Geist Mono", css: "Geist+Mono:wght@400" },
   // A true pixel face: unitsPerEm 550 with a 350 advance, so the advance is
   // only an integer at multiples of 11px (11->7, 22->14, 33->21). Its designed
-  // cell is 7x14 units — a true 1:2 ratio — so it wants no added tracking and
+  // cell is 7x14 units - a true 1:2 ratio - so it wants no added tracking and
   // its own 14/11 line box. computeMetrics() enforces this contract.
   departure: {
     family: "Departure Mono",

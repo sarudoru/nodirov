@@ -1,5 +1,5 @@
-// Boot and wiring. The browser keeps its native powers — scrolling, links,
-// selection, find-in-page — while the field renders every visible mark.
+// Boot and wiring. The browser keeps its native powers - scrolling, links,
+// selection, find-in-page - while the field renders every visible mark.
 
 import { createField } from "./field.js";
 import { createInbox } from "./inbox.js";
@@ -430,6 +430,7 @@ async function boot() {
     renderAt: (now, dt) => field.renderAt(now, dt),
     probe: (row, col) => field.probe(row, col),
     planeCount: () => field.planeCount(),
+    inbox: () => inbox?.state() ?? null,
     stats: () => ({ ...field.stats(), ...field.renderStats() }),
     media: () => field.mediaStats(),
     glyphCount: () => field.glyphCount(),
