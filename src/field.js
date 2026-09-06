@@ -12,7 +12,7 @@ export const K_LINK = 3;
 export function createField(canvas, params) {
   const context = canvas.getContext("2d", { alpha: false });
   let P = params;
-  let metrics, space, substrate, planes;
+  let metrics, space, substrate, planes, inbox;
   let width = 0,
     height = 0,
     cols = 0,
@@ -148,6 +148,23 @@ export function createField(canvas, params) {
               context.fillStyle = media.color || P.ink;
               context.globalAlpha = media.ink * weight;
               paintGlyph(glyphAt(media.glyph), x, y);
+              occupied = true;
+              continue;
+            }
+            const note = inbox?.at(camera + row + next, col, now);
+            if (note) {
+              context.fillStyle = note.accent ? P.accent : P.ink;
+              context.globalAlpha = note.ink * weight;
+              paintGlyph(note.ch, x, y);
+              if (note.cursor) {
+                context.globalAlpha = weight;
+                context.fillRect(
+                  x - metrics.cellW / 2,
+                  y - metrics.cellH / 2 + 2,
+                  2,
+                  metrics.cellH - 4,
+                );
+              }
               occupied = true;
             }
           }
@@ -407,6 +424,10 @@ export function createField(canvas, params) {
       if (!reducedMotion) substrate.step(now, dt);
       updateMedia(now);
       draw(now);
+    },
+    setInbox(value) {
+      inbox = value;
+      inbox?.setGlyphs(ALPHABETS[P.alphabet] ?? ALPHABETS.marks);
     },
     collectPlanes(article) {
       return planes.collect(article);

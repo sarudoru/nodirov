@@ -6,24 +6,31 @@
       name="viewport"
       content="width=device-width,initial-scale=1,viewport-fit=cover"
     />
-    <title>Sardor Nodirov / Engineer</title>
+    <title>Sardor Nodirov / AI Systems Engineer</title>
     <meta
       name="description"
-      content="Sardor Nodirov. Building Aristotle and exploring the expressive side of software. A personal website made entirely of characters."
+      content="Sardor Nodirov, AI systems engineer. Real-time AI systems at the intersection of language, motion, and expression. Founder at Lapwing."
     />
+    <meta name="author" content="Sardor Nodirov" />
     <meta name="theme-color" content="#f7f6f0" />
-    <meta property="og:title" content="Sardor Nodirov / Engineer" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Sardor Nodirov" />
+    <meta property="og:title" content="Sardor Nodirov / AI Systems Engineer" />
     <meta
       property="og:description"
-      content="Software, experiments, and a living field of characters."
+      content="Real-time AI systems at the intersection of language, motion, and expression. A website made of characters."
     />
-    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://nodirov.com/" />
     <meta
       property="og:image"
       content="https://nodirov.com/assets/bitmap-sardor.png"
     />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@nodirov_com" />
     <link rel="canonical" href="https://nodirov.com/" />
-    <link rel="icon" href="assets/favicon.ico" />
+    <link rel="icon" href="assets/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon-180.png" />
     <link
       rel="preload"
       href="assets/fonts/plex-mono.woff2"
@@ -32,6 +39,27 @@
       crossorigin
     />
     <link rel="stylesheet" href="style.css" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Person",
+        "name": "Sardor Nodirov",
+        "url": "https://nodirov.com",
+        "image": "https://nodirov.com/assets/bitmap-sardor.png",
+        "jobTitle": "AI Systems Engineer",
+        "worksFor": { "@type": "Organization", "name": "Lapwing" },
+        "alumniOf": [
+          { "@type": "CollegeOrUniversity", "name": "Colby College" },
+          { "@type": "CollegeOrUniversity", "name": "University of Edinburgh" },
+          { "@type": "CollegeOrUniversity", "name": "Temple University Japan" }
+        ],
+        "sameAs": [
+          "https://linkedin.com/in/sardornodirov",
+          "https://github.com/sarudoru",
+          "https://x.com/nodirov_com"
+        ]
+      }
+    </script>
   </head>
   <body>
     <canvas id="field" aria-hidden="true"></canvas>
@@ -39,156 +67,101 @@
       <main id="article">
         <header id="hero" data-hero>
           <nav aria-label="Main navigation">
-            <a href="#work">[ work ]</a> <a href="#studies">[ studies ]</a>
-            <a href="#contact">[ contact ]</a>
+            <a href="#work">[ work ]</a> <a href="#education">[ education ]</a>
+            <a href="#message">[ message ]</a> <a href="#contact">[ contact ]</a>
             <button type="button" data-motion aria-pressed="false">
               [ pause motion ]
             </button>
           </nav>
           <h1>Sardor Nodirov</h1>
-          <p class="tagline">ENGINEER / BUILDER / CURIOUS HUMAN</p>
-          <p>I build software that listens, responds, and feels alive.</p>
+          <p class="tagline">AI SYSTEMS ENGINEER</p>
+          <p>
+            Real-time AI systems at the intersection of language, motion, and
+            expression.
+          </p>
           <p>
             Currently building
-            <a href="https://heyaristotle.com">Aristotle ↗</a>.
+            <a href="https://lapwing.live">Lapwing ↗</a>, real-time AI
+            companions.
           </p>
           <figure
-            id="flower"
-            data-glyph="image"
-            data-src="assets/screen/gazania.png"
-            data-color="source"
+            id="portraits"
+            data-glyph="video"
+            data-src="assets/screen/girl.mp4"
+            data-fit="cover"
             data-invert="true"
-            data-animate="true"
-            data-fit="contain"
-            data-gamma="0.65"
-            data-rows="34"
-            data-ramp=".,:;/1234567890"
+            data-gamma="1.7"
+            data-color="mono"
+            data-ramp=" .,:;-=+*#%@"
           >
-            <img
-              src="assets/screen/gazania.png"
-              alt="Orange gazania flowers and green leaves, translated into a field of numbers."
-            />
-            <figcaption>001 / GAZANIA</figcaption>
+            <video
+              muted
+              loop
+              playsinline
+              preload="none"
+              aria-label="Faces morphing into other faces, drawn in characters"
+            >
+              <source src="assets/screen/girl.mp4" type="video/mp4" />
+            </video>
+            <figcaption>001 / MOVING PORTRAITS</figcaption>
           </figure>
         </header>
+
         <section id="work">
-          <h2>01 / Work & attention</h2>
-          <p>
-            I care about systems with clear internal rules, interfaces that
-            explain themselves, and products that respect the person on the
-            other side of the screen.
-          </p>
-          <p class="project">
-            <a href="https://heyaristotle.com">Aristotle ↗</a>
-          </p>
-          <p>
-            Most of my attention goes here. Building an AI tutor, and thinking
-            about how software can help people understand.
-          </p>
-          <p class="project"><a href="#studies">The character field ↓</a></p>
-          <p>
-            An ongoing experiment in making a website from one material. Words,
-            pictures, and interactions share the same alphabet.
-          </p>
+          <h2>01 / Work</h2>
+          <ul>
+            <li>
+              <a href="https://lapwing.live">Lapwing ↗</a> — founder · 2025 –
+              now. Real-time AI companions.
+            </li>
+            <li>Ember AI — first engineering hire, full-stack AI · 2024</li>
+            <li>
+              Davis Institute for AI — research assistant · 2023 ·
+              <a href="Sardor_Poster.pdf">[ poster ]</a>
+            </li>
+          </ul>
         </section>
-        <section id="studies">
-          <h2>02 / Studies in character</h2>
-          <p>
-            Different sources. The same cells. A small collection of moving
-            pictures, translated into type.
-          </p>
-          <div class="gallery">
-            <figure
-              id="portrait"
-              data-glyph="video"
-              data-src="assets/screen/girl.mp4"
-              data-rows="29"
-              data-fit="cover"
-              data-gamma="0.8"
-              data-color="duo"
-              data-ramp=".,:;=+*#%@"
-            >
-              <video
-                muted
-                loop
-                playsinline
-                preload="none"
-                controls
-                aria-label="Animated portrait source"
-              >
-                <source src="assets/screen/girl.mp4" type="video/mp4" />
-              </video>
-              <figcaption>002 / MOVING PORTRAITS</figcaption>
-              <p>A face becomes a phrase, then another.</p>
-              <p>
-                <a href="screen.html?source=girl">[ explore the portrait ↗ ]</a>
-              </p>
-            </figure>
-            <figure
-              id="matter"
-              data-glyph="video"
-              data-src="assets/screen/matter.mp4"
-              data-rows="29"
-              data-fit="contain"
-              data-invert="true"
-              data-gamma="0.7"
-              data-color="blue"
-              data-ramp=".,:;0123456789"
-            >
-              <video
-                muted
-                loop
-                playsinline
-                preload="none"
-                controls
-                aria-label="Rotating sculpture source"
-              >
-                <source src="assets/screen/matter.mp4" type="video/mp4" />
-              </video>
-              <figcaption>003 / SOFT MATTER</figcaption>
-              <p>Volume and light, written in numbers.</p>
-              <p><a href="screen.html?source=a">[ explore the form ↗ ]</a></p>
-            </figure>
-          </div>
-          <p class="hint">
-            SCROLL SLOWLY. THE LETTERS STAY. THEIR MEANING CHANGES.
-          </p>
+
+        <section id="education">
+          <h2>02 / Education</h2>
+          <ul>
+            <li>Colby College — B.A. with honors, computer science: AI · 2026</li>
+            <li>
+              University of Edinburgh — study abroad, NLP and embedded systems ·
+              2025
+            </li>
+            <li>
+              Temple University Japan — study abroad, computer graphics · 2024
+            </li>
+          </ul>
         </section>
-        <section id="about">
-          <h2>03 / A little about this place</h2>
+
+        <section id="message">
+          <h2>03 / Leave a message</h2>
           <p>
-            I like the space between engineering and expression. The small
-            decisions that make a tool feel considered. The unexpected things
-            that happen when you follow a simple rule far enough.
+            Type in the box. It reaches me directly. Leave an address if you
+            want an answer.
           </p>
-          <p>
-            Here, that rule is a character cell. The grid stays still. As you
-            scroll, its letters become new words, new pictures, new colors.
-          </p>
-          <p>
-            The flower is a study from a gazania scan by
-            <a href="https://polyhaven.com/a/flower_gazania">Poly Haven ↗</a>.
-            The portrait is a found-footage experiment. Both are material
-            studies in this evolving site.
-          </p>
+          <form data-inbox data-rows="6" data-label="MESSAGE" novalidate>
+            <label for="note" class="sr-only">Your message</label>
+            <textarea id="note" name="message" rows="6" maxlength="900"></textarea>
+            <p><button type="submit">[ send ]</button> or cmd + enter</p>
+          </form>
         </section>
+
         <section id="contact">
-          <h2>04 / Keep in touch</h2>
-          <p>For a conversation, a collaboration, or something interesting.</p>
+          <h2>04 / Contact</h2>
+          <p>sardor (at) nodirov (dot) com</p>
           <p>
-            <a href="mailto:sardor@heyaristotle.com"
-              >sardor@heyaristotle.com ↗</a
-            >
+            <a href="https://linkedin.com/in/sardornodirov">[ linkedin ]</a>
+            <a href="https://x.com/nodirov_com">[ x ]</a>
+            <a href="https://github.com/sarudoru">[ github ]</a>
+            <a href="Sardor_Nodirov_Resume.pdf">[ résumé ]</a>
           </p>
+          <p class="interstitial">Made of characters</p>
           <p>
-            <a href="https://github.com/sarudoru">[ github ↗ ]</a>
-            <a href="https://x.com/randen_ai">[ x ↗ ]</a>
-            <a href="https://linkedin.com/in/sardornodirov">[ linkedin ↗ ]</a>
-          </p>
-          <p class="interstitial">Made of characters. Full of possibilities.</p>
-          <p>
-            <a href="#hero">[ back to the beginning ↑ ]</a>
-            <a href="lab.html">[ field notes / lab ↗ ]</a>
+            One grid of cells. The words, the portraits, and the message box
+            share it. Scroll, and the letters become other letters.
           </p>
         </section>
       </main>

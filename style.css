@@ -212,3 +212,47 @@ html:not(.js) nav {
 html:not(.js) button[data-motion] {
   display: none;
 }
+
+/* The message box. The textarea is real and focusable but invisible: it sits
+   exactly over its cells and the field paints what it holds. The mirror
+   shares its metrics so the browser's line breaks can be read back. */
+html.js #article.ready form[data-inbox] {
+  display: contents;
+}
+html.js #article.ready form[data-inbox] textarea,
+.inbox-mirror {
+  position: absolute;
+  box-sizing: content-box;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  font-family: var(--field-font, "IBM Plex Mono"), Menlo, monospace;
+  font-weight: 400;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+  -webkit-text-size-adjust: none;
+}
+html.js #article.ready form[data-inbox] textarea {
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  resize: none;
+  overflow: hidden;
+  outline: none;
+}
+html.js #article.ready form[data-inbox] textarea::selection {
+  background: transparent;
+  color: transparent;
+}
+.inbox-mirror {
+  visibility: hidden;
+  pointer-events: none;
+  overflow: visible;
+}
+html:not(.js) form[data-inbox] textarea {
+  display: block;
+  width: 100%;
+  max-width: 40em;
+  font: inherit;
+}

@@ -69,7 +69,7 @@ export const SCHEMA = [
     min: 0,
     max: 2,
     step: 0.02,
-    def: 0.14,
+    def: 0,
     unit: "/cell/s",
   },
   {
@@ -102,7 +102,7 @@ export const SCHEMA = [
     min: 0,
     max: 0.85,
     step: 0.05,
-    def: 0.55,
+    def: 0,
     help: "how much faster hot cells settle",
   },
   {
@@ -113,7 +113,7 @@ export const SCHEMA = [
     min: 0,
     max: 1,
     step: 0.05,
-    def: 0.4,
+    def: 0,
   },
   {
     key: "twMin",
@@ -145,7 +145,7 @@ export const SCHEMA = [
     min: 1,
     max: 20,
     step: 0.5,
-    def: 7,
+    def: 0,
     help: "cells cluster into weather rather than changing at a uniform rate",
   },
   {
@@ -214,7 +214,7 @@ export const SCHEMA = [
     min: 0,
     max: 2,
     step: 0.02,
-    def: 0.42,
+    def: 0,
   },
   {
     key: "heatDiffuse",
@@ -363,7 +363,7 @@ export const SCHEMA = [
     min: 0,
     max: 8,
     step: 0.1,
-    def: 2.4,
+    def: 0,
   },
 
   // ---- the aperture ----

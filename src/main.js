@@ -2,7 +2,9 @@
 // selection, find-in-page — while the field renders every visible mark.
 
 import { createField } from "./field.js";
+import { createInbox } from "./inbox.js";
 import { parseArticle, typeset } from "./typesetter.js";
+import { POSTHOG, startAnalytics, track, identify } from "./analytics.js";
 import {
   fromQuery,
   toQuery,
@@ -22,6 +24,28 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 let P = fromQuery();
 let motionPaused = false;
 const field = createField(canvas, P);
+
+// Messages go to PostHog as events; without analytics they open the mail
+// client with the text filled in, so the box always delivers.
+function sendMessage(text) {
+  const contact = text.match(/[^\s@]+@[^\s@]+\.[^\s@]+/)?.[0];
+  identify(contact);
+  const delivered = track("message_sent", { message: text, contact });
+  if (!delivered)
+    window.open(
+      `mailto:sardor@nodirov.com?subject=${encodeURIComponent("From nodirov.com")}&body=${encodeURIComponent(text)}`,
+      "_self",
+    );
+}
+
+const inboxForm = article.querySelector("form[data-inbox]");
+const inbox = inboxForm
+  ? createInbox(inboxForm, {
+      invalidate: () => field.requestDraw(),
+      onSend: sendMessage,
+    })
+  : null;
+field.setInbox(inbox);
 
 let blocks = null;
 let layoutResult = null;
@@ -71,6 +95,7 @@ function layout() {
   field.setMetrics(metrics);
   field.resize(window.innerWidth, window.innerHeight);
   field.collectPlanes(article);
+  inbox?.setMetrics(metrics, field.xOffset());
   layoutResult = typeset(blocks, article, {
     cols: field.cols(),
     viewRows: field.rows(),
@@ -81,6 +106,7 @@ function layout() {
     xOffset: field.xOffset(),
     measure: P.measure,
     placePlane: (el, r, c, cc, rr) => field.placePlane(el, r, c, cc, rr),
+    placeInbox: (el, r, c, cc, rr) => inbox?.place(r, c, cc, rr),
   });
   field.setWorld(layoutResult.lines, layoutResult.worldRows);
 
@@ -174,6 +200,7 @@ function onScrollSettled() {
   const hash = section.id ? `#${section.id}` : "";
   if (hash && window.location.hash !== hash) {
     history.replaceState(null, "", hash);
+    track("section_reached", { section: section.id });
   }
   try {
     sessionStorage.setItem("glyph-camera", String(field.camera()));
@@ -363,6 +390,7 @@ async function boot() {
     const button = event.target.closest("button[data-motion]");
     if (button) {
       motionPaused = !motionPaused;
+      track("motion_toggled", { paused: motionPaused });
       button.setAttribute("aria-pressed", String(motionPaused));
       field.setMediaPaused(motionPaused);
       field.setReducedMotion(reducedMotion.matches || motionPaused);
@@ -431,6 +459,12 @@ async function boot() {
     },
   };
   window.dispatchEvent(new CustomEvent("glyph-ready"));
+
+  startAnalytics(POSTHOG, {
+    font: P.font,
+    grid: `${field.cols()}x${field.rows()}`,
+    reduced_motion: reducedMotion.matches,
+  });
 }
 
 boot().catch((error) => {

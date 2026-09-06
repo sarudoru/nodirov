@@ -103,6 +103,14 @@ export function parseArticle(article) {
         for (const li of child.children) {
           blocks.push({ type: "li", el: li, runs: runsOf(li) });
         }
+      } else if (tag === "FORM" && child.hasAttribute("data-inbox")) {
+        blocks.push({
+          type: "inbox",
+          el: child,
+          rows: parseInt(child.dataset.rows ?? "6", 10),
+          label: child.dataset.label || "",
+        });
+        walk(child);
       }
     }
   }
@@ -303,15 +311,16 @@ export function typeset(blocks, article, ctx) {
             para.el.classList.contains("tagline") ? K_FAINT : K_TEXT,
             { gapAfter: 1 },
           );
+        // The portrait fills the right of the first screen, beside the name.
         const figure = block.figure;
         const imageRow = wide ? top - 1 : row;
         const imageCol = wide ? left + 49 : left;
         const imageCols = wide ? contentW - 49 : contentW;
-        const imageRows = wide ? 34 : 26;
+        const imageRows = wide ? Math.max(24, viewRows - imageRow - 3) : 26;
         ctx.placePlane(figure, imageRow, imageCol, imageCols, imageRows);
         const cap = figure.querySelector("figcaption");
+        const caption = cap.textContent.trim();
         cap.textContent = "";
-        const caption = "001 / GAZANIA";
         span(cap, caption, imageRow + imageRows, imageCol, false);
         emit(imageRow + imageRows, imageCol, caption, K_FAINT);
         row = Math.max(row + 2, imageRow + imageRows + 4);
@@ -456,6 +465,31 @@ export function typeset(blocks, article, ctx) {
           row += 1;
         }
         row += 2;
+        break;
+      }
+
+      case "inbox": {
+        // A box drawn from the cells around it. The textarea is placed over
+        // the interior, one cell in from the border, and paints itself.
+        const boxCols = Math.min(70, contentW);
+        const label =
+          block.label && block.label.length + 6 < boxCols
+            ? ` ${block.label} `
+            : "";
+        row += 1;
+        emit(
+          row,
+          left,
+          "┌" + label + "─".repeat(boxCols - 2 - label.length) + "┐",
+          K_FAINT,
+        );
+        for (let r = 1; r <= block.rows; r++) {
+          emit(row + r, left, "│", K_FAINT);
+          emit(row + r, left + boxCols - 1, "│", K_FAINT);
+        }
+        emit(row + block.rows + 1, left, "└" + "─".repeat(boxCols - 2) + "┘", K_FAINT);
+        ctx.placeInbox?.(block.el, row + 1, left + 2, boxCols - 4, block.rows);
+        row += block.rows + 3;
         break;
       }
 
