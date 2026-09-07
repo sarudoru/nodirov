@@ -82,3 +82,46 @@ Edit `index.html` only. Blocks the typesetter understands: `h1` (banner),
 `h2` (section heading), `p`, `p.tagline`, `p.hint`, `p.interstitial`,
 `ul > li`, inline `<a>`. Add a section, it typesets; add a `li`, it wraps.
 `TODO(sardor)` comments mark placeholder copy.
+
+## The page's parts
+
+**Pictures.** A `figure` with `data-glyph="video"` (or `image`) is a region
+of the grid the sampler writes into. `data-aspect` sets its rows from its
+width; `data-fit`, `data-gamma`, `data-contrast`, `data-floor` (ink below
+this stays paper), `data-edge` (contour threshold), `data-weight` (densest
+glyph allowed) tune the contour mode. `data-mode="ramp"` with
+`data-dither` and `data-charset` maps tone alone through the font's own
+ink ramp, the way a halftone does. Block glyphs never stand in for tone.
+
+**The message box.** A `form[data-inbox]` is drawn as a box from the cells
+around it. A transparent textarea sits over the interior so typing, paste,
+IME, and the caret stay native; a hidden mirror with the same metrics
+reports the browser's line breaks, and the field paints typed characters
+into the cells with faint resting glyphs where nothing is typed yet. The
+caret is a line that blinks while the field animates and stays lit when it
+does not. Sending posts a `message_sent` event to PostHog; without
+analytics the mail client opens with the text and the box keeps it.
+
+**Analytics.** `src/analytics.js` loads PostHog only when `POSTHOG.key` is
+set: pageviews, autocapture, heatmaps, web vitals, session replay with
+inputs masked, person profiles, and GeoIP on the PostHog side. The page
+adds `section_reached` and `message_sent`.
+
+## Browser checks
+
+`tests/browser.cjs` needs Playwright and a Chromium; there is no
+`package.json` on purpose. Install Playwright anywhere and point at it:
+
+```sh
+npm install --prefix ~/.playwright playwright && npx --prefix ~/.playwright playwright install chromium
+```
+
+Start the local server on port 4192, then:
+
+```sh
+PLAYWRIGHT_MODULE=~/.playwright/node_modules/playwright node tests/browser.cjs
+```
+
+`BROWSER_PATH` overrides the Chromium binary, `SITE_URL` the server. The
+checks cover boot, keyboard order, selection, the video band, the message
+box, four viewport widths, the no-JS document, and the lab.

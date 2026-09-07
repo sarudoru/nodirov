@@ -2,8 +2,10 @@
 // selection, find-in-page — while the field renders every visible mark.
 
 import { createField } from "./field.js";
+import { createInbox } from "./inbox.js";
 import { parseArticle, typeset } from "./typesetter.js";
 import { fromQuery, toQuery, defaults, needsRelayout, FONTS, SCHEMA } from "./params.js";
+import { POSTHOG, startAnalytics, track, identify } from "./analytics.js";
 
 const canvas = document.getElementById("field");
 const scroller = document.getElementById("scroller");
@@ -13,6 +15,26 @@ const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 let P = fromQuery();
 const field = createField(canvas, P);
+
+// Messages go to PostHog as events. Without analytics the mail client opens
+// with the text filled in; the box keeps the text then, since a mail handler
+// may be missing.
+function sendMessage(text) {
+  const contact = text.match(/[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)*\.[a-z]{2,}/i)?.[0];
+  identify(contact);
+  if (track("message_sent", { message: text, contact })) return "sent";
+  window.open(
+    `mailto:sardor@nodirov.com?subject=${encodeURIComponent("From nodirov.com")}&body=${encodeURIComponent(text)}`,
+    "_self",
+  );
+  return "mail";
+}
+
+const inboxForm = article.querySelector("form[data-inbox]");
+const inbox = inboxForm
+  ? createInbox(inboxForm, { invalidate: () => field.requestDraw(), onSend: sendMessage })
+  : null;
+field.setInbox(inbox);
 
 let blocks = null;
 let layoutResult = null;
@@ -39,13 +61,18 @@ function computeMetrics() {
 
   const tracking = grid ? grid.tracking : P.tracking;
   const leading = grid ? grid.leading : P.leading;
+  const cellW = Math.round(adv + fontSize * tracking);
   return {
     fontSize,
     adv,
     font,
     pixelFace: !!grid,
-    cellW: Math.round(adv + fontSize * tracking),
+    cellW,
     cellH: Math.round(fontSize * leading),
+    // a glyph sits centred in its cell: this much on the left, and this much
+    // added after every character
+    pad: (cellW - adv) / 2,
+    spacing: cellW - adv,
   };
 }
 
@@ -54,16 +81,19 @@ function layout() {
   field.setMetrics(metrics);
   field.resize(window.innerWidth, window.innerHeight);
   field.collectPlanes(article);
+  inbox?.setMetrics(metrics, field.xOffset());
   layoutResult = typeset(blocks, article, {
     cols: field.cols(),
     viewRows: field.rows(),
     cellW: metrics.cellW,
     cellH: metrics.cellH,
-    adv: metrics.adv,
     fontSize: metrics.fontSize,
     xOffset: field.xOffset(),
+    pad: metrics.pad,
+    spacing: metrics.spacing,
     measure: P.measure,
     placePlane: (el, r, c, cc, rr) => field.placePlane(el, r, c, cc, rr),
+    placeInbox: (el, r, c, cc, rr) => inbox?.place(r, c, cc, rr),
   });
   field.setWorld(layoutResult.lines, layoutResult.worldRows);
   field.registerGlitches(layoutResult.glitches);
@@ -93,16 +123,16 @@ function updateHud() {
 }
 
 function bindLinks(links) {
-  links.forEach((a, id) => {
-    if (a.dataset.bound) return;
+  for (const a of links) {
+    if (a.dataset.bound) continue;
     a.dataset.bound = "1";
-    const on = () => field.hoverLink(id, true);
-    const off = () => field.hoverLink(id, false);
+    const on = () => field.hoverLink(layoutResult.links.indexOf(a), true);
+    const off = () => field.hoverLink(layoutResult.links.indexOf(a), false);
     a.addEventListener("mouseenter", on);
     a.addEventListener("mouseleave", off);
     a.addEventListener("focus", on);
     a.addEventListener("blur", off);
-  });
+  }
 }
 
 const anim = { raf: 0, target: null, lastWrite: -1 };
@@ -161,6 +191,7 @@ function onScrollSettled() {
   const hash = section.id ? `#${section.id}` : "";
   if (hash && window.location.hash !== hash) {
     history.replaceState(null, "", hash);
+    track("section_reached", { section: section.id });
   }
   try {
     sessionStorage.setItem("glyph-camera", String(field.camera()));
@@ -185,6 +216,7 @@ function onResize() {
 }
 
 function onKey(event) {
+  if (event.target.closest("textarea, input, button, a")) return;
   if (event.metaKey || event.ctrlKey || event.altKey) return;
   const page = (field.rows() - 3) * metrics.cellH;
   let delta = null;
@@ -215,7 +247,7 @@ function onPointerMove(event) {
 }
 
 function onClick(event) {
-  if (event.target.closest("a")) return;
+  if (event.target.closest("a, button, textarea")) return;
   field.strike(event.clientX, event.clientY);
 }
 
@@ -299,6 +331,19 @@ async function boot() {
 
   reducedMotion.addEventListener("change", () => field.setReducedMotion(reducedMotion.matches));
 
+  function navigateHash() {
+    const section = layoutResult.sections.find((s) => s.id === decodeURIComponent(location.hash.slice(1)));
+    if (section) animateScrollTo(section.row * metrics.cellH, 420);
+  }
+  window.addEventListener("hashchange", navigateHash);
+  scroller.addEventListener("click", (event) => {
+    const link = event.target.closest('a[href^="#"]');
+    if (!link || event.metaKey || event.ctrlKey || event.shiftKey) return;
+    event.preventDefault();
+    if (location.hash === link.hash) navigateHash();
+    else location.hash = link.hash;
+  });
+
   // The workbench (lab.html) drives this page live, same-origin.
   window.__glyph = {
     schema: SCHEMA,
@@ -308,6 +353,7 @@ async function boot() {
     renderAt: (now, dt) => field.renderAt(now, dt),
     probe: (row, col) => field.probe(row, col),
     planeCount: () => field.planeCount(),
+    inbox: () => inbox?.state() ?? null,
     stats: () => field.stats(),
     glyphCount: () => field.glyphCount(),
     touch: (x, y, px, py, dt) => field.touch(x, y, px, py, dt),
@@ -335,6 +381,12 @@ async function boot() {
     },
   };
   window.dispatchEvent(new CustomEvent("glyph-ready"));
+
+  startAnalytics(POSTHOG, {
+    font: P.font,
+    grid: `${field.cols()}x${field.rows()}`,
+    reduced_motion: reducedMotion.matches,
+  });
 }
 
 boot();

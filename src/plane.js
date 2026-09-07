@@ -42,6 +42,10 @@ export function createPlanes(space) {
         edgeThreshold: parseFloat(el.dataset.edge ?? "0.22"),
         maxDensity: parseFloat(el.dataset.weight ?? "0.42"),
         fit: el.dataset.fit ?? "cover",
+        mode: el.dataset.mode ?? "edge",
+        inkFloor: parseFloat(el.dataset.floor ?? "0.02"),
+        dither: parseFloat(el.dataset.dither ?? "0.12"),
+        charset: el.dataset.charset ?? "",
       };
 
       if (kind === "image") {

@@ -81,6 +81,7 @@ export function createField(canvas, params) {
 
   let overlay = new Map();
   let hud = "";
+  let inbox = null;
   let hoveredLink = -1;
 
   const glitches = new Map();
@@ -400,6 +401,21 @@ export function createField(canvas, params) {
         if (planeCell) {
           context.globalAlpha = Math.min(1, 0.10 + planeCell.ink * 0.9);
           paintGlyph(glyphAt(planeCell.glyph), x, y);
+          continue;
+        }
+
+        // The message box paints its own interior: typed characters, a
+        // notice, or faint resting glyphs, and the caret line at a cell.
+        const note = inbox && cellChar[i] === 0 ? inbox.at(worldA, col, now, !reducedMotion) : null;
+        if (note) {
+          context.fillStyle = note.accent ? P.accent : P.ink;
+          context.globalAlpha = note.ink;
+          paintGlyph(note.ch, x, y);
+          if (note.cursor) {
+            context.globalAlpha = 1;
+            context.fillRect(x - metrics.cellW / 2, y - metrics.cellH / 2 + 2, 2, metrics.cellH - 4);
+          }
+          context.fillStyle = P.ink;
           continue;
         }
 
@@ -885,6 +901,10 @@ export function createField(canvas, params) {
       draw(now);
     },
 
+    setInbox(value) {
+      inbox = value;
+      inbox?.setGlyphs(ALPHABETS[P.alphabet] ?? Object.values(ALPHABETS)[0] ?? "");
+    },
     collectPlanes(article) { return planes ? planes.collect(article) : []; },
     placePlane(el, worldRow, col, c, r) { if (planes) planes.place(el, worldRow, col, c, r); },
     planeCount: () => (planes ? planes.count() : 0),

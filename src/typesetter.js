@@ -17,9 +17,10 @@ export function parseArticle(article) {
     const runs = [];
     for (const node of el.childNodes) {
       if (node.nodeType === Node.TEXT_NODE) {
+        // whitespace between two controls is a run too: "[ a ] [ b ]"
         const text = node.textContent.replace(/\s+/g, " ");
-        if (text.trim()) runs.push({ text, a: null });
-      } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === "A") {
+        if (text) runs.push({ text, a: null });
+      } else if (node.nodeType === Node.ELEMENT_NODE && ["A", "BUTTON"].includes(node.tagName)) {
         runs.push({ text: node.textContent.replace(/\s+/g, " ").trim(), a: node });
       } else if (node.nodeType === Node.ELEMENT_NODE) {
         const text = node.textContent.replace(/\s+/g, " ");
@@ -40,6 +41,8 @@ export function parseArticle(article) {
       if (tag === "HEADER" || tag === "SECTION") {
         if (tag === "SECTION") blocks.push({ type: "sectionStart", id: child.id });
         walk(child);
+      } else if (tag === "NAV") {
+        blocks.push({ type: "nav", el: child, runs: runsOf(child) });
       } else if (tag === "H1") {
         blocks.push({ type: "h1", el: child, text: child.textContent.trim() });
       } else if (tag === "H2") {
@@ -53,11 +56,16 @@ export function parseArticle(article) {
         blocks.push({ type, el: child, runs: runsOf(child) });
       } else if (tag === "FIGURE" && child.dataset.glyph) {
         blocks.push({ type: "plane", el: child, rows: parseInt(child.dataset.rows ?? "16", 10),
+                      aspect: parseFloat(child.dataset.aspect ?? "0"),
                       caption: child.querySelector("figcaption")?.textContent.trim() ?? "" });
       } else if (tag === "UL") {
         for (const li of child.children) {
           blocks.push({ type: "li", el: li, runs: runsOf(li) });
         }
+      } else if (tag === "FORM" && child.hasAttribute("data-inbox")) {
+        blocks.push({ type: "inbox", el: child, rows: parseInt(child.dataset.rows ?? "6", 10),
+                      label: child.dataset.label || "" });
+        walk(child);
       }
     }
   }
@@ -67,7 +75,7 @@ export function parseArticle(article) {
 }
 
 export function typeset(blocks, article, ctx) {
-  const { cols, viewRows, cellW, cellH, adv, fontSize, xOffset, measure = 66 } = ctx;
+  const { cols, viewRows, cellW, cellH, fontSize, xOffset, measure, pad, spacing } = ctx;
   const contentW = Math.min(cols - 4, measure);
   const left = Math.floor((cols - contentW) / 2);
 
@@ -77,18 +85,17 @@ export function typeset(blocks, article, ctx) {
   const glitchPool = [];
   let row = 0;
 
-  const spacing = (cellW - adv).toFixed(2);
-  const spacingWide = (2 * cellW - adv).toFixed(2);
+  const spacingWide = (spacing + cellW).toFixed(2);
 
   function span(el, text, r, c, wide, hidden) {
     const s = document.createElement("span");
     s.className = "gl";
     s.textContent = text;
-    s.style.left = (xOffset + c * cellW + (cellW - adv) / 2).toFixed(2) + "px";
+    s.style.left = (xOffset + c * cellW + pad).toFixed(2) + "px";
     s.style.top = r * cellH + "px";
     s.style.fontSize = fontSize + "px";
     s.style.lineHeight = cellH + "px";
-    s.style.letterSpacing = (wide ? spacingWide : spacing) + "px";
+    s.style.letterSpacing = (wide ? spacingWide : spacing.toFixed(2)) + "px";
     if (hidden) s.setAttribute("aria-hidden", "true");
     el.appendChild(s);
     return s;
@@ -108,7 +115,8 @@ export function typeset(blocks, article, ctx) {
   }
 
   // Wrap runs into lines of pieces; a piece is {text, a}.
-  function wrapRuns(runs, widthLimit) {
+  function wrapRuns(runs, limit) {
+    const widthLimit = Math.max(1, limit);
     const words = [];
     for (const run of runs) {
       for (const part of run.text.split(/(\s+)/)) {
@@ -200,18 +208,24 @@ export function typeset(blocks, article, ctx) {
   }
 
   // --- reset the DOM we own ---
-  for (const a of article.querySelectorAll("a")) a.textContent = "";
+  for (const a of article.querySelectorAll("a, button")) a.textContent = "";
 
   for (const block of blocks) {
     switch (block.type) {
       case "sectionStart":
         break;
 
+      case "nav": {
+        row = 2;
+        layoutRuns(block, left, contentW, K_LINK, { gapAfter: 2 });
+        break;
+      }
+
       case "h1": {
         // The name is a line of type, not a banner: the page is minimal and
         // the content starts almost at once. Letter-spaced capitals carry
         // enough weight to read as a heading without taking any room.
-        row = 2;
+        row = Math.max(row, 2);
         const el = block.el;
         el.textContent = "";
         const text = block.text.toUpperCase();
@@ -283,8 +297,11 @@ export function typeset(blocks, article, ctx) {
 
       case "plane": {
         const el = block.el;
-        const planeRows = Math.max(4, Math.min(block.rows, viewRows - 4));
         const planeCols = Math.min(contentW, cols - 4);
+        const wanted = block.aspect
+          ? Math.round((planeCols * cellW * block.aspect) / cellH)
+          : block.rows;
+        const planeRows = Math.max(4, Math.min(wanted, viewRows - 4));
         const c = Math.floor((cols - planeCols) / 2);
         row += 2;
         // The region is reserved here; the plane writes the glyphs each frame.
@@ -298,6 +315,23 @@ export function typeset(blocks, article, ctx) {
           row += 1;
         }
         row += 2;
+        break;
+      }
+
+      case "inbox": {
+        // A box drawn from the cells around it. The textarea is placed over
+        // the interior, one cell in from the border, and paints itself.
+        const boxCols = Math.min(70, contentW);
+        const label = block.label && block.label.length + 6 < boxCols ? ` ${block.label} ` : "";
+        row += 1;
+        emit(row, left, "┌" + label + "─".repeat(boxCols - 2 - label.length) + "┐", K_FAINT);
+        for (let r = 1; r <= block.rows; r += 1) {
+          emit(row + r, left, "│", K_FAINT);
+          emit(row + r, left + boxCols - 1, "│", K_FAINT);
+        }
+        emit(row + block.rows + 1, left, "└" + "─".repeat(boxCols - 2) + "┘", K_FAINT);
+        ctx.placeInbox?.(block.el, row + 1, left + 2, boxCols - 4, block.rows);
+        row += block.rows + 3;
         break;
       }
 
@@ -336,6 +370,25 @@ export function typeset(blocks, article, ctx) {
 
   const worldRows = row + Math.round(viewRows * 0.5);
   article.style.height = worldRows * cellH + "px";
+
+  // Native controls need a real box for focus, accessibility, and hit testing.
+  // Only their text spans receive pointer events, including wrapped labels.
+  for (const control of links) {
+    const spans = [...control.querySelectorAll(".gl")];
+    if (!spans.length) continue;
+    const x = Math.min(...spans.map((s) => parseFloat(s.style.left)));
+    const y = Math.min(...spans.map((s) => parseFloat(s.style.top)));
+    const right = Math.max(...spans.map((s) => parseFloat(s.style.left) + s.textContent.length * cellW));
+    const bottom = Math.max(...spans.map((s) => parseFloat(s.style.top) + cellH));
+    Object.assign(control.style, {
+      position: "absolute", left: x + "px", top: y + "px",
+      width: right - x + "px", height: bottom - y + "px",
+    });
+    for (const s of spans) {
+      s.style.left = parseFloat(s.style.left) - x + "px";
+      s.style.top = parseFloat(s.style.top) - y + "px";
+    }
+  }
 
   // one unstable glyph per section, chosen from ordinary text
   const glitches = [];

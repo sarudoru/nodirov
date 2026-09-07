@@ -64,7 +64,6 @@ html:not(.js) #article {
   line-height: 1.7;
 }
 
-html:not(.js) .hint { opacity: 0.5; }
 
 html:not(.js) .interstitial {
   margin: 48px 0;
@@ -88,8 +87,69 @@ html.js #article.ready * {
   color: transparent;
 }
 
-html.js #article.ready :is(h1, h2, p, ul, li, header, section) {
+html.js #article.ready :is(h1, h2, p, ul, li, header, section, nav, figure, figcaption, form) {
   display: contents;
+}
+
+/* Controls get a real box for focus and hit testing; only their text spans
+   take the pointer, so the field underneath keeps receiving it. */
+html.js #article.ready :is(a, button) {
+  display: block;
+  pointer-events: none;
+}
+html.js #article.ready :is(a, button) .gl {
+  pointer-events: auto;
+}
+html.js #article.ready button {
+  font: inherit;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+html.js #article.ready :is(a, button):focus {
+  outline: none;
+}
+html.js #article.ready :is(a, button):focus-visible .gl {
+  outline: 1px dotted var(--accent);
+  outline-offset: 3px;
+}
+
+/* The message box: a transparent textarea over its cells, and a hidden
+   mirror with the same metrics that reports the browser's line breaks. */
+html.js #article.ready form[data-inbox] textarea,
+html.js #article.ready .inbox-mirror {
+  position: absolute;
+  box-sizing: content-box;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  font-family: "IBM Plex Mono", Menlo, monospace;
+  font-weight: 400;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+html.js #article.ready form[data-inbox] textarea {
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  resize: none;
+  overflow: hidden;
+  outline: none;
+}
+html.js #article.ready form[data-inbox] textarea::selection {
+  background: transparent;
+}
+html.js #article.ready .inbox-mirror {
+  visibility: hidden;
+  pointer-events: none;
+}
+html:not(.js) form[data-inbox] textarea {
+  display: block;
+  width: 100%;
+  min-height: 8em;
+  font: inherit;
 }
 
 html.js #article.ready ul { padding: 0; margin: 0; list-style: none; }
@@ -106,6 +166,11 @@ html.js #article.ready .gl {
 html.js #article.ready a {
   text-decoration: none;
   cursor: pointer;
+}
+
+/* decoration the typesetter adds (bullets) is not part of the copied text */
+html.js #article.ready .gl[aria-hidden="true"] {
+  user-select: none;
 }
 
 ::selection {
@@ -134,7 +199,8 @@ html.js #article.ready .glyph-plane :is(img, video) {
   overflow: hidden;
   clip: rect(0 0 0 0);
 }
-html:not(.js) .glyph-plane img { max-width: 100%; height: auto; }
+html:not(.js) .glyph-plane :is(img, video) { max-width: 100%; height: auto; }
+html:not(.js) nav { display: flex; flex-wrap: wrap; gap: 1em; }
 
 /* The embedded cursor: the pointer itself is invisible; the cell under it
    becomes the cursor glyph. Links still work — the hand just isn't drawn. */

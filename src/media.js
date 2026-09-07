@@ -18,8 +18,30 @@
 const SOBEL_X = [-1, 0, 1, -2, 0, 2, -1, 0, 1];
 const SOBEL_Y = [-1, -2, -1, 0, 0, 0, 1, 2, 1];
 
+// A 4x4 ordered dither spreads flat tones across neighbouring glyphs, so a
+// face reads as shading rather than as bands.
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const isGeometric = (ch) => ch.charCodeAt(0) >= 0x2500 && ch.charCodeAt(0) <= 0x25ff;
+
 export function createSampler() {
   const canvas = document.createElement("canvas");
+  // the font's own glyphs ordered by measured ink, limited to a charset when
+  // one is given; block and box glyphs never stand in for tone
+  let rampSpace = null;
+  let rampKey = "";
+  let ramp = [];
+  function rampFor(space, charset) {
+    const key = charset || "*";
+    if (space === rampSpace && key === rampKey) return ramp;
+    rampSpace = space;
+    rampKey = key;
+    ramp = space.byDensity.filter((i) => {
+      const ch = space.chars[i];
+      return space.density[i] > 0 && !isGeometric(ch) && (!charset || charset.includes(ch));
+    });
+    if (!ramp.length) ramp = space.byDensity.filter((i) => space.density[i] > 0);
+    return ramp;
+  }
   const context = canvas.getContext("2d", { willReadFrequently: true });
   let luma = new Float32Array(0);
   let gx = new Float32Array(0);
@@ -90,9 +112,31 @@ export function createSampler() {
     // `space` is a glyph morphospace; `out` may be reused across frames.
     toGlyphs(field, space, options = {}, out = null) {
       const { edgeThreshold = 0.22, edgeBoost = 1, inkFloor = 0.02, maxDensity = 0.42 } = options;
+      const { mode = "edge", dither = 0.12, charset = "" } = options;
       const n = field.cols * field.rows;
       const glyphs = out?.glyphs?.length === n ? out.glyphs : new Int16Array(n);
       const ink = out?.ink?.length === n ? out.ink : new Float32Array(n);
+
+      if (mode === "ramp") {
+        // Tone alone, answered by the ink ramp: the picture reads as
+        // shading, the way a halftone does.
+        const steps = rampFor(space, charset);
+        for (let i = 0; i < n; i += 1) {
+          const tone = field.luma[i];
+          if (tone < inkFloor) {
+            glyphs[i] = -1;
+            ink[i] = 0;
+            continue;
+          }
+          const x = i % field.cols;
+          const y = (i / field.cols) | 0;
+          const noise = (BAYER[(y & 3) * 4 + (x & 3)] / 16 - 0.5) * dither;
+          const t = Math.min(1, Math.max(0, tone + noise));
+          glyphs[i] = steps[Math.min(steps.length - 1, Math.floor(t * steps.length))];
+          ink[i] = 0.6 + tone * 0.4;
+        }
+        return { glyphs, ink, cols: field.cols, rows: field.rows };
+      }
 
       for (let i = 0; i < n; i += 1) {
         const tone = field.luma[i];
@@ -114,6 +158,12 @@ export function createSampler() {
           glyphs[i] = space.forFlow(theta, Math.max(density, 0.05));
         } else {
           glyphs[i] = space.atDensity(density);
+        }
+        // a block would read as a slat, not shading; take the letter of the
+        // same ink instead
+        if (isGeometric(space.chars[glyphs[i]])) {
+          const steps = rampFor(space, charset);
+          glyphs[i] = steps[Math.min(steps.length - 1, Math.floor(tone * steps.length))];
         }
         ink[i] = tone;
       }
