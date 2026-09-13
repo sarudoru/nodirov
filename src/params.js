@@ -82,7 +82,7 @@ export const SCHEMA = [
     help: "a flip arriving while the last is still this far from done lands instantly — continuous scrolling never stacks ladders" },
   { key: "releaseRatio", group: "Board", label: "release speed", type: "range", min: 0.15, max: 1, step: 0.05, def: 0.45,
     help: "at rest, how fast a departing letter sinks relative to an arriving one rising" },
-  { key: "traceRows", group: "Board", label: "scroll trace", type: "range", min: 0, max: 6, step: 0.25, def: 2, unit: "rows",
+  { key: "traceRows", group: "Board", label: "scroll trace", type: "range", min: 0, max: 6, step: 0.25, def: 3, unit: "rows",
     help: "while scrolling, departing text lingers for this many rows of travel before it is gone" },
   { key: "wheelMs", group: "Board", label: "wheel ease", type: "range", min: 0, max: 700, step: 10, def: 220, unit: "ms" },
   { key: "settleMs", group: "Board", label: "settle ease", type: "range", min: 0, max: 700, step: 10, def: 150, unit: "ms" },

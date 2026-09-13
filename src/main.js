@@ -3,6 +3,7 @@
 
 import { createField } from "./field.js";
 import { createInbox } from "./inbox.js";
+import { createTicker } from "./tick.js";
 import { parseArticle, typeset } from "./typesetter.js";
 import { fromQuery, toQuery, defaults, needsRelayout, FONTS, SCHEMA } from "./params.js";
 import { POSTHOG, startAnalytics, track, identify } from "./analytics.js";
@@ -29,6 +30,8 @@ function sendMessage(text) {
   );
   return "mail";
 }
+
+const ticker = createTicker();
 
 const inboxForm = article.querySelector("form[data-inbox]");
 const inbox = inboxForm
@@ -140,7 +143,11 @@ const anim = { raf: 0, target: null, lastWrite: -1 };
 function syncFromScroll() {
   const before = field.camera();
   field.setScroll(scroller.scrollTop);
-  if (field.camera() !== before) updateHud();
+  const passed = field.camera() - before;
+  if (passed) {
+    updateHud();
+    ticker.tick(passed, performance.now());
+  }
 }
 
 function animateScrollTo(target, duration) {
@@ -311,6 +318,20 @@ async function boot() {
   document.documentElement.addEventListener("mouseleave", () => field.pointerLeft());
   window.addEventListener("blur", () => field.pointerLeft());
   scroller.addEventListener("click", onClick);
+  scroller.addEventListener("click", (event) => {
+    const button = event.target.closest("button[data-sound]");
+    if (!button) return;
+    const on = ticker.toggle();
+    button.setAttribute("aria-pressed", String(on));
+    track("sound_toggled", { on });
+    const nav = blocks.find((b) => b.type === "nav");
+    const run = nav?.runs.find((r) => r.a === button);
+    if (run) run.text = on ? "[ sound on ]" : "[ sound off ]";
+    const top = scroller.scrollTop;
+    layout();
+    scroller.scrollTop = top;
+    syncFromScroll();
+  });
 
   // Discrete wheels jump ~100px per notch, which teleports the pour. Route
   // coarse deltas through the animator; trackpads keep their native feel.
@@ -354,6 +375,7 @@ async function boot() {
     probe: (row, col) => field.probe(row, col),
     planeCount: () => field.planeCount(),
     inbox: () => inbox?.state() ?? null,
+    sound: () => ticker.enabled(),
     stats: () => field.stats(),
     glyphCount: () => field.glyphCount(),
     touch: (x, y, px, py, dt) => field.touch(x, y, px, py, dt),
