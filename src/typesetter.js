@@ -229,9 +229,8 @@ export function typeset(blocks, article, ctx) {
         const el = block.el;
         el.textContent = "";
         const text = block.text.toUpperCase();
-        const wide = text.length * 2 - 1 <= contentW;
-        span(el, text, row, left, wide);
-        emit(row, left, wide ? [...text].join(" ") : text, K_TEXT);
+        span(el, text, row, left, false);
+        emit(row, left, text, K_TEXT);
         row += 1;
         break;
       }

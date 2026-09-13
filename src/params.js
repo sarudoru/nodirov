@@ -97,7 +97,7 @@ export const SCHEMA = [
     help: "how fast an oncoming cell becomes the cursor, and how fast it recovers" },
 
   // ---- paper: the environment the ink lives on ----
-  { key: "grain", group: "Paper", label: "grain", type: "range", min: 0, max: 1, step: 0.02, def: 0.18,
+  { key: "grain", group: "Paper", label: "grain", type: "range", min: 0, max: 1, step: 0.02, def: 0,
     help: "paper tooth multiplied into the page" },
   { key: "grainScale", group: "Paper", label: "grain size", type: "range", min: 1, max: 6, step: 0.5, def: 1.5, unit: "px" },
   { key: "grainLive", group: "Paper", label: "live grain", type: "bool", def: false,
