@@ -131,27 +131,39 @@ export function typeset(blocks, article, ctx) {
     return id;
   }
 
-  // Wrap runs into lines of pieces; a piece is {text, a}.
+  // Wrap runs into lines of pieces; a piece is {text, a}. A word is
+  // everything between spaces, so a link and the full stop touching it
+  // never part.
   function wrap(runs, limit) {
     const width = Math.max(1, limit);
     const words = [];
+    let word = null;
+    let spaceBefore = null; // the run the last space belonged to
     for (const run of runs) {
       for (const part of run.text.split(/(\s+)/)) {
         if (!part) continue;
-        words.push({ text: part, a: run.a, space: /^\s+$/.test(part) });
+        if (/^\s+$/.test(part)) {
+          if (word) words.push(word);
+          word = null;
+          spaceBefore = run.a;
+          continue;
+        }
+        if (!word) {
+          word = { pieces: [], length: 0, spaceA: words.length ? spaceBefore : null };
+        }
+        word.pieces.push({ text: part, a: run.a });
+        word.length += part.length;
       }
     }
+    if (word) words.push(word);
+
     const out = [];
     let line = [];
     let len = 0;
-    let pending = false;
-    let pendingA = null;
     const flush = () => {
       if (line.length) out.push(line);
       line = [];
       len = 0;
-      pending = false;
-      pendingA = null;
     };
     const push = (text, a) => {
       const last = line[line.length - 1];
@@ -159,31 +171,21 @@ export function typeset(blocks, article, ctx) {
       else line.push({ text, a });
       len += text.length;
     };
-    for (const word of words) {
-      if (word.space) {
-        if (len > 0) {
-          pending = true;
-          pendingA = word.a;
-        }
+    for (const w of words) {
+      if (len > 0 && len + 1 + w.length > width) flush();
+      if (len > 0) push(" ", w.spaceA);
+      if (w.length <= width) {
+        for (const piece of w.pieces) push(piece.text, piece.a);
         continue;
       }
-      let text = word.text;
-      while (text.length > 0) {
-        const need = text.length + (pending ? 1 : 0);
-        if (len + need <= width) {
-          if (pending) push(" ", pendingA);
-          pending = false;
-          push(text, word.a);
-          text = "";
-        } else if (text.length > width) {
-          pending = false;
-          const take = width - len;
-          if (take <= 0) { flush(); continue; }
-          push(text.slice(0, take), word.a);
+      // a word longer than the measure breaks hard
+      for (const piece of w.pieces) {
+        let text = piece.text;
+        while (text.length) {
+          if (len >= width) flush();
+          const take = Math.min(text.length, width - len);
+          push(text.slice(0, take), piece.a);
           text = text.slice(take);
-          flush();
-        } else {
-          flush();
         }
       }
     }

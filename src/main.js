@@ -240,7 +240,7 @@ function onScrollSettled() {
     if (hash) track("section_reached", { section: section.id });
   }
   try {
-    sessionStorage.setItem("glyph-camera", String(field.camera()));
+    sessionStorage.setItem(`glyph-camera:${location.pathname}`, String(field.camera()));
   } catch { /* private mode */ }
 }
 
@@ -366,7 +366,7 @@ async function boot() {
     if (section) startRow = section.row;
   } else {
     try {
-      startRow = parseInt(sessionStorage.getItem("glyph-camera") ?? "0", 10) || 0;
+      startRow = parseInt(sessionStorage.getItem(`glyph-camera:${location.pathname}`) ?? "0", 10) || 0;
     } catch { /* private mode */ }
   }
   if (startRow > 0) scroller.scrollTop = startRow * metrics.cellH;
