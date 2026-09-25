@@ -42,10 +42,11 @@ export function createInbox(form, { invalidate = () => {}, onSend, onType } = {}
       top: region.worldRow * cellH + "px",
       width: region.cols * cellW + "px",
       height: region.rows * cellH + "px",
-      paddingLeft: pad.toFixed(2) + "px",
+      paddingLeft: pad + "px",
       fontSize: fontSize + "px",
       lineHeight: cellH + "px",
-      letterSpacing: spacing.toFixed(2) + "px",
+      // unrounded: at DPR 3 a rounded spacing adds up to a lost column
+      letterSpacing: spacing + "px",
     });
   }
 
@@ -111,8 +112,10 @@ export function createInbox(form, { invalidate = () => {}, onSend, onType } = {}
   }
 
   textarea.addEventListener("input", () => {
+    const before = lastValue;
     layoutText();
-    onType?.();
+    // a keystroke the full box refused makes no sound
+    if (textarea.value !== before) onType?.();
   });
   textarea.addEventListener("compositionstart", () => {
     composing = true;
@@ -181,11 +184,11 @@ export function createInbox(form, { invalidate = () => {}, onSend, onType } = {}
       if (note) return { ch: note, accent: true };
       return null;
     },
-    caretAt(worldRow, col) {
-      if (!region || !caret || !focused()) return false;
-      return caret.row === worldRow - region.worldRow && caret.col === col - region.col;
+    // where the caret is, in world cells, while the box has focus
+    caret() {
+      if (!region || !caret || !focused()) return null;
+      return { row: region.worldRow + caret.row, col: region.col + caret.col };
     },
-    focused,
     state: () => ({ typed: cells.size, caret, focused: focused() }),
   };
 }

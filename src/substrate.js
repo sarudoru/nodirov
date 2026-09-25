@@ -33,7 +33,7 @@ export function createSubstrate(atlas, params) {
   let shown = new Uint16Array(0);
   let from = new Uint16Array(0);
   let fromInk = new Float32Array(0);
-  let changedAt = new Float32Array(0);
+  let changedAt = new Float64Array(0);
   let weather = new Float32Array(0);
   let weatherAt = -1e9;
 
@@ -120,7 +120,7 @@ export function createSubstrate(atlas, params) {
     shown = new Uint16Array(n);
     from = new Uint16Array(n);
     fromInk = new Float32Array(n);
-    changedAt = new Float32Array(n).fill(-1e9);
+    changedAt = new Float64Array(n).fill(-1e9);
     weather = new Float32Array(n);
     arrival = new Float32Array(n);
     for (let i = 0; i < n; i++) restInk[i] = 0.82 + rnd() * 0.36;
@@ -162,7 +162,11 @@ export function createSubstrate(atlas, params) {
     for (const ring of ripples) {
       const age = (now - ring.t0) / 1000;
       const radius = age * P.rippleSpeed;
-      const d = Math.hypot(c - ring.col, (r - ring.row) * aspect);
+      const dy = (r - ring.row) * aspect;
+      // a row the band cannot reach this frame
+      if (Math.abs(dy) > radius + P.rippleWidth) continue;
+      const dx = c - ring.col;
+      const d = Math.sqrt(dx * dx + dy * dy);
       const band = 1 - Math.abs(d - radius) / P.rippleWidth;
       if (band <= 0) continue;
       e += band * band * P.rippleEnergy * Math.max(0, 1 - age / P.rippleLife);
@@ -206,7 +210,7 @@ export function createSubstrate(atlas, params) {
     if (ripples.length) ripples = ripples.filter((ring) => now - ring.t0 < P.rippleLife * 1000);
 
     // weather changes slowly; ten updates a second are plenty
-    if (P.weather > 0 && now - weatherAt > 100) {
+    if (P.weather > 0 && now - weatherAt >= 95) {
       weatherAt = now;
       const z = now * 0.001 * P.weatherSpeed;
       const sx = 1 / P.weatherScale;
@@ -257,7 +261,7 @@ export function createSubstrate(atlas, params) {
   // fading from, and how far along that fade is. `out` is reused.
   const out = { glyph: 0, from: 0, t: 1, ink: 0, fromInk: 0 };
 
-  function sample(i, now, still = false) {
+  function sample(i, r, c, now, still = false) {
     if (still) {
       out.glyph = restGlyph[i];
       out.from = restGlyph[i];
@@ -268,12 +272,14 @@ export function createSubstrate(atlas, params) {
     // weather and the wake only darken a cell's mark; they never change
     // which mark it is. Changing marks is for touch.
     let e = heat[i];
-    if (ripples.length) e += rippleAt((i % cols) + 0.5, Math.floor(i / cols) + 0.5, now);
+    if (ripples.length) e += rippleAt(c + 0.5, r + 0.5, now);
     if (pointer) {
-      const dx = (i % cols) + 0.5 - pointer.col;
-      const dy = (Math.floor(i / cols) + 0.5 - pointer.row) * aspect;
-      const d2 = (dx * dx + dy * dy) / (P.lensRadius * P.lensRadius);
-      if (d2 < 1) e += (1 - d2) * (1 - d2) * P.lens * pointer.strength;
+      const dy = (r + 0.5 - pointer.row) * aspect;
+      if (Math.abs(dy) < P.lensRadius) {
+        const dx = c + 0.5 - pointer.col;
+        const d2 = (dx * dx + dy * dy) / (P.lensRadius * P.lensRadius);
+        if (d2 < 1) e += (1 - d2) * (1 - d2) * P.lens * pointer.strength;
+      }
     }
     let lattice = 1;
     if (reveal) {
@@ -355,6 +361,9 @@ export function createSubstrate(atlas, params) {
       placeReveal();
     },
     revealing: () => reveal !== null,
+    endReveal() {
+      reveal = null;
+    },
     // something is changing that needs every frame
     busy: () => ripples.length > 0 || reveal !== null ||
       (pointer !== null && (pointer.leaving || pointer.strength < 0.99)),

@@ -41,6 +41,17 @@ export function createField(canvasElement, params) {
   let P = params;
   const renderer = createRenderer(canvasElement);
   const canvas = renderer.canvas;
+  // If the GPU drops the canvas, the real text shows until it comes back.
+  renderer.onContext(
+    () => {
+      document.documentElement.classList.add("field-lost");
+      stop();
+    },
+    () => {
+      document.documentElement.classList.remove("field-lost");
+      start();
+    },
+  );
 
   let metrics = null;
   let atlas = null;
@@ -77,12 +88,15 @@ export function createField(canvasElement, params) {
   let glyphs = new Uint16Array(0);
   let inks = new Uint8Array(0);
 
-  // clock flaps: what each resting cell last showed, and its flap in flight
-  let lastShown = new Uint16Array(0);
-  let lastInk = new Float32Array(0);
+  // Clock flaps. Per cell: the face it shows or is turning to (a glyph with
+  // an accent bit, or 0 for the lattice), the face it turns from, and when
+  // the turn starts. Times are doubles: a tab left open for days must still
+  // resolve a 110 ms flap.
+  let flapTo = new Uint16Array(0);
+  let flapToInk = new Float32Array(0);
   let flapFrom = new Uint16Array(0);
   let flapFromInk = new Float32Array(0);
-  let flapAt = new Float32Array(0);
+  let flapAt = new Float64Array(0);
   let restRow = -1;
   let steadyFrame = false;
 
@@ -94,9 +108,11 @@ export function createField(canvasElement, params) {
   let cursorCell = -1;
   let cursorGlyph = 0;
   let hoveredLink = -1;
+  let focusedLink = -1;
   let inbox = null;
 
   let rafId = 0;
+  let idleTimer = 0;
   let running = false;
   let lastFrame = 0;
   // Until this time the page is being touched and draws every frame. After
@@ -160,10 +176,22 @@ export function createField(canvasElement, params) {
     face.ink = inkOf(worldKind[w]);
     const link = worldLink[w];
     if (link >= 0 && worldKind[w] === K_LINK) {
-      // a hovered link turns its letters over to the accent
-      face.accent = link === hoveredLink;
+      // a hovered or focused link turns its letters over to the accent
+      face.accent = link === hoveredLink || link === focusedLink;
       face.under = face.accent ? 0.85 : 0.3;
     }
+    return face;
+  }
+
+  // During first contact a document cell may not be written yet.
+  function gated(face, gate) {
+    if (gate >= 1) return face;
+    if (gate <= 0) {
+      face.glyph = 0;
+      face.under = 0;
+    }
+    face.ink *= gate;
+    face.under *= gate;
     return face;
   }
 
@@ -273,20 +301,25 @@ export function createField(canvasElement, params) {
     const view = stepping ? steps[0].from : shown;
     const k = Math.floor(view);
     const fraction = stepping ? 0 : view - k;
-    const blink = !reducedMotion && Math.floor(now / 530) % 2 === 0;
     const revealing = substrate.revealing();
     // clock flaps only compare a resting page with itself
-    steadyFrame = !stepping && fraction === 0 && k === restRow && !revealing;
+    steadyFrame = !reducedMotion && !stepping && fraction === 0 && k === restRow && !revealing;
     restRow = !stepping && fraction === 0 ? k : -1;
     if (!steadyFrame) flapAt.fill(-1e9);
+    // the caret, found once per frame: a line at the left of one cell,
+    // blinking, or steady when motion is reduced
+    const caret = inbox && !stepping && fraction === 0 ? inbox.caret() : null;
+    const caretCell = caret && (reducedMotion || Math.floor(now / 530) % 2 === 0)
+      ? (caret.row - k) * cols + caret.col
+      : -1;
 
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const i = r * cols + c;
         const o = i * 4;
-        const sub = substrate.sample(i, now, reducedMotion);
+        const sub = substrate.sample(i, r, c, now, reducedMotion);
+        const gate = revealing ? substrate.contentGate(i, now) : 1;
         let shownInk = 0;
-        let resting = false;
 
         if (stepping) {
           // the latest flip that has reached this cell
@@ -296,8 +329,8 @@ export function createField(canvasElement, params) {
           const step = steps[s];
           const started = now >= step.t0 + lag;
           const phase = started ? smooth(Math.min(1, (now - step.t0 - lag) / P.flipMs)) : 0;
-          const a = docAt((started ? step.from : step.from) + r, c, faceA);
-          const b = docAt(step.to + r, c, faceB);
+          const a = gated(docAt(step.from + r, c, faceA), gate);
+          const b = gated(docAt(step.to + r, c, faceB), gate);
           if (a.glyph || (started && b.glyph)) {
             if (started) turn(o, a, b, phase, sub);
             else put(o, a.glyph, a.ink, 0, 0, 0, a.accent ? F_ACCENT_X : 0, a.under);
@@ -310,36 +343,29 @@ export function createField(canvasElement, params) {
           const a = docAt(k + r, c, faceA);
           const b = phase > 0 ? docAt(k + r + 1, c, faceB) : null;
           if (phase > 0 && (a.glyph || b.glyph)) {
-            turn(o, a, b, phase, sub);
+            turn(o, gated(a, gate), gated(b, gate), phase, sub);
             shownInk = phase < 0.5 ? a.ink : b.ink;
           } else if (a.glyph) {
-            resting = phase === 0;
-            const gate = revealing ? substrate.contentGate(i, now) : 1;
-            const delay = a.under && a.glyph !== blank
-              ? (c - (linkStart.get(worldLink[(k + r) * cols + c]) ?? c)) * P.flipStagger
-              : 0;
             if (gate < 1) {
               // first contact: the cell turns from its lattice mark to the letter
               put(o, sub.glyph, sub.ink, a.glyph, a.ink, gate, a.accent ? F_ACCENT_Y : 0, 0, a.under * gate);
               shownInk = gate > 0.5 ? a.ink : 0;
+              flapTo[i] = a.glyph | (a.accent ? ACCENT_KEY : 0);
+              flapToInk[i] = a.ink;
             } else {
-              if (!clockFlap(i, o, now, a, sub.glyph, delay)) {
+              const link = a.under && a.glyph !== blank ? worldLink[(k + r) * cols + c] : -1;
+              const delay = link >= 0 ? (c - (linkStart.get(link) ?? c)) * P.flipStagger : 0;
+              if (!clockFlap(i, o, now, a, sub, delay)) {
                 put(o, a.glyph, a.ink, 0, 0, 0, a.accent ? F_ACCENT_X : 0, a.under);
               }
               shownInk = a.ink;
             }
-          } else {
-            resting = phase === 0;
-            if (!(resting && clockFlap(i, o, now, null, sub.glyph, 0, sub))) {
-              put(o, sub.from, sub.fromInk, sub.glyph, sub.ink, sub.t, F_FADE);
-            }
-          }
-          if (resting) {
-            lastShown[i] = a.glyph ? a.glyph | (a.accent ? ACCENT_KEY : 0) : 0;
-            lastInk[i] = a.glyph ? a.ink : sub.ink;
-            if (inbox && inbox.caretAt(k + r, c) && (blink || !inbox.focused())) glyphs[o + 2] |= F_CARET;
+          } else if (!(phase === 0 && clockFlap(i, o, now, null, sub, 0))) {
+            put(o, sub.from, sub.fromInk, sub.glyph, sub.ink, sub.t, F_FADE);
           }
         }
+
+        if (i === caretCell) glyphs[o + 2] |= F_CARET;
 
         if (i === cursorCell && P.cursorEmbed) {
           if (glyphs[o] && glyphs[o] !== blank && !(glyphs[o + 2] & F_FADE) && inks[o + 2] === 0) {
@@ -379,7 +405,7 @@ export function createField(canvasElement, params) {
         const was = rightWas[q - (span - rightWas.length)] ?? " ";
         const is = status.right[q - (span - status.right.length)] ?? " ";
         const t = (now - rightAt - q * P.flipStagger) / P.flipMs;
-        const sub = substrate.sample(i, now, reducedMotion);
+        const sub = substrate.sample(i, r, c, now, reducedMotion);
         const face = (ch) => (ch === " " ? sub.glyph : atlas.ensure(ch));
         const inkOfCh = (ch) => (ch === " " ? sub.ink : status.rightInk * gate);
         if (t >= 1 || reducedMotion) {
@@ -397,14 +423,24 @@ export function createField(canvasElement, params) {
   // A resting cell whose content changed flaps from what it showed before.
   // `face` is the document's face, or null for the lattice; `delay` staggers
   // a word so it turns over letter by letter. Returns true when it painted.
-  function clockFlap(i, o, now, face, latticeGlyph, delay, sub = null) {
+  function clockFlap(i, o, now, face, sub, delay) {
     const key = face ? face.glyph | (face.accent ? ACCENT_KEY : 0) : 0;
-    if (steadyFrame && key !== lastShown[i]) {
-      flapFrom[i] = lastShown[i] || latticeGlyph;
-      flapFromInk[i] = lastInk[i];
-      flapAt[i] = now + delay;
-      flapsUntil = Math.max(flapsUntil, flapAt[i] + P.flipMs);
+    if (key !== flapTo[i]) {
+      if (!steadyFrame) {
+        // not a page at rest: take the new content without a turn
+        flapAt[i] = -1e9;
+      } else if (now < flapAt[i] && key === flapFrom[i]) {
+        // a turn that has not started yet is called off: the cell never left
+        flapAt[i] = -1e9;
+      } else {
+        flapFrom[i] = flapTo[i] || sub.glyph;
+        flapFromInk[i] = flapToInk[i];
+        flapAt[i] = now + delay;
+        flapsUntil = Math.max(flapsUntil, flapAt[i] + P.flipMs);
+      }
+      flapTo[i] = key;
     }
+    flapToInk[i] = face ? face.ink : sub.ink;
     const age = now - flapAt[i];
     if (age >= P.flipMs) return false;
     const from = flapFrom[i] & ~ACCENT_KEY;
@@ -415,8 +451,7 @@ export function createField(canvasElement, params) {
       return true;
     }
     const g = face ? face.glyph : sub.glyph;
-    const ink = face ? face.ink : sub.ink;
-    put(o, from, flapFromInk[i], g, ink, smooth(age / P.flipMs),
+    put(o, from, flapFromInk[i], g, flapToInk[i], smooth(age / P.flipMs),
       fromAccent | (face && face.accent ? F_ACCENT_Y : 0), under, under);
     return true;
   }
@@ -431,11 +466,21 @@ export function createField(canvasElement, params) {
     renderer.draw(glyphs, inks);
   }
 
+  // While idle the loop sleeps between weather updates instead of waking
+  // every display frame; with reduced motion it sleeps until something
+  // asks for a frame.
   function tick(now) {
     rafId = 0;
     const idle = now > activeUntil && now > flapsUntil && !steps.length && !substrate.busy();
-    if (!idle || now - lastFrame >= 100) frame(now);
-    if (running) rafId = requestAnimationFrame(tick);
+    if (!idle || now - lastFrame >= 95) frame(now);
+    if (!running) return;
+    if (!idle) rafId = requestAnimationFrame(tick);
+    else if (!reducedMotion) {
+      idleTimer = setTimeout(() => {
+        idleTimer = 0;
+        if (running) rafId = requestAnimationFrame(tick);
+      }, 100);
+    }
   }
 
   function start() {
@@ -448,12 +493,21 @@ export function createField(canvasElement, params) {
   function stop() {
     running = false;
     if (rafId) cancelAnimationFrame(rafId);
+    if (idleTimer) clearTimeout(idleTimer);
     rafId = 0;
+    idleTimer = 0;
   }
 
   function requestDraw() {
     activeUntil = performance.now() + 2500;
-    if (running || !metrics || rafId) return;
+    if (!metrics || rafId) return;
+    if (running) {
+      // wake a sleeping loop at once
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = 0;
+      rafId = requestAnimationFrame(tick);
+      return;
+    }
     rafId = requestAnimationFrame((now) => {
       rafId = 0;
       frame(now);
@@ -496,11 +550,11 @@ export function createField(canvasElement, params) {
       const n = cols * rows;
       glyphs = new Uint16Array(n * 4);
       inks = new Uint8Array(n * 4);
-      lastShown = new Uint16Array(n);
-      lastInk = new Float32Array(n);
+      flapTo = new Uint16Array(n);
+      flapToInk = new Float32Array(n);
       flapFrom = new Uint16Array(n);
       flapFromInk = new Float32Array(n);
-      flapAt = new Float32Array(n).fill(-1e9);
+      flapAt = new Float64Array(n).fill(-1e9);
       restRow = -1;
       steps = [];
       substrate.resize(cols, rows, metrics.cellHd / metrics.cellWd);
@@ -596,6 +650,11 @@ export function createField(canvasElement, params) {
       else if (hoveredLink === linkId) hoveredLink = -1;
       requestDraw();
     },
+    focusLink(linkId, on) {
+      if (on) focusedLink = linkId;
+      else if (focusedLink === linkId) focusedLink = -1;
+      requestDraw();
+    },
 
     setStatus(next) {
       if (next.right !== undefined && next.right !== status.right) {
@@ -617,6 +676,10 @@ export function createField(canvasElement, params) {
 
     setReducedMotion(v) {
       reducedMotion = v;
+      if (v) {
+        substrate?.endReveal();
+        steps = [];
+      }
       requestDraw();
     },
 
@@ -646,6 +709,8 @@ export function createField(canvasElement, params) {
         inkX: inks[o] / 255,
         inkY: inks[o + 1] / 255,
         phase: inks[o + 2] / 255,
+        accent: (glyphs[o + 2] & (F_ACCENT_X | F_ACCENT_Y)) !== 0,
+        caret: (glyphs[o + 2] & F_CARET) !== 0,
       };
     },
 
@@ -657,7 +722,6 @@ export function createField(canvasElement, params) {
     rows: () => rows,
     // the row the board shows, or is flipping to
     camera: () => (steps.length ? steps[steps.length - 1].to : Math.round(shown)),
-    worldRows: () => worldRows,
     // left edge of the grid in CSS px
     xOffset: () => originX / metrics.dpr,
   };

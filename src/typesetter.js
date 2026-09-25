@@ -105,7 +105,7 @@ export function typeset(blocks, article, ctx) {
   let hero = null;
   let row = 3;
 
-  function span(el, text, r, c, hidden = false) {
+  function span(el, text, r, c) {
     const s = document.createElement("span");
     s.className = "gl";
     s.textContent = text;
@@ -113,8 +113,7 @@ export function typeset(blocks, article, ctx) {
     s.style.top = (r * cellH).toFixed(2) + "px";
     s.style.fontSize = fontSize + "px";
     s.style.lineHeight = cellH + "px";
-    s.style.letterSpacing = spacing.toFixed(3) + "px";
-    if (hidden) s.setAttribute("aria-hidden", "true");
+    s.style.letterSpacing = spacing + "px";
     el.appendChild(s);
     return s;
   }

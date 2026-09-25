@@ -207,71 +207,108 @@ function createGL(canvas) {
     if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
     return s;
   }
-  const program = gl.createProgram();
-  gl.attachShader(program, shader(gl.VERTEX_SHADER, VERT));
-  gl.attachShader(program, shader(gl.FRAGMENT_SHADER, FRAG));
-  gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
-  gl.useProgram(program);
+
   const u = {};
-  for (const name of ["uGlyph", "uInk", "uAtlas", "uCell", "uGrid", "uOrigin", "uHeight", "uPerRow",
-    "uDpr", "uUnderY", "uTurn", "uShade", "uBody", "uPaper", "uInkColor", "uAccent"]) {
-    u[name] = gl.getUniformLocation(program, name);
-  }
-  gl.bindVertexArray(gl.createVertexArray());
-
-  const texture = (unit) => {
-    const t = gl.createTexture();
-    gl.activeTexture(gl.TEXTURE0 + unit);
-    gl.bindTexture(gl.TEXTURE_2D, t);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    return t;
-  };
-  texture(0);
-  texture(1);
-  texture(2);
-  gl.uniform1i(u.uGlyph, 0);
-  gl.uniform1i(u.uInk, 1);
-  gl.uniform1i(u.uAtlas, 2);
-  gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
-
   let cols = 0;
   let rows = 0;
+  // the last settings, replayed when a lost context comes back
+  let grid = null;
+  let look = null;
+  let sheet = null;
+  let lost = false;
+
+  // Everything the context owns. Runs at start and again after a context
+  // loss, because a restored context remembers nothing.
+  function build() {
+    const program = gl.createProgram();
+    gl.attachShader(program, shader(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(program, shader(gl.FRAGMENT_SHADER, FRAG));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+    gl.useProgram(program);
+    for (const name of ["uGlyph", "uInk", "uAtlas", "uCell", "uGrid", "uOrigin", "uHeight", "uPerRow",
+      "uDpr", "uUnderY", "uTurn", "uShade", "uBody", "uPaper", "uInkColor", "uAccent"]) {
+      u[name] = gl.getUniformLocation(program, name);
+    }
+    gl.bindVertexArray(gl.createVertexArray());
+    for (let unit = 0; unit < 3; unit++) {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
+    gl.uniform1i(u.uGlyph, 0);
+    gl.uniform1i(u.uInk, 1);
+    gl.uniform1i(u.uAtlas, 2);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  }
+
+  function configure(next) {
+    grid = next;
+    if (lost) return;
+    const { cols: c, rows: r, cellWd, cellHd, originX, perRow, dpr, underY } = next;
+    cols = c;
+    rows = r;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16UI, cols, rows, 0, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, null);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.uniform2i(u.uCell, cellWd, cellHd);
+    gl.uniform2i(u.uGrid, cols, rows);
+    gl.uniform2i(u.uOrigin, originX, 0);
+    gl.uniform1i(u.uPerRow, perRow);
+    gl.uniform1i(u.uDpr, Math.max(1, Math.round(dpr)));
+    gl.uniform1i(u.uUnderY, underY);
+  }
+
+  function style(next) {
+    look = next;
+    if (lost) return;
+    gl.uniform3fv(u.uPaper, hexToRgb(next.paper));
+    gl.uniform3fv(u.uInkColor, hexToRgb(next.ink));
+    gl.uniform3fv(u.uAccent, hexToRgb(next.accent));
+    gl.uniform1i(u.uTurn, next.turn === "drum" ? 1 : 0);
+    gl.uniform1f(u.uShade, next.shade);
+    gl.uniform1f(u.uBody, next.body);
+  }
+
+  function upload(canvasOfAtlas) {
+    gl.activeTexture(gl.TEXTURE2);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, gl.RED, gl.UNSIGNED_BYTE, canvasOfAtlas);
+  }
+
+  build();
+
+  const listeners = { lost: () => {}, restored: () => {} };
+  canvas.addEventListener("webglcontextlost", (event) => {
+    // without this the browser will not give the context back
+    event.preventDefault();
+    lost = true;
+    listeners.lost();
+  });
+  canvas.addEventListener("webglcontextrestored", () => {
+    lost = false;
+    build();
+    if (grid) configure(grid);
+    if (look) style(look);
+    if (sheet) upload(sheet.canvas);
+    listeners.restored();
+  });
 
   return {
     kind: "webgl2",
-    configure({ cols: c, rows: r, cellWd, cellHd, originX, perRow, dpr, underY }) {
-      cols = c;
-      rows = r;
-      gl.activeTexture(gl.TEXTURE0);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16UI, cols, rows, 0, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, null);
-      gl.activeTexture(gl.TEXTURE1);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-      gl.uniform2i(u.uCell, cellWd, cellHd);
-      gl.uniform2i(u.uGrid, cols, rows);
-      gl.uniform2i(u.uOrigin, originX, 0);
-      gl.uniform1i(u.uPerRow, perRow);
-      gl.uniform1i(u.uDpr, Math.max(1, Math.round(dpr)));
-      gl.uniform1i(u.uUnderY, underY);
-    },
-    style({ paper, ink, accent, turn, shade, body }) {
-      gl.uniform3fv(u.uPaper, hexToRgb(paper));
-      gl.uniform3fv(u.uInkColor, hexToRgb(ink));
-      gl.uniform3fv(u.uAccent, hexToRgb(accent));
-      gl.uniform1i(u.uTurn, turn === "drum" ? 1 : 0);
-      gl.uniform1f(u.uShade, shade);
-      gl.uniform1f(u.uBody, body);
-    },
+    configure,
+    style,
     atlas(atlas) {
+      sheet = atlas;
       const state = atlas.takeDirty();
-      if (!state.dirty) return;
-      gl.activeTexture(gl.TEXTURE2);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, gl.RED, gl.UNSIGNED_BYTE, atlas.canvas);
+      if (lost || !state) return;
+      upload(atlas.canvas);
     },
     draw(glyphs, inks) {
+      if (lost) return;
       gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
       gl.uniform1i(u.uHeight, gl.drawingBufferHeight);
       gl.activeTexture(gl.TEXTURE0);
@@ -279,6 +316,10 @@ function createGL(canvas) {
       gl.activeTexture(gl.TEXTURE1);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, cols, rows, gl.RGBA, gl.UNSIGNED_BYTE, inks);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+    },
+    onContext(lostFn, restoredFn) {
+      listeners.lost = lostFn;
+      listeners.restored = restoredFn;
     },
   };
 }
@@ -315,9 +356,9 @@ function create2D(canvas) {
       tints = null;
     },
     atlas(atlas) {
-      const state = atlas.takeDirty();
-      if (state.dirty || !tints) tints = { ink: tint(atlas.canvas, look.ink), accent: tint(atlas.canvas, look.accent) };
+      if (atlas.takeDirty() || !tints) tints = { ink: tint(atlas.canvas, look.ink), accent: tint(atlas.canvas, look.accent) };
     },
+    onContext() {},
     draw(glyphs, inks) {
       const { cols, rows, cellWd, cellHd, originX, perRow, dpr, underY } = grid;
       context.globalAlpha = 1;

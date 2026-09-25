@@ -6,7 +6,7 @@
 // replays, referrer and UTM parameters, device and browser, and the
 // visitor's country, region, and city from their IP (GeoIP runs on the
 // PostHog side). What the page adds: which sections were read, when the
-// motion toggle is used, and the messages people send.
+// sound switch is used, and the messages people send.
 
 export const POSTHOG = {
   key: "",

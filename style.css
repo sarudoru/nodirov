@@ -171,10 +171,6 @@ html.js #article.ready a {
   cursor: pointer;
 }
 
-/* decoration the typesetter adds (bullets) is not part of the copied text */
-html.js #article.ready .gl[aria-hidden="true"] {
-  user-select: none;
-}
 
 ::selection {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
@@ -193,7 +189,7 @@ html:not(.js) ::selection { color: inherit; }
 }
 
 /* The embedded cursor: the pointer itself is invisible; the cell under it
-   becomes the cursor glyph. Links still work — the hand just isn't drawn. */
+   becomes the cursor glyph. Links still work - the hand just isn't drawn. */
 html.embed-cursor #scroller,
 html.embed-cursor #scroller * { cursor: none !important; }
 
@@ -215,3 +211,18 @@ html.embed-cursor #scroller * { cursor: none !important; }
 #sound:focus { outline: none; }
 #sound:focus-visible { outline: 1px dotted var(--accent); outline-offset: 3px; }
 html:not(.js) #sound { display: none; }
+
+/* Forced colours (Windows High Contrast): the canvas cannot follow the
+   system palette, so the real document is shown instead. */
+@media (forced-colors: active) {
+  #field, #sound { display: none; }
+  html.js #article.ready,
+  html.js #article.ready * { color: CanvasText; }
+  html.js #article.ready a,
+  html.js #article.ready a * { color: LinkText; }
+}
+
+/* If the GPU gives up the canvas, the real text shows until it comes back. */
+html.field-lost #field { visibility: hidden; }
+html.field-lost #article.ready,
+html.field-lost #article.ready * { color: var(--ink); }

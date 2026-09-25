@@ -82,6 +82,8 @@ function computeMetrics() {
 
 function layout() {
   metrics = computeMetrics();
+  lastSize = { w: window.innerWidth, dpr: metrics.dpr };
+  watchPixelRatio();
   field.setMetrics(metrics);
   field.resize(window.innerWidth, window.innerHeight);
   inbox?.setMetrics(metrics, field.xOffset());
@@ -102,6 +104,15 @@ function layout() {
   article.classList.add("ready");
   placeSound();
   updateHud();
+}
+
+// Moving the window to a screen with another pixel ratio fires no resize
+// in some browsers; listen for the ratio itself.
+let ratioQuery = null;
+function watchPixelRatio() {
+  ratioQuery?.removeEventListener("change", onResize);
+  ratioQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  ratioQuery.addEventListener("change", onResize);
 }
 
 function currentSection() {
@@ -154,12 +165,11 @@ function bindLinks(links) {
   for (const a of links) {
     if (a.dataset.bound) continue;
     a.dataset.bound = "1";
-    const on = () => field.hoverLink(layoutResult.links.indexOf(a), true);
-    const off = () => field.hoverLink(layoutResult.links.indexOf(a), false);
-    a.addEventListener("mouseenter", on);
-    a.addEventListener("mouseleave", off);
-    a.addEventListener("focus", on);
-    a.addEventListener("blur", off);
+    const id = () => layoutResult.links.indexOf(a);
+    a.addEventListener("mouseenter", () => field.hoverLink(id(), true));
+    a.addEventListener("mouseleave", () => field.hoverLink(id(), false));
+    a.addEventListener("focus", () => field.focusLink(id(), true));
+    a.addEventListener("blur", () => field.focusLink(id(), false));
   }
 }
 
@@ -217,6 +227,8 @@ function onScroll() {
 }
 
 function onScrollSettled() {
+  // a finger resting on the glass has not let go of the page yet
+  if (touching) return;
   if (anim.target === null) {
     const target = Math.round(scroller.scrollTop / metrics.cellH) * metrics.cellH;
     if (Math.abs(scroller.scrollTop - target) > 0.5) settleTo(target, P.settleMs);
@@ -232,9 +244,21 @@ function onScrollSettled() {
   } catch { /* private mode */ }
 }
 
+let touching = false;
+let lastSize = { w: 0, dpr: 0 };
+
 function onResize() {
   window.clearTimeout(resizeTimer);
   resizeTimer = window.setTimeout(() => {
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    // A change of height alone (a browser toolbar, a phone keyboard) keeps
+    // the typesetting and the scroll; only the grid gains or loses rows.
+    if (window.innerWidth === lastSize.w && dpr === lastSize.dpr) {
+      field.resize(window.innerWidth, window.innerHeight);
+      placeSound();
+      field.setScroll(scroller.scrollTop, true);
+      return;
+    }
     const camera = field.camera();
     let anchor = null;
     for (const section of layoutResult ? layoutResult.sections : []) {
@@ -293,13 +317,23 @@ function onClick(event) {
   field.strike(event.clientX, event.clientY);
 }
 
+// Wait for the face, but not forever. If it arrives after the page has
+// been laid out with a fallback, lay it out again with the real metrics.
 async function loadFont() {
-  try {
-    await Promise.race([
-      Promise.all([document.fonts.load(`16px "${FONT.family}"`), document.fonts.ready]),
-      new Promise((resolve) => setTimeout(resolve, 2500)),
-    ]);
-  } catch { /* fall back to whatever monospace we have */ }
+  const loaded = document.fonts.load(`16px "${FONT.family}"`).catch(() => null);
+  const timedOut = await Promise.race([
+    loaded.then(() => false),
+    new Promise((resolve) => setTimeout(() => resolve(true), 2500)),
+  ]);
+  if (timedOut) {
+    loaded.then(() => {
+      if (!metrics || computeMetrics().adv === metrics.adv) return;
+      const top = scroller.scrollTop;
+      layout();
+      scroller.scrollTop = top;
+      field.setScroll(scroller.scrollTop, true);
+    });
+  }
 }
 
 function applyCssVars() {
@@ -358,6 +392,12 @@ async function boot() {
   window.addEventListener("pointerdown", onPointerDown, { passive: true });
   window.addEventListener("pointerup", onPointerUp, { passive: true });
   window.addEventListener("pointercancel", onPointerUp, { passive: true });
+  scroller.addEventListener("touchstart", () => { touching = true; }, { passive: true });
+  scroller.addEventListener("touchend", () => {
+    touching = false;
+    window.clearTimeout(scrollEndTimer);
+    scrollEndTimer = window.setTimeout(onScrollSettled, 140);
+  }, { passive: true });
   document.documentElement.addEventListener("mouseleave", () => field.pointerLeft());
   window.addEventListener("blur", () => field.pointerLeft());
   scroller.addEventListener("click", onClick);
@@ -395,7 +435,11 @@ async function boot() {
   reducedMotion.addEventListener("change", () => field.setReducedMotion(reducedMotion.matches));
 
   function navigateHash() {
-    const section = layoutResult.sections.find((s) => s.id === decodeURIComponent(location.hash.slice(1)));
+    let id = location.hash.slice(1);
+    try {
+      id = decodeURIComponent(id);
+    } catch { /* a malformed hash is used as written */ }
+    const section = layoutResult.sections.find((s) => s.id === id);
     if (section) jumpTo(section.row * metrics.cellH);
   }
   window.addEventListener("hashchange", navigateHash);

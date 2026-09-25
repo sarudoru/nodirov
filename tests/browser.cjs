@@ -99,6 +99,60 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
       /mail/,
     );
 
+    // Reviewer regressions.
+    // 1. Scrolling during the opening does not show text the ring has not
+    //    reached yet.
+    await page.goto(base);
+    await ready(page);
+    await page.evaluate(() => { sessionStorage.clear(); __glyph.reveal(); });
+    await scrollToRow(page, 0.5);
+    await page.waitForTimeout(30);
+    const early = await page.evaluate(() => {
+      const v = __glyph.view();
+      let letters = 0;
+      for (let r = Math.floor(v.rows / 2); r < v.rows - 3; r++) {
+        for (let c = 0; c < v.cols; c++) {
+          const p = __glyph.probe(r, c);
+          if (/[A-Za-z]/.test(p.x) && p.inkX > 0.3 && p.phase < 0.5) letters++;
+        }
+      }
+      return letters;
+    });
+    assert.equal(early, 0, "no letters appear ahead of the opening ring");
+    await scrollToRow(page, 0);
+    await page.waitForTimeout(2600);
+
+    // 2. A quick pass over a link leaves no letter in the accent.
+    const link = await page.locator("#hero a").boundingBox();
+    await page.mouse.move(link.x + 4, link.y + link.height / 2);
+    await page.mouse.move(link.x + 4, link.y - 60);
+    await page.waitForTimeout(60);
+    const stray = await page.evaluate(() => {
+      const v = __glyph.view();
+      let n = 0;
+      for (let r = 0; r < v.rows - 3; r++) for (let c = 0; c < v.cols; c++) if (__glyph.probe(r, c).accent) n++;
+      return n;
+    });
+    assert.ok(stray <= 1, `a quick pass leaves the link as it was (${stray} accented cells)`);
+
+    // 3. A lost GPU context shows the real text, and recovers.
+    const lost = await page.evaluate(async () => {
+      const gl = document.getElementById("field").getContext("webgl2");
+      const ext = gl && gl.getExtension("WEBGL_lose_context");
+      if (!ext) return "no-extension";
+      ext.loseContext();
+      await new Promise((r) => setTimeout(r, 100));
+      const during = document.documentElement.classList.contains("field-lost");
+      ext.restoreContext();
+      await new Promise((r) => setTimeout(r, 300));
+      return { during, after: document.documentElement.classList.contains("field-lost") };
+    });
+    if (lost !== "no-extension") assert.deepEqual(lost, { during: true, after: false });
+
+    // 4. A malformed hash is harmless.
+    await page.goto(base + "/#%E0%A4%A");
+    await ready(page);
+
     // The sound switch is a real button with a real state.
     await page.locator("#sound").click();
     assert.equal(await page.locator("#sound").getAttribute("aria-pressed"), "true");
@@ -137,6 +191,17 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
       return null;
     });
     assert.ok(still && still.inkX > 0.9 && still.phase === 0, "the name is drawn at once");
+    // the caret shows steadily in the focused box
+    await calm.evaluate(() => { location.hash = "message"; });
+    await calm.waitForTimeout(300);
+    await calm.locator("#note").click();
+    await calm.waitForTimeout(100);
+    const caretSeen = await calm.evaluate(() => {
+      const v = __glyph.view();
+      for (let r = 0; r < v.rows; r++) for (let c = 0; c < v.cols; c++) if (__glyph.probe(r, c).caret) return true;
+      return false;
+    });
+    assert.ok(caretSeen, "the caret is visible with reduced motion");
     await calm.close();
 
     const plain = await browser.newPage({ javaScriptEnabled: false });
