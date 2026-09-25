@@ -4,15 +4,12 @@
 // fixed lattice. That lattice is the reference the eye needs: whatever
 // passes through it, the marks stay where they are.
 //
-// Each cell has an energy. Energy decides which character the cell holds:
-// the resting mark when cool, then heavier marks up a ramp as it warms.
-// Energy comes from four places, and all of them change cells in place:
-//
-//   heat      the cursor's path, and the document's ink as it passes
-//             through (the wake a scrolled line leaves behind)
-//   flow      the direction the cursor moved, so warm marks lean with it
-//   ripples   a click sends a ring outward
-//   weather   a slow field that swells and fades in place, never drifting
+// Each cell has an energy. Energy decides which mark the cell holds: the
+// resting dot when cool, then larger dots as it warms. Energy comes from
+// the pointer (a lens around it, and warmth along its path), from clicks (a
+// ring travelling outward), and from first contact. Two more things only
+// darken a cell's mark, never change it: the wake the document leaves as it
+// passes through, and a slow weather that swells and fades in place.
 
 import { DOT } from "./atlas.js";
 
@@ -25,8 +22,6 @@ export function createSubstrate(atlas, params) {
 
   let heat = new Float32Array(0);
   let trail = new Float32Array(0);
-  let flowX = new Float32Array(0);
-  let flowY = new Float32Array(0);
   // clicks: rings measured in screen distance, so they stay round on a
   // grid whose cells are taller than wide
   let ripples = [];
@@ -44,12 +39,12 @@ export function createSubstrate(atlas, params) {
 
   let rest = [];
   let ramp = [];
-  let strokes = [];
 
   // the pointer presses on the lattice: marks swell around it
   let pointer = null;
 
-  // first contact: a ring leaves the origin and switches the lattice on
+  // first contact: the board comes up, the name's cells turn one by one,
+  // then a ring leaves the name and everything else turns in behind it
   let reveal = null;
   let arrival = new Float32Array(0);
 
@@ -87,23 +82,13 @@ export function createSubstrate(atlas, params) {
   }
 
   const SETS = {
-    rest: {
-      dot: [DOT[0]],
-      plus: ["+"],
-      mark: [DOT[0], DOT[0], DOT[0], ".", "'", "`", ","],
-    },
-    ramp: {
-      dots: DOT.slice(1),
-      marks: [":", "+", "*"],
-      soft: [DOT[1], ":", "+", "*"],
-    },
+    rest: { dot: [DOT[0]], plus: ["+"] },
+    ramp: { dots: DOT.slice(1), marks: [":", "+", "*"] },
   };
 
   function buildSets() {
     rest = (SETS.rest[P.restMark] ?? SETS.rest.dot).map((ch) => atlas.ensure(ch));
-    ramp = (SETS.ramp[P.ramp] ?? SETS.ramp.soft).map((ch) => atlas.ensure(ch));
-    // strokes by orientation, a quarter turn in four steps
-    strokes = ["-", "\\", "|", "/"].map((ch) => atlas.ensure(ch));
+    ramp = (SETS.ramp[P.ramp] ?? SETS.ramp.dots).map((ch) => atlas.ensure(ch));
     for (let i = 0; i < n; i++) {
       restGlyph[i] = rest[(hash3(i, 7, 3) * rest.length) | 0];
       if (level[i] === 0) shown[i] = restGlyph[i];
@@ -128,8 +113,6 @@ export function createSubstrate(atlas, params) {
     n = cols * rows;
     heat = new Float32Array(n);
     trail = new Float32Array(n);
-    flowX = new Float32Array(n);
-    flowY = new Float32Array(n);
     restGlyph = new Uint16Array(n);
     restInk = new Float32Array(n);
     vignette = new Float32Array(n);
@@ -148,7 +131,7 @@ export function createSubstrate(atlas, params) {
 
   // ---- input ----
 
-  function warm(col, row, vx, vy, strength) {
+  function warm(col, row, strength) {
     const radius = P.warmRadius;
     const r0 = Math.max(0, Math.floor(row - radius / aspect));
     const r1 = Math.min(rows - 1, Math.ceil(row + radius / aspect));
@@ -163,8 +146,6 @@ export function createSubstrate(atlas, params) {
         const w = (1 - d) * (1 - d) * strength;
         const i = r * cols + c;
         heat[i] = Math.min(1.6, heat[i] + w * P.warmGain);
-        flowX[i] += vx * w;
-        flowY[i] += vy * w;
       }
     }
   }
@@ -201,20 +182,25 @@ export function createSubstrate(atlas, params) {
         if (t > last) last = t;
       }
     }
-    reveal.duration = last + 700;
+    reveal.duration = reveal.ringAt - reveal.t0 + last + 600;
   }
+
+  const inName = (i) => {
+    const hero = reveal.hero;
+    if (!hero) return false;
+    const r = Math.floor(i / cols);
+    const c = i % cols;
+    return r === hero.row && c >= hero.col && c < hero.col + hero.length;
+  };
 
   // ---- simulation ----
 
   function step(now, dt) {
     const cool = Math.exp(-dt / Math.max(1, P.coolMs));
     const fade = Math.exp(-dt / Math.max(1, P.wakeMs));
-    const slack = Math.exp(-dt / 180);
     for (let i = 0; i < n; i++) {
       heat[i] *= cool;
       trail[i] *= fade;
-      flowX[i] *= slack;
-      flowY[i] *= slack;
     }
 
     if (ripples.length) ripples = ripples.filter((ring) => now - ring.t0 < P.rippleLife * 1000);
@@ -249,12 +235,18 @@ export function createSubstrate(atlas, params) {
 
   // ---- readout ----
 
-  // Content gate for the first-contact reveal: 0 before the ring reaches the
-  // cell, 1 once it has passed.
+  // How far a document cell has turned in during first contact: 0 before
+  // its moment, 1 after. The name's letters turn one after another; every
+  // other cell turns just behind the ring.
   function contentGate(i, now) {
     if (!reveal) return 1;
-    const d = now - reveal.t0 - arrival[i];
-    return d <= 30 ? 0 : d >= 330 ? 1 : smooth((d - 30) / 300);
+    let d;
+    if (inName(i)) {
+      d = now - reveal.t0 - reveal.board - ((i % cols) - reveal.hero.col) * P.revealLetterMs;
+    } else {
+      d = now - reveal.ringAt - arrival[i] - 20;
+    }
+    return d <= 0 ? 0 : d >= P.flipMs ? 1 : smooth(d / P.flipMs);
   }
 
   function smooth(t) {
@@ -285,8 +277,12 @@ export function createSubstrate(atlas, params) {
     }
     let lattice = 1;
     if (reveal) {
-      const d = now - reveal.t0 - arrival[i];
-      lattice = d <= -40 ? 0 : d >= 220 ? 1 : smooth((d + 40) / 260);
+      const d = now - reveal.ringAt - arrival[i];
+      // the empty board comes up everywhere at once; a quick reveal (a
+      // return visit) lets the ring bring it instead
+      lattice = reveal.board > 0
+        ? smooth(Math.min(1, (now - reveal.t0) / reveal.board))
+        : d <= -40 ? 0 : d >= 220 ? 1 : smooth((d + 40) / 260);
       // the ring itself: cells flare as it passes through them
       const ring = 1 - Math.abs(d - 40) / 90;
       if (ring > 0) e += ring * ring * P.revealRing;
@@ -302,21 +298,7 @@ export function createSubstrate(atlas, params) {
       if (Math.abs(e - edge) < 0.02) want = cur;
     }
 
-    let target;
-    if (want === 0) {
-      target = restGlyph[i];
-    } else {
-      const fx = flowX[i];
-      const fy = flowY[i];
-      if (Math.hypot(fx, fy) > P.flowThreshold) {
-        // orientation modulo a half turn, snapped to four strokes
-        let angle = Math.atan2(fy * aspect, fx);
-        if (angle < 0) angle += Math.PI;
-        target = strokes[Math.round(angle / (Math.PI / 4)) % 4];
-      } else {
-        target = ramp[want - 1];
-      }
-    }
+    const target = want === 0 ? restGlyph[i] : ramp[want - 1];
     level[i] = want;
 
     const ink = P.restAlpha * restInk[i] * vignette[i] * lattice *
@@ -345,7 +327,6 @@ export function createSubstrate(atlas, params) {
     },
     warm,
     impulse,
-    // the document's ink passing through leaves a trail that cools
     setPointer(col, row) {
       if (col === null) {
         if (pointer) pointer.leaving = true;
@@ -356,14 +337,21 @@ export function createSubstrate(atlas, params) {
       pointer.row = row;
       pointer.leaving = false;
     },
+    // the document's ink passing through leaves a trail that cools
     trailTo(i, amount) {
       if (amount > trail[i]) trail[i] = amount;
     },
     step,
     sample,
     contentGate,
-    startReveal(now, oc, or) {
-      reveal = { t0: now, oc, or, duration: 0 };
+    // hero: the name's { row, col, length } on the grid, or null
+    startReveal(now, hero, quick) {
+      const board = quick ? 0 : P.revealBoardMs;
+      const letters = quick || !hero ? 0 : hero.length * P.revealLetterMs;
+      const ringAt = now + board + letters;
+      const oc = hero ? hero.col + (quick ? 0 : hero.length) : cols / 3;
+      const or = hero ? hero.row : rows / 3;
+      reveal = { t0: now, board, ringAt, oc, or, hero: quick ? null : hero, duration: 0 };
       placeReveal();
     },
     revealing: () => reveal !== null,

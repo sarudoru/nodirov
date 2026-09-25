@@ -234,7 +234,7 @@ export function typeset(blocks, article, ctx) {
       case "name": {
         span(block.el, block.text, row, left);
         emit(row, left, block.text, K_TEXT);
-        hero = { row, col: left };
+        hero = { row, col: left, length: block.text.length };
         row += 1;
         break;
       }

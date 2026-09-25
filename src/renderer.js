@@ -26,7 +26,7 @@ precision highp float;
 precision highp int;
 precision highp usampler2D;
 uniform usampler2D uGlyph;   // x: face X, y: face Y, z: flags
-uniform sampler2D uInk;      // x: ink X, y: ink Y, z: phase, w: underline
+uniform sampler2D uInk;      // x: ink X, y: ink Y, z: phase, w: underlines (X high, Y low nibble)
 uniform sampler2D uAtlas;
 uniform ivec2 uCell;
 uniform ivec2 uGrid;
@@ -37,6 +37,7 @@ uniform int uDpr;
 uniform int uUnderY;
 uniform int uTurn;           // 0 flap, 1 drum
 uniform float uShade;
+uniform float uBody;
 uniform vec3 uPaper;
 uniform vec3 uInkColor;
 uniform vec3 uAccent;
@@ -49,44 +50,41 @@ ivec2 slotOf(uint glyph) {
   return ivec2(g % uPerRow, g / uPerRow) * uCell;
 }
 
-float cover(uint glyph, ivec2 inner) {
-  if (glyph == 0u) return 0.0;
-  return texelFetch(uAtlas, slotOf(glyph) + inner, 0).r;
+// A face's ink at a (possibly fractional, possibly foreshortened) position
+// inside its cell: the glyph, bilinearly filtered, and its underline, which
+// belongs to the face and turns with it.
+float face(uint glyph, float under, float x, float y) {
+  float ink = 0.0;
+  if (glyph != 0u) {
+    float fx = x - 0.5;
+    float fy = y - 0.5;
+    int x0 = int(floor(fx));
+    int y0 = int(floor(fy));
+    float tx = fx - float(x0);
+    float ty = fy - float(y0);
+    ivec2 slot = slotOf(glyph);
+    float s00 = 0.0, s10 = 0.0, s01 = 0.0, s11 = 0.0;
+    bool xa = x0 >= 0 && x0 < uCell.x, xb = x0 + 1 >= 0 && x0 + 1 < uCell.x;
+    bool ya = y0 >= 0 && y0 < uCell.y, yb = y0 + 1 >= 0 && y0 + 1 < uCell.y;
+    if (xa && ya) s00 = texelFetch(uAtlas, slot + ivec2(x0, y0), 0).r;
+    if (xb && ya) s10 = texelFetch(uAtlas, slot + ivec2(x0 + 1, y0), 0).r;
+    if (xa && yb) s01 = texelFetch(uAtlas, slot + ivec2(x0, y0 + 1), 0).r;
+    if (xb && yb) s11 = texelFetch(uAtlas, slot + ivec2(x0 + 1, y0 + 1), 0).r;
+    ink = mix(mix(s00, s10, tx), mix(s01, s11, tx), ty);
+  }
+  if (under > 0.0) {
+    float u0 = float(uUnderY);
+    float line = clamp(min(y - u0, u0 + float(uDpr) - y) + 0.5, 0.0, 1.0);
+    ink = max(ink, line * under);
+  }
+  return ink;
 }
 
-// Coverage at a fractional source row, linearly filtered, for faces that are
-// being foreshortened.
-float coverAt(uint glyph, int x, float y) {
-  if (glyph == 0u) return 0.0;
-  float fy = y - 0.5;
-  if (fy < -0.5 || fy > float(uCell.y) - 0.5) return 0.0;
-  int y0 = int(floor(fy));
-  float t = fy - float(y0);
-  ivec2 slot = slotOf(glyph);
-  float a = y0 >= 0 ? texelFetch(uAtlas, slot + ivec2(x, y0), 0).r : 0.0;
-  float b = y0 + 1 < uCell.y ? texelFetch(uAtlas, slot + ivec2(x, y0 + 1), 0).r : 0.0;
-  return mix(a, b, t);
-}
-
-// Coverage at a fractional position, bilinearly filtered, for a flap seen
-// in perspective.
-float coverAt2(uint glyph, float x, float y) {
-  if (glyph == 0u) return 0.0;
-  float fx = x - 0.5;
-  float fy = y - 0.5;
-  int x0 = int(floor(fx));
-  int y0 = int(floor(fy));
-  float tx = fx - float(x0);
-  float ty = fy - float(y0);
-  ivec2 slot = slotOf(glyph);
-  float s00 = 0.0, s10 = 0.0, s01 = 0.0, s11 = 0.0;
-  bool xa = x0 >= 0 && x0 < uCell.x, xb = x0 + 1 >= 0 && x0 + 1 < uCell.x;
-  bool ya = y0 >= 0 && y0 < uCell.y, yb = y0 + 1 >= 0 && y0 + 1 < uCell.y;
-  if (xa && ya) s00 = texelFetch(uAtlas, slot + ivec2(x0, y0), 0).r;
-  if (xb && ya) s10 = texelFetch(uAtlas, slot + ivec2(x0 + 1, y0), 0).r;
-  if (xa && yb) s01 = texelFetch(uAtlas, slot + ivec2(x0, y0 + 1), 0).r;
-  if (xb && yb) s11 = texelFetch(uAtlas, slot + ivec2(x0 + 1, y0 + 1), 0).r;
-  return mix(mix(s00, s10, tx), mix(s01, s11, tx), ty);
+// The same, one to one: a resting face is a straight copy of its slot.
+float faceExact(uint glyph, float under, ivec2 inner) {
+  float ink = glyph != 0u ? texelFetch(uAtlas, slotOf(glyph) + inner, 0).r : 0.0;
+  if (under > 0.0 && inner.y >= uUnderY && inner.y < uUnderY + uDpr) ink = max(ink, under);
+  return ink;
 }
 
 void main() {
@@ -103,23 +101,27 @@ void main() {
       uint X = g.x;
       uint Y = g.y;
       float phase = a.z;
+      uint lines = uint(a.w * 255.0 + 0.5);
+      float underX = float(lines >> 4u) / 15.0;
+      float underY = float(lines & 15u) / 15.0;
       bool fade = (g.z & 4u) != 0u;
       vec3 colorX = (g.z & 1u) != 0u ? uAccent : uInkColor;
       vec3 colorY = (g.z & 8u) != 0u ? uAccent : uInkColor;
       float cx = 0.0;
       float cy = 0.0;
 
-      if (phase <= 0.0 || Y == X && a.x == a.y) {
-        cx = cover(X, inner) * a.x;
+      if (phase <= 0.0 || (Y == X && a.x == a.y && underX == underY)) {
+        cx = faceExact(X, underX, inner) * a.x;
       } else if (phase >= 1.0) {
-        cy = cover(Y, inner) * a.y;
+        cy = faceExact(Y, underY, inner) * a.y;
       } else if (fade) {
-        cx = cover(X, inner) * a.x * (1.0 - phase);
-        cy = cover(Y, inner) * a.y * phase;
+        cx = faceExact(X, underX, inner) * a.x * (1.0 - phase);
+        cy = faceExact(Y, underY, inner) * a.y * phase;
       } else if (uTurn == 0) {
         float H = float(uCell.y);
         float mid = floor(H * 0.5);
         float y = float(inner.y) + 0.5;
+        float x = float(inner.x) + 0.5;
         float c = cos(phase * PI);
         float sn = sin(phase * PI);
         // the fold dims as it turns edge-on
@@ -127,51 +129,52 @@ void main() {
         // the flap's free edge swings toward the viewer, so it reads a
         // little wider than its hinge
         float cxm = float(uCell.x) * 0.5;
-        float x = float(inner.x) + 0.5;
+        bool onFlap = false;
         if (y < mid) {
           float h = c * mid;
           if (phase < 0.5 && y >= mid - h) {
+            onFlap = true;
             float src = mid - (mid - y) / max(c, 0.001);
             float grow = 1.0 + 0.16 * sn * (mid - src) / mid;
-            cx = coverAt2(X, cxm + (x - cxm) / grow, src) * a.x * lit;
+            cx = face(X, underX, cxm + (x - cxm) / grow, src) * a.x * lit;
           } else {
-            cy = cover(Y, inner) * a.y;
+            cy = faceExact(Y, underY, inner) * a.y;
           }
         } else {
           float h = -c * mid;
           if (phase > 0.5 && y < mid + h) {
+            onFlap = true;
             float src = mid + (y - mid) / max(-c, 0.001);
             float grow = 1.0 + 0.16 * sn * (src - mid) / mid;
-            cy = coverAt2(Y, cxm + (x - cxm) / grow, src) * a.y * lit;
+            cy = face(Y, underY, cxm + (x - cxm) / grow, src) * a.y * lit;
           } else {
-            cx = cover(X, inner) * a.x;
+            cx = faceExact(X, underX, inner) * a.x;
           }
         }
-        // the split between the halves shows while the flap is moving
-        if (inner.y == int(mid) - 1) { cx *= 0.25; cy *= 0.25; }
+        // the flap is a card: a faint body while it moves, and a crease
+        // where it hinges
+        if (onFlap) color = mix(color, uInkColor, uBody * sn);
+        if (inner.y == int(mid) - 1) color = mix(color, uInkColor, uBody * 1.6 * sn);
       } else {
         // drum: the strip rolls up through the window; faces bow at the edges
         float H = float(uCell.y);
-        float yn = (float(inner.y) + 0.5) / H - 0.5;          // -0.5..0.5
+        float yn = (float(inner.y) + 0.5) / H - 0.5;
         float bow = sin(phase * PI);
-        // screen = mix(d, sin(d*pi)/pi*... ) solved for d by two Newton steps
         float d = yn;
         for (int k = 0; k < 3; k++) {
           float f = mix(d, 0.5 * sin(d * PI), bow) - yn;
           float df = mix(1.0, 0.5 * PI * cos(d * PI), bow);
           d -= f / max(df, 0.2);
         }
-        float s = d + phase;                                  // strip position
+        float s = d + phase;
         float lit = mix(1.0, cos(d * PI), uShade * bow);
-        if (s < 0.5) cx = coverAt(X, inner.x, (s + 0.5) * H) * a.x * lit;
-        else cy = coverAt(Y, inner.x, (s - 0.5) * H) * a.y * lit;
+        float x = float(inner.x) + 0.5;
+        if (s < 0.5) cx = face(X, underX, x, (s + 0.5) * H) * a.x * lit;
+        else cy = face(Y, underY, x, (s - 0.5) * H) * a.y * lit;
       }
 
       color = mix(color, colorX, clamp(cx, 0.0, 1.0));
       color = mix(color, colorY, clamp(cy, 0.0, 1.0));
-      if (a.w > 0.0 && inner.y >= uUnderY && inner.y < uUnderY + uDpr) {
-        color = mix(color, colorX, a.w);
-      }
       if ((g.z & 2u) != 0u && inner.x < 2 * uDpr &&
           inner.y >= 2 * uDpr && inner.y < uCell.y - 2 * uDpr) {
         color = uInkColor;
@@ -212,7 +215,7 @@ function createGL(canvas) {
   gl.useProgram(program);
   const u = {};
   for (const name of ["uGlyph", "uInk", "uAtlas", "uCell", "uGrid", "uOrigin", "uHeight", "uPerRow",
-    "uDpr", "uUnderY", "uTurn", "uShade", "uPaper", "uInkColor", "uAccent"]) {
+    "uDpr", "uUnderY", "uTurn", "uShade", "uBody", "uPaper", "uInkColor", "uAccent"]) {
     u[name] = gl.getUniformLocation(program, name);
   }
   gl.bindVertexArray(gl.createVertexArray());
@@ -254,12 +257,13 @@ function createGL(canvas) {
       gl.uniform1i(u.uDpr, Math.max(1, Math.round(dpr)));
       gl.uniform1i(u.uUnderY, underY);
     },
-    style({ paper, ink, accent, turn, shade }) {
+    style({ paper, ink, accent, turn, shade, body }) {
       gl.uniform3fv(u.uPaper, hexToRgb(paper));
       gl.uniform3fv(u.uInkColor, hexToRgb(ink));
       gl.uniform3fv(u.uAccent, hexToRgb(accent));
       gl.uniform1i(u.uTurn, turn === "drum" ? 1 : 0);
       gl.uniform1f(u.uShade, shade);
+      gl.uniform1f(u.uBody, body);
     },
     atlas(atlas) {
       const state = atlas.takeDirty();
@@ -334,10 +338,10 @@ function create2D(canvas) {
           const flags = glyphs[o + 2];
           blit(flags & 1 ? tints.accent : tints.ink, glyphs[o], x, y, (inks[o] / 255) * (1 - phase));
           blit(flags & 8 ? tints.accent : tints.ink, glyphs[o + 1], x, y, (inks[o + 1] / 255) * phase);
-          const under = inks[o + 3] / 255;
+          const under = ((phase < 0.5 ? inks[o + 3] >> 4 : inks[o + 3] & 15)) / 15;
           if (under > 0.004) {
             context.globalAlpha = under;
-            context.fillStyle = flags & 1 ? look.accent : look.ink;
+            context.fillStyle = flags & (phase < 0.5 ? 1 : 8) ? look.accent : look.ink;
             context.fillRect(x, y + underY, cellWd, Math.max(1, Math.round(dpr)));
           }
           if (flags & 2) {

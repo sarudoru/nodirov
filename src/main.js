@@ -44,11 +44,15 @@ let metrics = null;
 let resizeTimer = 0;
 let scrollEndTimer = 0;
 let lastPointer = { x: 0, y: 0, t: 0 };
-let lastRow = 0;
 
 function computeMetrics() {
   const dpr = Math.min(3, window.devicePixelRatio || 1);
-  const fontSize = window.innerWidth < 720 ? Math.max(12, Math.round(P.size * 0.8)) : P.size;
+  // phones get a smaller face; very wide screens a slightly larger one, so
+  // the column keeps its proportion to the field
+  const w = window.innerWidth;
+  const fontSize = w < 720
+    ? Math.max(12, Math.round(P.size * 0.8))
+    : Math.round(P.size * Math.min(1.2, Math.max(1, w / 1680)));
   const font = `${fontSize}px "${FONT.family}", ui-monospace, Menlo, monospace`;
   const probe = document.createElement("canvas").getContext("2d");
   probe.font = font;
@@ -93,7 +97,7 @@ function layout() {
     measure: P.measure,
     placeInbox: (el, r, c, cc, rr) => inbox?.place(r, c, cc, rr),
   });
-  field.setWorld(layoutResult.lines, layoutResult.worldRows);
+  field.setWorld(layoutResult.lines, layoutResult.worldRows, { left: layoutResult.left, width: layoutResult.contentW });
   bindLinks(layoutResult.links);
   article.classList.add("ready");
   placeSound();
@@ -111,13 +115,10 @@ function currentSection() {
 
 const soundButton = document.getElementById("sound");
 
+// The right of the status row names the section the board is showing.
 function updateHud() {
   if (soundButton.hidden) return;
-  const camera = field.camera();
-  const last = Math.max(0, layoutResult.worldRows - field.rows());
-  field.setStatus({
-    right: `${String(Math.min(camera, last)).padStart(3, "0")}/${String(last).padStart(3, "0")}`,
-  });
+  field.setStatus({ right: currentSection().label, rightInk: P.faintAlpha });
 }
 
 // The sound switch lives on the status row, fixed to the screen. The button
@@ -166,36 +167,37 @@ const anim = { raf: 0, target: null, lastWrite: -1 };
 
 function syncFromScroll() {
   field.setScroll(scroller.scrollTop);
-  const row = Math.floor(scroller.scrollTop / metrics.cellH + 0.5);
-  if (row !== lastRow) {
-    ticker.tick(row - lastRow, performance.now());
-    lastRow = row;
-    updateHud();
-  }
 }
 
-function animateScrollTo(target, duration) {
-  target = Math.max(0, Math.min(target, scroller.scrollHeight - scroller.clientHeight));
+// A jump (a key, a wheel notch, a section link) moves the real document at
+// once; the board flips to it.
+function jumpTo(px) {
+  const max = scroller.scrollHeight - scroller.clientHeight;
+  const target = Math.max(0, Math.min(max, Math.round(px / metrics.cellH) * metrics.cellH));
+  window.cancelAnimationFrame(anim.raf);
+  anim.target = null;
+  scroller.scrollTop = target;
+  syncFromScroll();
+}
+
+// The settle after a trackpad scroll: the page eases onto the nearest whole
+// row, and the finger's half-turned flaps finish their turn.
+function settleTo(target, duration) {
   window.cancelAnimationFrame(anim.raf);
   anim.target = target;
-  if (reducedMotion.matches || !duration) {
+  const start = scroller.scrollTop;
+  const dist = target - start;
+  if (reducedMotion.matches || !duration || Math.abs(dist) < 0.5) {
     anim.lastWrite = target;
     scroller.scrollTop = target;
     anim.target = null;
     syncFromScroll();
     return;
   }
-  const start = scroller.scrollTop;
-  const dist = target - start;
-  if (Math.abs(dist) < 0.5) {
-    anim.target = null;
-    return;
-  }
   const t0 = performance.now();
   const step = (now) => {
     const p = Math.min(1, (now - t0) / duration);
-    // ease out quint: the page arrives, it does not stop
-    anim.lastWrite = start + dist * (1 - Math.pow(1 - p, 5));
+    anim.lastWrite = start + dist * (1 - Math.pow(1 - p, 3));
     scroller.scrollTop = anim.lastWrite;
     syncFromScroll();
     if (p < 1) anim.raf = window.requestAnimationFrame(step);
@@ -217,7 +219,7 @@ function onScroll() {
 function onScrollSettled() {
   if (anim.target === null) {
     const target = Math.round(scroller.scrollTop / metrics.cellH) * metrics.cellH;
-    if (Math.abs(scroller.scrollTop - target) > 0.5) animateScrollTo(target, P.settleMs);
+    if (Math.abs(scroller.scrollTop - target) > 0.5) settleTo(target, P.settleMs);
   }
   const section = currentSection();
   const hash = section.id ? `#${section.id}` : "";
@@ -243,7 +245,7 @@ function onResize() {
       const section = layoutResult.sections.find((s) => s.id === anchor.id);
       if (section) scroller.scrollTop = (section.row + anchor.offset) * metrics.cellH;
     }
-    syncFromScroll();
+    field.setScroll(scroller.scrollTop, true);
   }, 140);
 }
 
@@ -251,17 +253,15 @@ function onKey(event) {
   if (event.target.closest("textarea, input, button, a")) return;
   if (event.metaKey || event.ctrlKey || event.altKey) return;
   const page = (field.rows() - 4) * metrics.cellH;
-  let delta = null;
-  if (event.key === "ArrowDown") delta = metrics.cellH;
-  else if (event.key === "ArrowUp") delta = -metrics.cellH;
-  else if (event.key === "PageDown" || (event.key === " " && !event.shiftKey)) delta = page;
-  else if (event.key === "PageUp" || (event.key === " " && event.shiftKey)) delta = -page;
-  else if (event.key === "Home") { animateScrollTo(0, 600); event.preventDefault(); return; }
-  else if (event.key === "End") { animateScrollTo(scroller.scrollHeight, 600); event.preventDefault(); return; }
-  if (delta !== null) {
-    const base = anim.target !== null ? anim.target : scroller.scrollTop;
-    const target = Math.round((base + delta) / metrics.cellH) * metrics.cellH;
-    animateScrollTo(target, Math.abs(delta) > metrics.cellH ? 520 : 200);
+  let to = null;
+  if (event.key === "ArrowDown") to = scroller.scrollTop + metrics.cellH;
+  else if (event.key === "ArrowUp") to = scroller.scrollTop - metrics.cellH;
+  else if (event.key === "PageDown" || (event.key === " " && !event.shiftKey)) to = scroller.scrollTop + page;
+  else if (event.key === "PageUp" || (event.key === " " && event.shiftKey)) to = scroller.scrollTop - page;
+  else if (event.key === "Home") to = 0;
+  else if (event.key === "End") to = scroller.scrollHeight;
+  if (to !== null) {
+    jumpTo(to);
     event.preventDefault();
   }
 }
@@ -273,7 +273,19 @@ function onPointerMove(event) {
   const py = lastPointer.t === 0 ? event.clientY : lastPointer.y;
   lastPointer = { x: event.clientX, y: event.clientY, t: now };
   field.touch(event.clientX, event.clientY, px, py, dt);
-  if (event.pointerType !== "touch") field.pointerAt(event.clientX, event.clientY);
+  field.pointerAt(event.clientX, event.clientY);
+}
+
+// A finger on a phone presses the lattice while it rests there; once it
+// starts to scroll, the browser takes the gesture and the lens lets go.
+function onPointerDown(event) {
+  if (event.pointerType !== "touch") return;
+  lastPointer = { x: event.clientX, y: event.clientY, t: performance.now() };
+  field.pointerAt(event.clientX, event.clientY);
+}
+
+function onPointerUp(event) {
+  if (event.pointerType === "touch") field.pointerLeft();
 }
 
 function onClick(event) {
@@ -298,10 +310,11 @@ function applyCssVars() {
   style.setProperty("--accent", P.accent);
 }
 
-function heroOrigin(startRow) {
+// The name on the grid, for the opening: its row as the screen shows it.
+function heroOnScreen(startRow) {
   const hero = layoutResult.hero;
-  if (!hero || startRow > 0) return { col: field.cols() * 0.3, row: field.rows() * 0.3 };
-  return { col: hero.col + 1, row: hero.row };
+  if (!hero || startRow > 0) return null;
+  return { row: hero.row, col: hero.col, length: hero.length };
 }
 
 async function boot() {
@@ -322,12 +335,19 @@ async function boot() {
       startRow = parseInt(sessionStorage.getItem("glyph-camera") ?? "0", 10) || 0;
     } catch { /* private mode */ }
   }
-  if (startRow > 0) {
-    scroller.scrollTop = startRow * metrics.cellH;
-    syncFromScroll();
-  }
-  const origin = heroOrigin(startRow);
-  field.crystallize(origin.col, origin.row);
+  if (startRow > 0) scroller.scrollTop = startRow * metrics.cellH;
+  field.setScroll(scroller.scrollTop, true);
+  field.onTurn((rows) => {
+    ticker.tick(rows, performance.now());
+    updateHud();
+  });
+  // the full opening once per visit; a reload in the same visit is brief
+  let seen = false;
+  try {
+    seen = sessionStorage.getItem("glyph-seen") === "1";
+    sessionStorage.setItem("glyph-seen", "1");
+  } catch { /* private mode */ }
+  field.crystallize(heroOnScreen(startRow), seen || startRow > 0);
 
   field.start();
 
@@ -335,6 +355,9 @@ async function boot() {
   window.addEventListener("resize", onResize);
   window.addEventListener("keydown", onKey);
   window.addEventListener("pointermove", onPointerMove, { passive: true });
+  window.addEventListener("pointerdown", onPointerDown, { passive: true });
+  window.addEventListener("pointerup", onPointerUp, { passive: true });
+  window.addEventListener("pointercancel", onPointerUp, { passive: true });
   document.documentElement.addEventListener("mouseleave", () => field.pointerLeft());
   window.addEventListener("blur", () => field.pointerLeft());
   scroller.addEventListener("click", onClick);
@@ -353,16 +376,15 @@ async function boot() {
   soundButton.addEventListener("focus", hoverSound(true));
   soundButton.addEventListener("blur", hoverSound(false));
 
-  // Discrete wheels jump ~100px per notch, which would skip rows. Route
-  // coarse deltas through the animator; trackpads keep their native feel.
+  // A mouse wheel moves in notches; each notch is one flip of the board.
+  // Trackpads keep their native feel and turn the flaps continuously.
   scroller.addEventListener("wheel", (event) => {
-    if (event.ctrlKey || !P.wheelMs) return;
+    if (event.ctrlKey) return;
     const coarse = event.deltaMode === 1 || Math.abs(event.deltaY) >= 80;
     if (!coarse) return;
     event.preventDefault();
     const delta = event.deltaMode === 1 ? event.deltaY * metrics.cellH : event.deltaY;
-    const base = anim.target !== null ? anim.target : scroller.scrollTop;
-    animateScrollTo(Math.round((base + delta) / metrics.cellH) * metrics.cellH, P.wheelMs);
+    jumpTo(scroller.scrollTop + delta);
   }, { passive: false });
 
   document.addEventListener("visibilitychange", () => {
@@ -374,7 +396,7 @@ async function boot() {
 
   function navigateHash() {
     const section = layoutResult.sections.find((s) => s.id === decodeURIComponent(location.hash.slice(1)));
-    if (section) animateScrollTo(section.row * metrics.cellH, 700);
+    if (section) jumpTo(section.row * metrics.cellH);
   }
   window.addEventListener("hashchange", navigateHash);
   scroller.addEventListener("click", (event) => {
@@ -399,10 +421,7 @@ async function boot() {
     view: () => ({ scrollTop: scroller.scrollTop, cellH: metrics.cellH, cols: field.cols(), rows: field.rows() }),
     touch: (x, y, px, py, dt) => field.touch(x, y, px, py, dt),
     strike: (x, y) => field.strike(x, y),
-    reveal: () => {
-      const o = heroOrigin(field.camera());
-      field.crystallize(o.col, o.row);
-    },
+    reveal: () => field.crystallize(heroOnScreen(field.camera()), false),
     set(patch) {
       const changed = Object.keys(patch);
       P = { ...P, ...patch };

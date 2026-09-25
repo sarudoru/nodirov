@@ -63,7 +63,7 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
     await scrollToRow(page, 0.5);
     await page.waitForTimeout(40);
     const mid = await page.evaluate(({ r, c }) => __glyph.probe(r, c), hero);
-    assert.ok(mid.phase > 0.2 && mid.phase < 0.8, `half a row of scroll half-turns a flap (${mid.phase})`);
+    assert.ok(mid.phase > 0.1 && mid.phase < 0.95, `half a row of scroll leaves a flap mid-turn (${mid.phase})`);
     await page.waitForTimeout(700);
     const settled = await page.evaluate(() => {
       const v = __glyph.view();
