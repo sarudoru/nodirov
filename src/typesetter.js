@@ -103,6 +103,7 @@ export function typeset(blocks, article, ctx) {
   const sections = [{ row: 0, id: "", label: "" }];
   const links = [];
   let hero = null;
+  let hint = null;
   let row = 3;
 
   function span(el, text, r, c) {
@@ -253,8 +254,9 @@ export function typeset(blocks, article, ctx) {
       }
 
       case "hint": {
-        row += place(block.el, block.runs, row, left, contentW, K_FAINT);
-        row += 1;
+        const used = place(block.el, block.runs, row, left, contentW, K_FAINT);
+        hint = { row, col: left, rows: used, width: contentW };
+        row += used + 1;
         break;
       }
 
@@ -295,15 +297,20 @@ export function typeset(blocks, article, ctx) {
       }
 
       case "inbox": {
-        // A box drawn from the cells around it. The textarea sits over the
-        // interior, one cell in from the border; untyped cells stay lattice.
+        // The writing surface is marked by its corners, drawn from the cells
+        // around it; the dots inside are the paper. The textarea sits over
+        // the interior, one cell in from the edge.
         const boxCols = contentW;
-        emit(row, left, "┌" + "─".repeat(boxCols - 2) + "┐", K_FAINT);
-        for (let r = 1; r <= block.rows; r++) {
-          emit(row + r, left, "│", K_FAINT);
-          emit(row + r, left + boxCols - 1, "│", K_FAINT);
-        }
-        emit(row + block.rows + 1, left, "└" + "─".repeat(boxCols - 2) + "┘", K_FAINT);
+        const right = left + boxCols - 1;
+        const bottom = row + block.rows + 1;
+        emit(row, left, "┌─", K_FAINT);
+        emit(row, right - 1, "─┐", K_FAINT);
+        emit(row + 1, left, "│", K_FAINT);
+        emit(row + 1, right, "│", K_FAINT);
+        emit(bottom - 1, left, "│", K_FAINT);
+        emit(bottom - 1, right, "│", K_FAINT);
+        emit(bottom, left, "└─", K_FAINT);
+        emit(bottom, right - 1, "─┘", K_FAINT);
         ctx.placeInbox?.(block.el, row + 1, left + 2, boxCols - 4, block.rows);
         row += block.rows + 3;
         break;
@@ -326,7 +333,6 @@ export function typeset(blocks, article, ctx) {
   // the document ends a little before the screen does, so the last line can
   // rise to the middle rather than pin to the bottom edge
   const worldRows = row + Math.round(viewRows * 0.45);
-  article.style.height = worldRows * cellH + "px";
 
   // Native controls need a real box for focus, accessibility, and hit testing.
   // Only their text spans receive pointer events, including wrapped labels.
@@ -347,5 +353,5 @@ export function typeset(blocks, article, ctx) {
     }
   }
 
-  return { lines, worldRows, sections, links, hero, left, contentW };
+  return { lines, worldRows, sections, links, hero, hint, left, contentW };
 }

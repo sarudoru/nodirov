@@ -149,7 +149,29 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
     });
     if (lost !== "no-extension") assert.deepEqual(lost, { during: true, after: false });
 
-    // 4. A malformed hash is harmless.
+    // 4. The end of the page rests on a whole row and names the last section.
+    await page.evaluate(() => {
+      const s = document.getElementById("scroller");
+      s.scrollTop = 1e6;
+      s.dispatchEvent(new Event("scroll"));
+    });
+    await page.waitForTimeout(1500);
+    const end = await page.evaluate(() => {
+      const v = __glyph.view();
+      let turning = 0;
+      for (let r = 0; r < v.rows; r++) {
+        for (let c = 0; c < v.cols; c++) {
+          const p = __glyph.probe(r, c);
+          if (p.phase > 0 && p.phase < 1 && /[A-Za-z]/.test(p.x + p.y)) turning++;
+        }
+      }
+      return { rows: v.scrollTop / v.cellH, turning, hash: location.hash };
+    });
+    assert.ok(Math.abs(end.rows - Math.round(end.rows)) < 0.05, `the last screen rests on a row (${end.rows})`);
+    assert.equal(end.turning, 0, "nothing is left mid-turn at the end of the page");
+    assert.equal(end.hash, "#contact");
+
+    // 5. A malformed hash is harmless.
     await page.goto(base + "/#%E0%A4%A");
     await ready(page);
 

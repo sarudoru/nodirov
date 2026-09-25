@@ -39,6 +39,9 @@ export function createSubstrate(atlas, params) {
 
   let rest = [];
   let ramp = [];
+  // on a narrow screen the text starts a cell or two from the edge, where a
+  // lone dot would read as a bullet; those columns stay empty
+  let margin = 0;
 
   // the pointer presses on the lattice: marks swell around it
   let pointer = null;
@@ -93,7 +96,8 @@ export function createSubstrate(atlas, params) {
     // the lattice spacing is about square on cells twice as tall as wide.
     const stride = Math.max(1, Math.round(P.latticeStride));
     for (let i = 0; i < n; i++) {
-      const on = cols ? (i % cols) % stride === 0 : true;
+      const c = cols ? i % cols : 0;
+      const on = c % stride === 0 && !(margin <= 3 && c < margin);
       restGlyph[i] = on ? rest[(hash3(i, 7, 3) * rest.length) | 0] : 0;
       if (level[i] === 0) shown[i] = restGlyph[i];
     }
@@ -185,7 +189,7 @@ export function createSubstrate(atlas, params) {
       for (let c = 0; c < cols; c++) {
         const d = Math.hypot(c - oc, (r - or) * aspect);
         // a little grain in the front so it reads as matter, not a vector ring
-        const t = (d / P.revealSpeed) * 1000 + hash3(c, r, 11) * 70;
+        const t = (d / P.revealSpeed) * 1000 + hash3(c, r, 11) * 25;
         arrival[r * cols + c] = t;
         if (t > last) last = t;
       }
@@ -199,6 +203,16 @@ export function createSubstrate(atlas, params) {
     const r = Math.floor(i / cols);
     const c = i % cols;
     return r === hero.row && c >= hero.col && c < hero.col + hero.length;
+  };
+
+  // the hint's place in its own typing order, or -1
+  const hintIndex = (i) => {
+    const hint = reveal.hint;
+    if (!hint) return -1;
+    const r = Math.floor(i / cols) - hint.row;
+    const c = (i % cols) - hint.col;
+    if (r < 0 || r >= hint.rows || c < 0 || c >= hint.width) return -1;
+    return r * hint.width + c;
   };
 
   // ---- simulation ----
@@ -249,8 +263,12 @@ export function createSubstrate(atlas, params) {
   function contentGate(i, now) {
     if (!reveal) return 1;
     let d;
+    const k = hintIndex(i);
     if (inName(i)) {
       d = now - reveal.t0 - reveal.board - ((i % cols) - reveal.hero.col) * P.revealLetterMs;
+    } else if (k >= 0) {
+      // the one line that says what the page is types itself last
+      d = now - reveal.hintAt - k * P.revealLetterMs * 0.4;
     } else {
       d = now - reveal.ringAt - arrival[i] - 20;
     }
@@ -302,7 +320,9 @@ export function createSubstrate(atlas, params) {
     const cur = level[i];
     const t0 = P.warmThreshold;
     const stepE = P.levelStep;
-    let want = e < t0 ? 0 : Math.min(ramp.length, 1 + Math.floor((e - t0) / stepE));
+    // only cells on the grid warm into larger marks; the cells between
+    // stay empty, so a disturbance keeps the grid's own spacing
+    let want = e < t0 || !restGlyph[i] ? 0 : Math.min(ramp.length, 1 + Math.floor((e - t0) / stepE));
     if (want !== cur) {
       const edge = want > cur ? t0 + (want - 1) * stepE : t0 + cur * stepE - stepE;
       if (Math.abs(e - edge) < 0.02) want = cur;
@@ -354,15 +374,27 @@ export function createSubstrate(atlas, params) {
     step,
     sample,
     contentGate,
-    // hero: the name's { row, col, length } on the grid, or null
-    startReveal(now, hero, quick) {
+    // hero: the name's { row, col, length } on the grid, or null; hint:
+    // the line that types itself after the ring, { row, col, rows, width }
+    startReveal(now, hero, quick, hint = null) {
       const board = quick ? 0 : P.revealBoardMs;
       const letters = quick || !hero ? 0 : hero.length * P.revealLetterMs;
       const ringAt = now + board + letters;
       const oc = hero ? hero.col + (quick ? 0 : hero.length) : cols / 3;
       const or = hero ? hero.row : rows / 3;
-      reveal = { t0: now, board, ringAt, oc, or, hero: quick ? null : hero, duration: 0 };
+      reveal = { t0: now, board, ringAt, oc, or, hero: quick ? null : hero, hint: quick ? null : hint, duration: 0 };
       placeReveal();
+      if (reveal.hint) {
+        const first = Math.min(n - 1, hint.row * cols + hint.col);
+        reveal.hintAt = ringAt + arrival[first] + 180;
+        const typing = hint.rows * hint.width * P.revealLetterMs * 0.4;
+        reveal.duration = Math.max(reveal.duration, reveal.hintAt - now + typing + P.flipMs + 100);
+      }
+    },
+    setMargin(left) {
+      if (left === margin) return;
+      margin = left;
+      buildSets();
     },
     revealing: () => reveal !== null,
     endReveal() {

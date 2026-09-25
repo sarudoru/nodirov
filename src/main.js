@@ -99,11 +99,20 @@ function layout() {
     measure: P.measure,
     placeInbox: (el, r, c, cc, rr) => inbox?.place(r, c, cc, rr),
   });
+  fitHeight();
   field.setWorld(layoutResult.lines, layoutResult.worldRows, { left: layoutResult.left, width: layoutResult.contentW });
   bindLinks(layoutResult.links);
   article.classList.add("ready");
   placeSound();
   updateHud();
+}
+
+// The document's height makes the furthest scroll a whole number of rows,
+// so the last screen rests on a row like every other.
+function fitHeight() {
+  const view = scroller.clientHeight || window.innerHeight;
+  const beyond = Math.max(0, Math.ceil((layoutResult.worldRows * metrics.cellH - view) / metrics.cellH));
+  article.style.height = view + beyond * metrics.cellH + "px";
 }
 
 // Moving the window to a screen with another pixel ratio fires no resize
@@ -117,8 +126,13 @@ function watchPixelRatio() {
 
 function currentSection() {
   const camera = field.camera();
-  let current = layoutResult.sections[0];
-  for (const section of layoutResult.sections) {
+  const sections = layoutResult.sections;
+  // at the end of the page the last section is the one in view, even if its
+  // heading never reaches the top
+  const last = Math.round((scroller.scrollHeight - scroller.clientHeight) / metrics.cellH);
+  if (camera >= last) return sections[sections.length - 1];
+  let current = sections[0];
+  for (const section of sections) {
     if (section.row <= camera + 3) current = section;
   }
   return current;
@@ -255,6 +269,7 @@ function onResize() {
     // the typesetting and the scroll; only the grid gains or loses rows.
     if (window.innerWidth === lastSize.w && dpr === lastSize.dpr) {
       field.resize(window.innerWidth, window.innerHeight);
+      fitHeight();
       placeSound();
       field.setScroll(scroller.scrollTop, true);
       return;
@@ -381,7 +396,7 @@ async function boot() {
     seen = sessionStorage.getItem("glyph-seen") === "1";
     sessionStorage.setItem("glyph-seen", "1");
   } catch { /* private mode */ }
-  field.crystallize(heroOnScreen(startRow), seen || startRow > 0);
+  field.crystallize(heroOnScreen(startRow), seen || startRow > 0, startRow > 0 ? null : layoutResult.hint);
 
   field.start();
 

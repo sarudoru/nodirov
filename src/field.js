@@ -215,9 +215,9 @@ export function createField(canvasElement, params) {
 
   // A flip reaches each cell a little later across the words and down (or
   // up) the rows, so the board turns over as a cascade.
-  function cascadeOf(r, c, down) {
+  function cascadeOf(r, c, step) {
     const rowFrac = rows > 1 ? r / (rows - 1) : 0;
-    return colFrac(c) * P.cascadeX + (down ? rowFrac : 1 - rowFrac) * P.cascadeY;
+    return colFrac(c) * step.across + (step.down ? rowFrac : 1 - rowFrac) * step.fall;
   }
 
   function advance(now, dt) {
@@ -257,8 +257,8 @@ export function createField(canvasElement, params) {
     }
 
     const last = steps[steps.length - 1];
-    const settleAll = P.flipMs + P.cascadeX + P.cascadeY;
-    if (now >= last.t0 + P.flipMs) {
+    const settleAll = last.flip + last.across + last.fall;
+    if (now >= last.t0 + last.flip) {
       const next = Math.round(target);
       if (next !== last.to && !(speed < P.fingerSpeed && Math.abs(target - last.to) < 0.5)) {
         pushStep(last.to, next, now);
@@ -270,12 +270,18 @@ export function createField(canvasElement, params) {
       }
     }
     // a step every cell has moved past can be forgotten
-    while (steps.length > 1 && now >= steps[1].t0 + P.cascadeX + P.cascadeY) steps.shift();
+    while (steps.length > 1 && now >= steps[1].t0 + steps[1].across + steps[1].fall) steps.shift();
   }
 
+  // A lone jump of a screenful (a key, a link) turns the board over as a
+  // slow, visible wave; a stream of steps (a flick) keeps the quick cascade.
   function pushStep(from, to, now) {
-    steps.push({ from, to, t0: now, down: to > from });
-    flapsUntil = Math.max(flapsUntil, now + P.flipMs + P.cascadeX + P.cascadeY);
+    const lone = !steps.length && Math.abs(to - from) >= 8;
+    const step = lone
+      ? { from, to, t0: now, down: to > from, flip: P.flipMs * 1.35, across: P.cascadeX * 2, fall: P.cascadeY * 2.6 }
+      : { from, to, t0: now, down: to > from, flip: P.flipMs, across: P.cascadeX, fall: P.cascadeY };
+    steps.push(step);
+    flapsUntil = Math.max(flapsUntil, now + step.flip + step.across + step.fall);
     onTurn(to - from, to);
     lastTurnRow = to;
   }
@@ -333,12 +339,12 @@ export function createField(canvasElement, params) {
 
         if (stepping) {
           // the latest flip that has reached this cell
-          const lag = cascadeOf(r, c, steps[steps.length - 1].down);
           let s = steps.length - 1;
-          while (s > 0 && now < steps[s].t0 + lag) s--;
+          while (s > 0 && now < steps[s].t0 + cascadeOf(r, c, steps[s])) s--;
           const step = steps[s];
+          const lag = cascadeOf(r, c, step);
           const started = now >= step.t0 + lag;
-          const phase = started ? smooth(Math.min(1, (now - step.t0 - lag) / P.flipMs)) : 0;
+          const phase = started ? smooth(Math.min(1, (now - step.t0 - lag) / step.flip)) : 0;
           const a = gated(docAt(step.from + r, c, faceA), gate);
           const b = gated(docAt(step.to + r, c, faceB), gate);
           if (a.glyph || (started && b.glyph)) {
@@ -581,6 +587,7 @@ export function createField(canvasElement, params) {
       worldRows = totalRows;
       textLeft = column.left;
       textWidth = Math.max(1, column.width);
+      substrate.setMargin(textLeft);
       buildWorld();
       requestDraw();
     },
@@ -617,8 +624,12 @@ export function createField(canvasElement, params) {
     pointerAt(x, y) {
       const { col, row, inside } = pointerCell(x, y);
       cursorCell = inside ? row * cols + col : -1;
-      if (inside && !reducedMotion) substrate.setPointer(col + 0.5, row + 0.5);
-      else substrate.setPointer(null);
+      // the cursor mark sits in a cell; the lens follows the pointer exactly
+      if (inside && !reducedMotion) {
+        substrate.setPointer((x * metrics.dpr - originX) / metrics.cellWd, (y * metrics.dpr) / metrics.cellHd);
+      } else {
+        substrate.setPointer(null);
+      }
       requestDraw();
     },
     pointerLeft() {
@@ -678,9 +689,9 @@ export function createField(canvasElement, params) {
 
     // First contact: the empty board comes up, the name's cells turn one by
     // one, then a ring leaves the name and the rest turns in behind it.
-    crystallize(hero, quick = false) {
+    crystallize(hero, quick = false, hint = null) {
       if (reducedMotion) return;
-      substrate.startReveal(performance.now(), hero, quick);
+      substrate.startReveal(performance.now(), hero, quick, hint);
       requestDraw();
     },
 

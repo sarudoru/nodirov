@@ -153,10 +153,21 @@ void main() {
         }
         // the flap is a card: a faint body while it moves, and a crease
         // where it hinges
-        // the moving flap shows the face it carries: the old face on the way
-        // down, the new face's lower half after
+        // The moving flap is a card: a faint body, a hairline of paper where
+        // it meets its neighbour, and a darker free edge. It shows only while
+        // it carries a letter: the old face on the way down, the new face's
+        // lower half after.
         bool body = phase < 0.5 ? (g.z & 16u) != 0u : (g.z & 32u) != 0u;
-        if (body && onFlap) color = mix(color, uInkColor, uBody * sn);
+        if (body && onFlap) {
+          bool free = abs(y - (mid - c * mid)) < float(uDpr);
+          if (inner.x < uDpr) {
+            color = uPaper;
+            cx = 0.0;
+            cy = 0.0;
+          } else {
+            color = mix(color, uInkColor, uBody * sn * (free ? 3.5 : 1.0));
+          }
+        }
         if (body && inner.y == int(mid) - 1) color = mix(color, uInkColor, uBody * 1.6 * sn);
       } else {
         // drum: the strip rolls up through the window; faces bow at the edges
