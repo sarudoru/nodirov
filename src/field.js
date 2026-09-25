@@ -224,6 +224,10 @@ export function createField(canvasElement, params) {
     if (reducedMotion) {
       steps = [];
       shown = Math.round(target);
+      if (shown !== lastTurnRow) {
+        onTurn(shown - lastTurnRow, shown);
+        lastTurnRow = shown;
+      }
       return;
     }
 
