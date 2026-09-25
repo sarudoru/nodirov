@@ -16,8 +16,7 @@
 //   h2                 a section heading, ruled to the column's edge
 //   li                 an entry: its text on the left, a <time> at the
 //                      column's right edge, an optional <small> note below.
-//                      The cells between them are left to the lattice, so
-//                      its dots become the leaders.
+//                      The cells between them are left to the resting field.
 //   form[data-inbox]   the message box, drawn from box cells
 //   .actions           a row of links or buttons
 

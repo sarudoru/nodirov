@@ -1,10 +1,12 @@
 # nodirov.com, the glyph field
 
 A personal site with one law: **the character cell is the only visual
-primitive**. The viewport is a fixed grid of cells. The document scrolls
-invisibly underneath, and each cell shows which character the scroll puts in
-it. Between two rows every cell is a split-flap turned by the scroll itself.
-Nothing moves; cells change.
+primitive**. The viewport is a fixed grid of cells, each holding a faint
+character of its own that now and then turns into another. The document
+scrolls invisibly underneath, and each cell shows which character the scroll
+puts in it: a resting character turns into the letter, and back. Between two
+rows every cell is a split-flap turned by the scroll itself. Nothing moves;
+cells change.
 
 Read [CONSTITUTION.md](CONSTITUTION.md) before changing anything visual.
 
@@ -27,9 +29,9 @@ style.css           the no-JS document and the transparent grid-aligned text lay
 src/main.js         boot and wiring: metrics, scroll, keys, pointer, sound switch
 src/typesetter.js   semantic HTML -> grid lines + positioned transparent DOM spans
 src/field.js        each frame: which glyph every cell shows, and how far it has turned
-src/substrate.js    the lattice: resting dots, pointer lens, wake, ripples, reveal, weather
+src/substrate.js    the resting field: restless characters (or dots), pointer lens, wake, ripples, reveal, weather
 src/atlas.js        every glyph drawn once at device resolution; dots and box strokes as geometry
-src/renderer.js     one WebGL2 pass (flap, drum, fade); Canvas 2D fallback
+src/renderer.js     one WebGL2 pass; turn styles flap, roll, drum, fold, slide, fade; Canvas 2D fallback
 src/inbox.js        the message box: a transparent textarea whose text lands in cells
 src/tick.js         the sound: one synthesized thock per row
 src/params.js       every tunable: schema, defaults, URL codec, workbench controls
@@ -47,28 +49,29 @@ tests/browser.cjs   browser checks
    world row each grid row shows; its fraction says how far each flap has
    turned toward the next row (with a detent, and a small left-to-right
    sweep).
-3. Cells the document does not use ask the substrate for their lattice mark:
-   a resting dot, or a larger dot or leaning stroke where the pointer, a
-   ripple, or the opening ring has warmed it.
+3. Cells the document does not use ask the substrate what they hold: a
+   resting character, possibly mid-turn into another. Cells the pointer, a
+   ripple, or the opening ring has warmed draw darker and turn sooner.
 4. The field packs every cell into two small textures (glyphs and flags; ink
-   and phase). The renderer's fragment shader finds each device pixel's cell
-   and copies that pixel from the glyph's atlas slot, so resting text is
-   exactly as sharp as browser text. A turning cell is drawn as a flap
-   folding over its hinge, with the new face's top half behind it.
+   and phase, and the cell's turn style). The renderer's fragment shader
+   finds each device pixel's cell and copies that pixel from the glyph's
+   atlas slot, so resting text is exactly as sharp as browser text. A
+   turning cell is drawn in its style: a flap folding over its hinge, a roll
+   up through the cell, a fold on its middle, and so on.
 
 ### The workbench
 
 `lab.html` loads the page in a frame and generates a control for every entry
 in `src/params.js`. Sliders apply live. Hold **compare** to A/B against a
 snapshot, save named presets, and copy a link that reproduces the exact
-tuning (`index.html?detent=0.4&turn=drum`).
+tuning (`index.html?turn=roll&ambientTurn=fold&lattice=dots`).
 
 ### Content
 
 Edit `index.html` only. Blocks the typesetter understands: `h1` (the name),
 `p.tagline`, `p`, `p.hint`, `h2` (a ruled section heading), `ul > li` (an
 entry: text on the left, a `<time>` at the right edge, an optional `<small>`
-note below; the dots between them act as leaders), `form[data-inbox]` (the
+note below; the cells between them are left to the resting field), `form[data-inbox]` (the
 message box), `p.actions`, `p.colophon`, and inline `<a>`.
 
 ## Analytics and messages
