@@ -63,12 +63,12 @@ export function createTicker() {
   let enabled = false;
   let last = 0;
 
-  function play(strength) {
+  function play(strength, pitch = 1) {
     if (!context || !thock) return;
     const source = context.createBufferSource();
     source.buffer = thock;
     // no two ticks quite alike, or a fast scroll sounds like a machine
-    source.playbackRate.value = 0.94 + Math.random() * 0.1;
+    source.playbackRate.value = pitch * (0.94 + Math.random() * 0.1);
     const gain = context.createGain();
     gain.gain.value = 0.32 * strength;
     source.connect(gain).connect(context.destination);
@@ -97,6 +97,10 @@ export function createTicker() {
       if (!enabled || rows === 0 || now - last < 40) return;
       last = now;
       play(Math.min(1, 0.65 + Math.abs(rows) * 0.12));
+    },
+    // a typed letter lands with a smaller, higher click
+    key() {
+      if (enabled) play(0.3, 1.7);
     },
   };
 }

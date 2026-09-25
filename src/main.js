@@ -34,7 +34,7 @@ const ticker = createTicker();
 
 const inboxForm = article.querySelector("form[data-inbox]");
 const inbox = inboxForm
-  ? createInbox(inboxForm, { invalidate: () => field.requestDraw(), onSend: sendMessage })
+  ? createInbox(inboxForm, { invalidate: () => field.requestDraw(), onSend: sendMessage, onType: () => ticker.key() })
   : null;
 field.setInbox(inbox);
 

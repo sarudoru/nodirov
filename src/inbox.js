@@ -12,7 +12,7 @@
 // box and the caret can be measured at the end of the text
 const END = " ";
 
-export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
+export function createInbox(form, { invalidate = () => {}, onSend, onType } = {}) {
   const textarea = form.querySelector("textarea");
   const status = form.querySelector("[aria-live]");
   const mirror = document.createElement("div");
@@ -110,7 +110,10 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
     [...text].forEach((ch, i) => notice.set(key(row, col + i), ch));
   }
 
-  textarea.addEventListener("input", layoutText);
+  textarea.addEventListener("input", () => {
+    layoutText();
+    onType?.();
+  });
   textarea.addEventListener("compositionstart", () => {
     composing = true;
   });

@@ -125,7 +125,7 @@ export function createField(canvasElement, params) {
     if (inbox) {
       const note = inbox.at(worldRow, col);
       if (note) {
-        doc.glyph = atlas.ensure(note.ch);
+        doc.glyph = note.ch === " " ? blank : atlas.ensure(note.ch);
         doc.ink = P.textAlpha;
         doc.accent = note.accent;
         return doc;
