@@ -70,7 +70,7 @@ export const SCHEMA = [
 
   // ---- first contact ----
   { key: "revealSpeed", group: "Reveal", label: "ring speed", type: "range", min: 10, max: 300, step: 5, def: 85, unit: "cols/s" },
-  { key: "revealRing", group: "Reveal", label: "ring energy", type: "range", min: 0, max: 2, step: 0.05, def: 0.7 },
+  { key: "revealRing", group: "Reveal", label: "ring energy", type: "range", min: 0, max: 2, step: 0.05, def: 1 },
 
   // ---- ink ----
   { key: "textAlpha", group: "Ink", label: "content ink", type: "range", min: 0.5, max: 1, step: 0.02, def: 1 },

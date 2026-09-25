@@ -288,7 +288,7 @@ export function createSubstrate(atlas, params) {
       const d = now - reveal.t0 - arrival[i];
       lattice = d <= -40 ? 0 : d >= 220 ? 1 : smooth((d + 40) / 260);
       // the ring itself: cells flare as it passes through them
-      const ring = 1 - Math.abs(d - 40) / 110;
+      const ring = 1 - Math.abs(d - 40) / 90;
       if (ring > 0) e += ring * ring * P.revealRing;
     }
 
@@ -367,7 +367,9 @@ export function createSubstrate(atlas, params) {
       placeReveal();
     },
     revealing: () => reveal !== null,
-    busy: () => ripples.length > 0 || reveal !== null || pointer !== null,
+    // something is changing that needs every frame
+    busy: () => ripples.length > 0 || reveal !== null ||
+      (pointer !== null && (pointer.leaving || pointer.strength < 0.99)),
     stats() {
       let hot = 0;
       for (let i = 0; i < n; i++) if (level[i] > 0) hot++;

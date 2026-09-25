@@ -77,6 +77,11 @@ export function createField(canvasElement, params) {
   let rafId = 0;
   let running = false;
   let lastFrame = 0;
+  // Until this time the page is being touched and draws every frame. After
+  // it, the only change left is the slow weather, and ten frames a second
+  // show it as well as sixty.
+  let activeUntil = 0;
+  let flapsUntil = 0;
 
   const inkOf = (kind) => (kind === K_FAINT ? P.faintAlpha : P.textAlpha);
 
@@ -248,9 +253,11 @@ export function createField(canvasElement, params) {
       for (let q = 0; q < text.length; q++) {
         const c = start + q;
         if (r < 0 || c < 0 || c >= cols) continue;
-        const o = (r * cols + c) * 4;
-        if (text[q] === " ") put(o, blank, 1, 0, 0, 0, 0);
-        else put(o, atlas.ensure(text[q]), ink, 0, 0, 0, 0);
+        const i = r * cols + c;
+        const gate = revealing ? substrate.contentGate(i, now) : 1;
+        if (gate <= 0) continue;
+        if (text[q] === " ") put(i * 4, blank, 1, 0, 0, 0, 0);
+        else put(i * 4, atlas.ensure(text[q]), ink * gate, 0, 0, 0, 0);
       }
     };
     if (status.left) label(status.left, status.leftCol, status.leftInk);
@@ -266,6 +273,7 @@ export function createField(canvasElement, params) {
       flapFrom[i] = lastShown[i] || latticeGlyph;
       flapFromInk[i] = lastInk[i];
       flapAt[i] = now + delay;
+      flapsUntil = Math.max(flapsUntil, flapAt[i] + P.flipMs);
     }
     const age = now - flapAt[i];
     if (age >= P.flipMs) return false;
@@ -291,7 +299,8 @@ export function createField(canvasElement, params) {
 
   function tick(now) {
     rafId = 0;
-    frame(now);
+    const idle = now > activeUntil && now > flapsUntil && !substrate.busy();
+    if (!idle || now - lastFrame >= 100) frame(now);
     if (running) rafId = requestAnimationFrame(tick);
   }
 
@@ -309,6 +318,7 @@ export function createField(canvasElement, params) {
   }
 
   function requestDraw() {
+    activeUntil = performance.now() + 2500;
     if (running || !metrics || rafId) return;
     rafId = requestAnimationFrame((now) => {
       rafId = 0;
