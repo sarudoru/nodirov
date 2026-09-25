@@ -73,6 +73,8 @@ html:not(.js) small { opacity: 0.55; }
 html:not(.js) ul { list-style: none; padding: 0; }
 html:not(.js) li { display: grid; grid-template-columns: 1fr auto; column-gap: 2em; margin-bottom: 1em; }
 html:not(.js) li small { grid-column: 1 / -1; font-size: inherit; }
+html:not(.js) a { color: inherit; text-underline-offset: 0.25em; text-decoration-thickness: 1px; }
+html:not(.js) a:hover { color: var(--accent); }
 
 /* ---- Field mode: article becomes a transparent, grid-aligned text layer ---- */
 

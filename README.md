@@ -1,111 +1,84 @@
-# nodirov.com — the glyph field
+# nodirov.com, the glyph field
 
 A personal site with one law: **the character cell is the only visual
-primitive**. The viewport is a fixed grid of glyphs; a longer document passes
-through it the way tape passes a read head. Nothing scrolls — cells change.
+primitive**. The viewport is a fixed grid of cells. The document scrolls
+invisibly underneath, and each cell shows which character the scroll puts in
+it. Between two rows every cell is a split-flap turned by the scroll itself.
+Nothing moves; cells change.
 
 Read [CONSTITUTION.md](CONSTITUTION.md) before changing anything visual.
 
 ## Run
 
-Any static server from the repo root, e.g.:
+Any static server from the repo root:
 
-```
-python3 -m http.server 4173
-```
-
-then open <http://localhost:4173>. (ES modules require http; `file://` won't
-work.)
-
-## Architecture
-
-```
-index.html            the real, semantic document (SEO, no-JS, readers)
-style.css             plain-document fallback + transparent grid-text layer
-src/main.js           boot & wiring: scroll camera, resize, keys, experiments
-src/field.js          the renderer: cell buffers, ambient, traces, draw
-src/typesetter.js     semantic DOM -> {field lines, positioned DOM spans}
-src/banner.js         5-row hero letters, each built from its own character
-src/glyphs.js         ambient alphabet, ink ramp, cousin families
-src/params.js         every tunable: schema, defaults, URL codec
-lab.html              the workbench — live control of all of it (dev tool)
+```sh
+python3 -m http.server 4193
 ```
 
-### The trick that makes it a website
+then open <http://localhost:4193>. ES modules need http; `file://` will not
+work. The workbench is at <http://localhost:4193/lab.html>.
 
-The document lives in a real scroll container with the scrollbar hidden.
-Native scrolling (momentum, keyboard, find-in-page, anchors, history) drives
-the camera. The canvas paints every visible mark; a transparent,
-grid-aligned copy of the text sits above it so selection, links, and focus
-stay native. The HTML article is the single source of truth — the
-typesetter compiles it into both layers at every column count.
+## Files
 
-### The trick that makes it feel like one substrate
+```
+index.html          the real, semantic document (SEO, no-JS, screen readers)
+style.css           the no-JS document and the transparent grid-aligned text layer
+src/main.js         boot and wiring: metrics, scroll, keys, pointer, sound switch
+src/typesetter.js   semantic HTML -> grid lines + positioned transparent DOM spans
+src/field.js        each frame: which glyph every cell shows, and how far it has turned
+src/substrate.js    the lattice: resting dots, pointer lens, wake, ripples, reveal, weather
+src/atlas.js        every glyph drawn once at device resolution; dots and box strokes as geometry
+src/renderer.js     one WebGL2 pass (flap, drum, fade); Canvas 2D fallback
+src/inbox.js        the message box: a transparent textarea whose text lands in cells
+src/tick.js         the sound: one synthesized thock per row
+src/params.js       every tunable: schema, defaults, URL codec, workbench controls
+src/analytics.js    PostHog, off until a key is set
+lab.html            the workbench: every knob live on the real page
+tests/browser.cjs   browser checks
+```
 
-The fractional scroll offset is the transition: each cell draws the glyph
-of its world row and the glyph of the next row in a biased crossfade (the
-leaving glyph yields faster than the arriving one rises), so ink visibly
-pours row to row under the reader's finger — reversible, tied to the
-gesture, never on a timer. Coarse mouse-wheel notches are routed through a
-short ease so they pour instead of teleporting; fast flicks skip blending
-entirely and stay crisp.
+### How a frame is made
 
-### The trick that keeps the substrate from looking like a JPEG
-
-A background that swaps a few random cells per second reads as *static*:
-with ~2,500 cells on screen, even generous churn leaves 99% of the field
-frozen at any instant, and at 4% ink a glyph swap is nearly invisible
-anyway. So identity churn is not the mechanism of life here — **opacity
-is**. Every cell carries its own sine oscillation with a randomized period
-(4–11s) and phase, so all 2,500 cells are always in motion while each moves
-too slowly to notice; glyph cross-dissolves (~22/s, 1.5s smoothstep) ride on
-top for texture. A tide sweeps the grid on a 26s cycle, the cursor carries a
-lantern, corners fall away. Measured: ~21% total-ink swing across a tide
-period, ~500 pixels changing per second. The loop runs at a capped 30fps and
-suspends entirely when the tab is hidden or `prefers-reduced-motion` is set.
+1. The typesetter has already turned the HTML article into world rows of
+   glyphs, and laid a transparent copy of the text over the grid so the
+   browser keeps selection, links, focus, and find-in-page.
+2. The scroll position is a real number of rows. Its whole part says which
+   world row each grid row shows; its fraction says how far each flap has
+   turned toward the next row (with a detent, and a small left-to-right
+   sweep).
+3. Cells the document does not use ask the substrate for their lattice mark:
+   a resting dot, or a larger dot or leaning stroke where the pointer, a
+   ripple, or the opening ring has warmed it.
+4. The field packs every cell into two small textures (glyphs and flags; ink
+   and phase). The renderer's fragment shader finds each device pixel's cell
+   and copies that pixel from the glyph's atlas slot, so resting text is
+   exactly as sharp as browser text. A turning cell is drawn as a flap
+   folding over its hinge, with the new face's top half behind it.
 
 ### The workbench
 
-`lab.html` is the tuning surface. Every constant in the renderer is declared
-once in `src/params.js`, and the workbench generates its controls from that
-schema — sliders apply live to a real embedded field: substrate opacity and
-density, twinkle depth and periods, churn, crossfade duration and shape,
-tide, lantern, vignette, pour easing, hover and splash behavior, typeface,
-measure, and palette. Hold **compare** to A/B against a snapshot, save named
-presets, and copy a link that reproduces the exact tuning
-(`index.html?alpha=0.06&churn=40&…`). Adding a knob to the schema makes it
-appear in the UI, the URL, and the defaults at once.
+`lab.html` loads the page in a frame and generates a control for every entry
+in `src/params.js`. Sliders apply live. Hold **compare** to A/B against a
+snapshot, save named presets, and copy a link that reproduces the exact
+tuning (`index.html?detent=0.4&turn=drum`).
 
 ### Content
 
-Edit `index.html` only. Blocks the typesetter understands: `h1` (banner),
-`h2` (section heading), `p`, `p.tagline`, `p.hint`, `p.interstitial`,
-`ul > li`, inline `<a>`. Add a section, it typesets; add a `li`, it wraps.
-`TODO(sardor)` comments mark placeholder copy.
+Edit `index.html` only. Blocks the typesetter understands: `h1` (the name),
+`p.tagline`, `p`, `p.hint`, `h2` (a ruled section heading), `ul > li` (an
+entry: text on the left, a `<time>` at the right edge, an optional `<small>`
+note below; the dots between them act as leaders), `form[data-inbox]` (the
+message box), `p.actions`, `p.colophon`, and inline `<a>`.
 
-## The page's parts
+## Analytics and messages
 
-**Pictures.** A `figure` with `data-glyph="video"` (or `image`) is a region
-of the grid the sampler writes into. `data-aspect` sets its rows from its
-width; `data-fit`, `data-gamma`, `data-contrast`, `data-floor` (ink below
-this stays paper), `data-edge` (contour threshold), `data-weight` (densest
-glyph allowed) tune the contour mode. `data-mode="ramp"` with
-`data-dither` and `data-charset` maps tone alone through the font's own
-ink ramp, the way a halftone does. Block glyphs never stand in for tone.
-
-**The message box.** A `form[data-inbox]` is drawn as a box from the cells
-around it. A transparent textarea sits over the interior so typing, paste,
-IME, and the caret stay native; a hidden mirror with the same metrics
-reports the browser's line breaks, and the field paints typed characters
-into the cells with faint resting glyphs where nothing is typed yet. The
-caret is a line that blinks while the field animates and stays lit when it
-does not. Sending posts a `message_sent` event to PostHog; without
-analytics the mail client opens with the text and the box keeps it.
-
-**Analytics.** `src/analytics.js` loads PostHog only when `POSTHOG.key` is
-set: pageviews, autocapture, heatmaps, web vitals, session replay with
-inputs masked, person profiles, and GeoIP on the PostHog side. The page
-adds `section_reached` and `message_sent`.
+`src/analytics.js` loads PostHog only when `POSTHOG.key` is set: pageviews,
+autocapture, heatmaps, web vitals, session replay with inputs masked, person
+profiles, and GeoIP on the PostHog side. The page adds `section_reached`,
+`sound_toggled`, and `message_sent`. Messages are delivered as PostHog
+events; without a key the visitor's mail client opens with the text filled
+in.
 
 ## Browser checks
 
@@ -116,12 +89,15 @@ adds `section_reached` and `message_sent`.
 npm install --prefix ~/.playwright playwright && npx --prefix ~/.playwright playwright install chromium
 ```
 
-Start the local server on port 4192, then:
+Start the local server on port 4193, then:
 
 ```sh
 PLAYWRIGHT_MODULE=~/.playwright/node_modules/playwright node tests/browser.cjs
 ```
 
-`BROWSER_PATH` overrides the Chromium binary, `SITE_URL` the server. The
-checks cover boot, keyboard order, selection, the video band, the message
-box, four viewport widths, the no-JS document, and the lab.
+Headless Chromium needs a GPU backend for WebGL2; the checks pass
+`--use-angle=metal` by default (macOS). `BROWSER_ARGS=" "` runs them on the
+Canvas 2D fallback instead. `BROWSER_PATH` overrides the Chromium binary,
+`SITE_URL` the server. The checks cover boot, keyboard order, selection, the
+scroll flaps and settling, the message box, the sound switch, four viewport
+widths, reduced motion, the no-JS document, and the workbench.
