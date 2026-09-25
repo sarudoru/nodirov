@@ -89,8 +89,12 @@ export function createSubstrate(atlas, params) {
   function buildSets() {
     rest = (SETS.rest[P.restMark] ?? SETS.rest.dot).map((ch) => atlas.ensure(ch));
     ramp = (SETS.ramp[P.ramp] ?? SETS.ramp.dots).map((ch) => atlas.ensure(ch));
+    // With a stride of two, only every other column holds a dot at rest, so
+    // the lattice spacing is about square on cells twice as tall as wide.
+    const stride = Math.max(1, Math.round(P.latticeStride));
     for (let i = 0; i < n; i++) {
-      restGlyph[i] = rest[(hash3(i, 7, 3) * rest.length) | 0];
+      const on = cols ? (i % cols) % stride === 0 : true;
+      restGlyph[i] = on ? rest[(hash3(i, 7, 3) * rest.length) | 0] : 0;
       if (level[i] === 0) shown[i] = restGlyph[i];
     }
   }
@@ -328,7 +332,7 @@ export function createSubstrate(atlas, params) {
     resize,
     setParams(next, changed = []) {
       P = next;
-      if (changed.some((k) => k === "restMark" || k === "ramp")) buildSets();
+      if (changed.some((k) => k === "restMark" || k === "ramp" || k === "latticeStride")) buildSets();
       if (changed.includes("vignette")) buildVignette();
     },
     warm,
