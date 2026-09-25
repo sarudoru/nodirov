@@ -34,6 +34,9 @@ const F_ACCENT_X = 1;
 const F_CARET = 2;
 const F_FADE = 4;
 const F_ACCENT_Y = 8;
+// a face that carries a letter shows its flap's card while it turns
+const F_BODY_X = 16;
+const F_BODY_Y = 32;
 
 const ACCENT_KEY = 0x8000;
 
@@ -290,13 +293,16 @@ export function createField(canvasElement, params) {
   }
 
   // Paint a cell turning from face X to face Y; an empty face is whatever
-  // the lattice holds.
+  // the lattice holds. Only a flap with a letter on it shows its card.
   function turn(o, x, y, phase, sub) {
+    const inkedX = x.glyph && x.glyph !== blank;
+    const inkedY = y.glyph && y.glyph !== blank;
     put(o,
       x.glyph || sub.glyph, x.glyph ? x.ink : sub.ink,
       y.glyph || sub.glyph, y.glyph ? y.ink : sub.ink,
       phase,
-      (x.accent ? F_ACCENT_X : 0) | (y.accent ? F_ACCENT_Y : 0),
+      (x.accent ? F_ACCENT_X : 0) | (y.accent ? F_ACCENT_Y : 0) |
+        (inkedX ? F_BODY_X : 0) | (inkedY ? F_BODY_Y : 0),
       x.under, y.under);
   }
 

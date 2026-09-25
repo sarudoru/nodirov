@@ -50,7 +50,7 @@ export const SCHEMA = [
     help: "a hovered link turns over one letter after another" },
   { key: "shade", group: "Scroll", label: "fold shade", type: "range", min: 0, max: 1, step: 0.05, def: 0.6,
     help: "how much a face dims as it turns edge-on" },
-  { key: "body", group: "Scroll", label: "flap body", type: "range", min: 0, max: 0.2, step: 0.005, def: 0.045,
+  { key: "body", group: "Scroll", label: "flap body", type: "range", min: 0, max: 0.2, step: 0.005, def: 0.035,
     help: "a faint tint on the moving flap, so a turning cell reads as a card" },
   { key: "wake", group: "Scroll", label: "wake", type: "range", min: 0, max: 1.5, step: 0.05, def: 1,
     help: "warmth a passing letter leaves in its cell" },

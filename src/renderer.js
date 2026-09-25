@@ -153,8 +153,11 @@ void main() {
         }
         // the flap is a card: a faint body while it moves, and a crease
         // where it hinges
-        if (onFlap) color = mix(color, uInkColor, uBody * sn);
-        if (inner.y == int(mid) - 1) color = mix(color, uInkColor, uBody * 1.6 * sn);
+        // the moving flap shows the face it carries: the old face on the way
+        // down, the new face's lower half after
+        bool body = phase < 0.5 ? (g.z & 16u) != 0u : (g.z & 32u) != 0u;
+        if (body && onFlap) color = mix(color, uInkColor, uBody * sn);
+        if (body && inner.y == int(mid) - 1) color = mix(color, uInkColor, uBody * 1.6 * sn);
       } else {
         // drum: the strip rolls up through the window; faces bow at the edges
         float H = float(uCell.y);
