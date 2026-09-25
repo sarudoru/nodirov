@@ -11,7 +11,7 @@
 //   heat      the cursor's path, and the document's ink as it passes
 //             through (the wake a scrolled line leaves behind)
 //   flow      the direction the cursor moved, so warm marks lean with it
-//   waves     a click rings outward
+//   ripples   a click sends a ring outward
 //   weather   a slow field that swells and fades in place, never drifting
 
 import { DOT } from "./atlas.js";
@@ -27,10 +27,9 @@ export function createSubstrate(atlas, params) {
   let trail = new Float32Array(0);
   let flowX = new Float32Array(0);
   let flowY = new Float32Array(0);
-  let wave = new Float32Array(0);
-  let wavePrev = new Float32Array(0);
-  let waveNext = new Float32Array(0);
-  let waveLive = false;
+  // clicks: rings measured in screen distance, so they stay round on a
+  // grid whose cells are taller than wide
+  let ripples = [];
 
   let restGlyph = new Uint16Array(0);
   let restInk = new Float32Array(0);
@@ -131,9 +130,6 @@ export function createSubstrate(atlas, params) {
     trail = new Float32Array(n);
     flowX = new Float32Array(n);
     flowY = new Float32Array(n);
-    wave = new Float32Array(n);
-    wavePrev = new Float32Array(n);
-    waveNext = new Float32Array(n);
     restGlyph = new Uint16Array(n);
     restInk = new Float32Array(n);
     vignette = new Float32Array(n);
@@ -173,13 +169,24 @@ export function createSubstrate(atlas, params) {
     }
   }
 
-  function impulse(col, row, strength) {
-    const c = Math.round(col);
-    const r = Math.round(row);
-    if (c < 0 || c >= cols || r < 0 || r >= rows) return;
-    wave[r * cols + c] += strength;
-    wavePrev[r * cols + c] -= strength * 0.5;
-    waveLive = true;
+  function impulse(col, row, now) {
+    ripples.push({ col, row, t0: now });
+    if (ripples.length > 6) ripples.shift();
+  }
+
+  // Energy a ring adds at a cell: a narrow band travelling outward, fading
+  // with age.
+  function rippleAt(c, r, now) {
+    let e = 0;
+    for (const ring of ripples) {
+      const age = (now - ring.t0) / 1000;
+      const radius = age * P.rippleSpeed;
+      const d = Math.hypot(c - ring.col, (r - ring.row) * aspect);
+      const band = 1 - Math.abs(d - radius) / P.rippleWidth;
+      if (band <= 0) continue;
+      e += band * band * P.rippleEnergy * Math.max(0, 1 - age / P.rippleLife);
+    }
+    return e;
   }
 
   function placeReveal() {
@@ -200,7 +207,6 @@ export function createSubstrate(atlas, params) {
   // ---- simulation ----
 
   function step(now, dt) {
-    const k = Math.min(4, dt / 16.67);
     const cool = Math.exp(-dt / Math.max(1, P.coolMs));
     const fade = Math.exp(-dt / Math.max(1, P.wakeMs));
     const slack = Math.exp(-dt / 180);
@@ -211,32 +217,7 @@ export function createSubstrate(atlas, params) {
       flowY[i] *= slack;
     }
 
-    if (waveLive) {
-      const c2 = P.waveSpeed * P.waveSpeed * Math.min(1, k);
-      const damp = Math.pow(P.waveDamp, k);
-      let energy = 0;
-      for (let r = 0; r < rows; r++) {
-        const up = r > 0 ? -cols : 0;
-        const down = r < rows - 1 ? cols : 0;
-        for (let c = 0; c < cols; c++) {
-          const i = r * cols + c;
-          const left = c > 0 ? -1 : 0;
-          const right = c < cols - 1 ? 1 : 0;
-          const lap = wave[i + up] + wave[i + down] + wave[i + left] + wave[i + right] - 4 * wave[i];
-          waveNext[i] = (2 * wave[i] - wavePrev[i] + c2 * lap) * damp;
-          energy += Math.abs(waveNext[i]);
-        }
-      }
-      const swap = wavePrev;
-      wavePrev = wave;
-      wave = waveNext;
-      waveNext = swap;
-      if (energy < 0.02 * Math.max(1, n / 1000)) {
-        wave.fill(0);
-        wavePrev.fill(0);
-        waveLive = false;
-      }
-    }
+    if (ripples.length) ripples = ripples.filter((ring) => now - ring.t0 < P.rippleLife * 1000);
 
     // weather changes slowly; ten updates a second are plenty
     if (P.weather > 0 && now - weatherAt > 100) {
@@ -295,7 +276,7 @@ export function createSubstrate(atlas, params) {
     // weather and the wake only darken a cell's mark; they never change
     // which mark it is. Changing marks is for touch.
     let e = heat[i];
-    if (waveLive) e += Math.abs(wave[i]) * P.waveHeat;
+    if (ripples.length) e += rippleAt((i % cols) + 0.5, Math.floor(i / cols) + 0.5, now);
     if (pointer) {
       const dx = (i % cols) + 0.5 - pointer.col;
       const dy = (Math.floor(i / cols) + 0.5 - pointer.row) * aspect;
@@ -386,11 +367,11 @@ export function createSubstrate(atlas, params) {
       placeReveal();
     },
     revealing: () => reveal !== null,
-    busy: () => waveLive || reveal !== null || pointer !== null,
+    busy: () => ripples.length > 0 || reveal !== null || pointer !== null,
     stats() {
       let hot = 0;
       for (let i = 0; i < n; i++) if (level[i] > 0) hot++;
-      return { cells: n, hot, wave: waveLive };
+      return { cells: n, hot, ripples: ripples.length };
     },
   };
 }

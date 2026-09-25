@@ -16,7 +16,6 @@
 import { createAtlas } from "./atlas.js";
 import { createRenderer } from "./renderer.js";
 import { createSubstrate } from "./substrate.js";
-import { cousinsFor } from "./glyphs.js";
 
 export const K_TEXT = 1;
 export const K_FAINT = 2;
@@ -57,8 +56,8 @@ export function createField(canvasElement, params) {
   let inks = new Uint8Array(0);
 
   // Changes that happen while the page rests (a typed letter, a hovered
-  // link's cousins) turn on a clock instead of the scroll: each cell
-  // remembers what it last showed and flaps from it.
+  // link) turn on a clock instead of the scroll: each cell remembers what it
+  // last showed, as glyph plus an accent bit, and flaps from it.
   let lastShown = new Uint16Array(0);
   let lastInk = new Float32Array(0);
   let flapFrom = new Uint16Array(0);
@@ -72,9 +71,7 @@ export function createField(canvasElement, params) {
   let cursorCell = -1;
   let cursorGlyph = 0;
   let hoveredLink = -1;
-  const shimmer = new Map(); // world index -> glyph
-  let shimmerCells = [];
-  let shimmerTimer = 0;
+  let linkStart = new Map(); // link id -> its first column, for the stagger
   let inbox = null;
 
   let rafId = 0;
@@ -86,9 +83,11 @@ export function createField(canvasElement, params) {
   // ---------- the world ----------
 
   let blank = 0;
+  const ACCENT_KEY = 0x8000;
 
   function buildWorld() {
     blank = atlas.ensure("\u00a0");
+    linkStart = new Map();
     worldGlyph = new Uint16Array(worldRows * cols);
     worldKind = new Uint8Array(worldRows * cols);
     worldLink = new Int16Array(worldRows * cols).fill(-1);
@@ -98,7 +97,10 @@ export function createField(canvasElement, params) {
         const col = line.col + k;
         if (col < 0 || col >= cols) continue;
         const w = line.row * cols + col;
-        if (line.linkId !== undefined && line.linkId >= 0) worldLink[w] = line.linkId;
+        if (line.linkId !== undefined && line.linkId >= 0) {
+          worldLink[w] = line.linkId;
+          linkStart.set(line.linkId, Math.min(linkStart.get(line.linkId) ?? col, col));
+        }
         const ch = line.text[k];
         // a space inside a line belongs to the text: the cell holds a blank
         worldGlyph[w] = ch === " " ? blank : atlas.ensure(ch);
@@ -124,10 +126,12 @@ export function createField(canvasElement, params) {
         return doc;
       }
     }
-    const g = shimmer.get(w) ?? worldGlyph[w];
+    const g = worldGlyph[w];
     if (g) {
       doc.glyph = g;
       doc.ink = inkOf(worldKind[w]);
+      // a hovered link turns its letters over to the accent
+      doc.accent = hoveredLink >= 0 && worldLink[w] === hoveredLink && worldKind[w] === K_LINK;
     }
     return doc;
   }
@@ -206,19 +210,20 @@ export function createField(canvasElement, params) {
             const link = worldLink[w];
             if (link >= 0 && worldKind[w] === K_LINK) under = link === hoveredLink ? 0.85 : 0.3;
             const gate = revealing ? substrate.contentGate(i, now) : 1;
+            const delay = link >= 0 ? (c - (linkStart.get(link) ?? c)) * P.flipStagger : 0;
             if (gate < 1) {
               // first contact: the cell turns from its lattice mark to the letter
               put(o, sub.glyph, sub.ink, gA, inkA, gate, flags << 3, under * gate);
               shownInk = gate > 0.5 ? inkA : 0;
-            } else if (!clockFlap(i, o, now, gA, gA, inkA, flags << 3, sub.glyph)) {
+            } else if (!clockFlap(i, o, now, gA | (accA ? ACCENT_KEY : 0), gA, inkA, accA, sub.glyph, delay, under)) {
               put(o, gA, inkA, 0, 0, 0, flags, under);
             }
           }
-        } else if (!(phase === 0 && clockFlap(i, o, now, 0, sub.glyph, sub.ink, 0, sub.glyph))) {
+        } else if (!(phase === 0 && clockFlap(i, o, now, 0, sub.glyph, sub.ink, false, sub.glyph, 0, 0))) {
           put(o, sub.from, sub.fromInk, sub.glyph, sub.ink, sub.t, F_FADE);
         }
         if (phase === 0) {
-          lastShown[i] = gA;
+          lastShown[i] = gA | (accA ? ACCENT_KEY : 0);
           lastInk[i] = gA ? inkA : sub.ink;
         }
 
@@ -253,18 +258,25 @@ export function createField(canvasElement, params) {
   }
 
   // A resting cell whose content changed flaps from what it showed before.
-  // `target` is the document glyph, or 0 for the lattice. Returns true when
-  // it painted the cell.
-  function clockFlap(i, o, now, target, g, ink, flagsY, latticeGlyph) {
-    if (steadyFrame && target !== lastShown[i]) {
+  // `key` is the document glyph with its accent bit, or 0 for the lattice;
+  // `delay` staggers a word so it turns over letter by letter. Returns true
+  // when it painted the cell.
+  function clockFlap(i, o, now, key, g, ink, accent, latticeGlyph, delay, under) {
+    if (steadyFrame && key !== lastShown[i]) {
       flapFrom[i] = lastShown[i] || latticeGlyph;
       flapFromInk[i] = lastInk[i];
-      flapAt[i] = now;
+      flapAt[i] = now + delay;
     }
     const age = now - flapAt[i];
-    if (age < 0 || age >= P.flipMs) return false;
+    if (age >= P.flipMs) return false;
+    const from = flapFrom[i] & ~ACCENT_KEY;
+    const fromAccent = flapFrom[i] & ACCENT_KEY ? F_ACCENT_X : 0;
+    if (age < 0) {
+      put(o, from, flapFromInk[i], 0, 0, 0, fromAccent, under);
+      return true;
+    }
     const t = age / P.flipMs;
-    put(o, flapFrom[i], flapFromInk[i], g, ink, t * t * (3 - 2 * t), flagsY);
+    put(o, from, flapFromInk[i], g, ink, t * t * (3 - 2 * t), fromAccent | (accent ? F_ACCENT_Y : 0), under);
     return true;
   }
 
@@ -306,31 +318,6 @@ export function createField(canvasElement, params) {
 
   function applyStyle() {
     renderer.style({ paper: P.paper, ink: P.ink, accent: P.accent, turn: P.turn, shade: P.shade });
-  }
-
-  // ---------- shimmer: hovered links walk through their cousins ----------
-
-  function stopShimmer() {
-    if (shimmerTimer) clearInterval(shimmerTimer);
-    shimmerTimer = 0;
-    shimmerCells = [];
-    shimmer.clear();
-  }
-
-  function startShimmer(cells) {
-    stopShimmer();
-    if (reducedMotion || !cells.length) return;
-    shimmerCells = cells;
-    const step = () => {
-      for (const w of shimmerCells) {
-        const family = cousinsFor(atlas.char(worldGlyph[w]));
-        if (!family) continue;
-        shimmer.set(w, atlas.ensure(family[(Math.random() * family.length) | 0]));
-      }
-      requestDraw();
-    };
-    step();
-    shimmerTimer = setInterval(step, P.shimmerTick);
   }
 
   // ---------- public ----------
@@ -382,7 +369,6 @@ export function createField(canvasElement, params) {
     setWorld(nextLines, totalRows) {
       lines = nextLines;
       worldRows = totalRows;
-      stopShimmer();
       buildWorld();
       requestDraw();
     },
@@ -434,22 +420,14 @@ export function createField(canvasElement, params) {
     strike(x, y) {
       if (reducedMotion) return;
       const { col, row } = pointerCell(x, y);
-      substrate.impulse(col, row, P.clickStrength);
+      substrate.impulse(col + 0.5, row + 0.5, performance.now());
       requestDraw();
     },
 
     hoverLink(linkId, on) {
-      hoveredLink = on ? linkId : -1;
-      if (!on) {
-        stopShimmer();
-        requestDraw();
-        return;
-      }
-      const cells = [];
-      for (let w = 0; w < worldLink.length; w++) {
-        if (worldLink[w] === linkId && worldGlyph[w] && worldKind[w] === K_LINK) cells.push(w);
-      }
-      startShimmer(cells);
+      if (on) hoveredLink = linkId;
+      else if (hoveredLink === linkId) hoveredLink = -1;
+      requestDraw();
     },
 
     setStatus(next) {
@@ -467,7 +445,6 @@ export function createField(canvasElement, params) {
 
     setReducedMotion(v) {
       reducedMotion = v;
-      if (v) stopShimmer();
       requestDraw();
     },
 
