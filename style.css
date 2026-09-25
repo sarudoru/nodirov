@@ -1,10 +1,8 @@
-@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&display=swap");
-
-/* Departure Mono — a pixel face drawn on a small grid, vendored locally so
-   the substrate never waits on a third party to know its own metrics. */
+/* Geist Mono, vendored so the grid never waits on a third party to know
+   its own metrics. */
 @font-face {
-  font-family: "Departure Mono";
-  src: url("assets/fonts/DepartureMono-Regular.woff2") format("woff2");
+  font-family: "Geist Mono";
+  src: url("assets/fonts/GeistMono-Regular.woff2") format("woff2");
   font-weight: 400;
   font-display: block;
 }
@@ -28,7 +26,7 @@ html, body {
 
 body {
   color: var(--ink);
-  font-family: "IBM Plex Mono", Menlo, monospace;
+  font-family: "Geist Mono", ui-monospace, Menlo, monospace;
 }
 
 #field {
@@ -124,7 +122,7 @@ html.js #article.ready .inbox-mirror {
   margin: 0;
   border: 0;
   padding: 0;
-  font-family: "IBM Plex Mono", Menlo, monospace;
+  font-family: "Geist Mono", ui-monospace, Menlo, monospace;
   font-weight: 400;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -158,7 +156,7 @@ html.js #article.ready .gl {
   position: absolute;
   margin: 0;
   white-space: pre;
-  font-family: "IBM Plex Mono", Menlo, monospace;
+  font-family: "Geist Mono", ui-monospace, Menlo, monospace;
   font-weight: 400;
   -webkit-text-size-adjust: none;
 }
@@ -206,3 +204,22 @@ html:not(.js) nav { display: flex; flex-wrap: wrap; gap: 1em; }
    becomes the cursor glyph. Links still work — the hand just isn't drawn. */
 html.embed-cursor #scroller,
 html.embed-cursor #scroller * { cursor: none !important; }
+
+/* The sound switch: fixed to the screen on the status row. The field draws
+   its label; the button is only the hit target and the focus. */
+#sound {
+  position: fixed;
+  z-index: 2;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  font-family: "Geist Mono", ui-monospace, Menlo, monospace;
+  text-align: left;
+  white-space: pre;
+  cursor: pointer;
+}
+#sound:focus { outline: none; }
+#sound:focus-visible { outline: 1px dotted var(--accent); outline-offset: 3px; }
+html:not(.js) #sound { display: none; }

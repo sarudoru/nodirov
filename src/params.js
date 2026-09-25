@@ -5,164 +5,81 @@
 // in lab.html. Add a knob here and it appears everywhere.
 
 export const SCHEMA = [
-  // ---- the substrate ----
-  { key: "alpha", group: "Substrate", label: "base ink", type: "range", min: 0.005, max: 0.2, step: 0.005, def: 0.05 },
-  { key: "density", group: "Substrate", label: "density", type: "range", min: 0.15, max: 1, step: 0.05, def: 1,
-    help: "fraction of cells that hold a glyph at all" },
-  { key: "ambientBand", group: "Substrate", label: "resting weight", type: "range", min: 0.1, max: 1, step: 0.05, def: 0.45,
-    help: "how far up the ink ramp the resting field may draw" },
-  { key: "restDensity", group: "Substrate", label: "resting density", type: "range", min: 0.01, max: 0.2, step: 0.005, def: 0.035,
-    help: "ink density a cool cell settles toward" },
-  { key: "fps", group: "Substrate", label: "animation fps", type: "range", min: 12, max: 60, step: 1, def: 45 },
+  // ---- type: the grid is derived from the face ----
+  { key: "size", group: "Type", label: "size", type: "range", min: 11, max: 32, step: 1, def: 17, unit: "px", layout: true },
+  { key: "tracking", group: "Type", label: "tracking", type: "range", min: 0, max: 0.4, step: 0.01, def: 0.1, layout: true,
+    help: "extra space per cell, as a share of the font size" },
+  { key: "leading", group: "Type", label: "leading", type: "range", min: 1.1, max: 2, step: 0.02, def: 1.5, layout: true },
+  { key: "measure", group: "Type", label: "measure", type: "range", min: 40, max: 96, step: 1, def: 60, unit: "cols", layout: true },
 
-  // ---- transitions through the morphospace ----
-  { key: "restRate", group: "Change", label: "resting change rate", type: "range", min: 0, max: 2, step: 0.02, def: 0.14, unit: "/cell/s" },
-  { key: "morphMs", group: "Change", label: "morph duration", type: "range", min: 120, max: 2500, step: 20, def: 520, unit: "ms" },
-  { key: "morphSteps", group: "Change", label: "morph steps", type: "range", min: 2, max: 10, step: 1, def: 7,
-    help: "intermediate glyphs walked through on the way" },
-  { key: "hasteGain", group: "Change", label: "heat haste", type: "range", min: 0, max: 0.85, step: 0.05, def: 0.55,
-    help: "how much faster hot cells settle" },
-  { key: "twAmp", group: "Change", label: "twinkle depth", type: "range", min: 0, max: 1, step: 0.05, def: 0.4 },
-  { key: "twMin", group: "Change", label: "twinkle period min", type: "range", min: 1, max: 20, step: 0.5, def: 4, unit: "s" },
-  { key: "twMax", group: "Change", label: "twinkle period max", type: "range", min: 2, max: 40, step: 0.5, def: 11, unit: "s" },
-  { key: "burstGain", group: "Change", label: "burst intensity", type: "range", min: 1, max: 20, step: 0.5, def: 7,
-    help: "cells cluster into weather rather than changing at a uniform rate" },
-  { key: "burstOn", group: "Change", label: "burst onset", type: "range", min: 0, max: 0.6, step: 0.01, def: 0.07, unit: "/s" },
-  { key: "burstOff", group: "Change", label: "burst decay", type: "range", min: 0.05, max: 3, step: 0.05, def: 0.55, unit: "/s" },
-  { key: "flipSharp", group: "Change", label: "flip sharpness", type: "range", min: 0, max: 1, step: 0.05, def: 0.72,
-    help: "1 = discrete split-flap clicks, 0 = continuous cross-fade" },
-  { key: "settleHold", group: "Change", label: "settle hold", type: "range", min: 0, max: 600, step: 10, def: 180, unit: "ms",
-    help: "enforced stillness on arrival, so a change lands instead of merely stopping" },
+  // ---- the lattice: what a cell holds at rest ----
+  { key: "restMark", group: "Lattice", label: "resting mark", type: "select", def: "dot",
+    options: [["dot", "dot"], ["plus", "plus"], ["mark", "mixed marks"]] },
+  { key: "ramp", group: "Lattice", label: "warm marks", type: "select", def: "dots",
+    options: [["soft", "dot, colon, plus, star"], ["dots", "growing dots"], ["marks", "colon, plus, star"]] },
+  { key: "restAlpha", group: "Lattice", label: "lattice ink", type: "range", min: 0.02, max: 0.5, step: 0.01, def: 0.2 },
+  { key: "heatInk", group: "Lattice", label: "warm ink", type: "range", min: 0, max: 6, step: 0.05, def: 2.4,
+    help: "how much darker a warm cell draws" },
+  { key: "warmThreshold", group: "Lattice", label: "warm threshold", type: "range", min: 0.02, max: 0.6, step: 0.01, def: 0.12 },
+  { key: "levelStep", group: "Lattice", label: "level step", type: "range", min: 0.05, max: 0.8, step: 0.01, def: 0.16 },
+  { key: "fadeMs", group: "Lattice", label: "mark change", type: "range", min: 0, max: 500, step: 10, def: 110, unit: "ms" },
+  { key: "weather", group: "Lattice", label: "weather", type: "range", min: 0, max: 1, step: 0.01, def: 0.3,
+    help: "a slow field that swells marks in place" },
+  { key: "weatherScale", group: "Lattice", label: "weather size", type: "range", min: 3, max: 40, step: 1, def: 11, unit: "cells" },
+  { key: "weatherSpeed", group: "Lattice", label: "weather pace", type: "range", min: 0, max: 1, step: 0.01, def: 0.12 },
+  { key: "vignette", group: "Lattice", label: "vignette", type: "range", min: 0, max: 1, step: 0.05, def: 0.5 },
 
-  // ---- heat: the cursor warms the medium ----
-  { key: "warmRadius", group: "Heat", label: "touch radius", type: "range", min: 1, max: 18, step: 0.5, def: 5.5, unit: "cells" },
-  { key: "warmGain", group: "Heat", label: "touch strength", type: "range", min: 0, max: 2, step: 0.02, def: 0.42 },
-  { key: "heatDiffuse", group: "Heat", label: "spread", type: "range", min: 0, max: 0.24, step: 0.005, def: 0.115 },
-  { key: "heatCool", group: "Heat", label: "cooling", type: "range", min: 0.86, max: 0.999, step: 0.001, def: 0.9,
-    help: "per-frame retention — higher lingers longer" },
-  { key: "heatCeiling", group: "Heat", label: "heat ceiling", type: "range", min: 0.2, max: 3, step: 0.05, def: 1.15 },
-  { key: "heatRate", group: "Heat", label: "heat change rate", type: "range", min: 0, max: 30, step: 0.5, def: 9, unit: "/cell/s",
-    help: "extra transitions per second in hot cells" },
-  { key: "heatAlpha", group: "Heat", label: "heat glow", type: "range", min: 0, max: 8, step: 0.1, def: 0,
-    help: "leave at 0 — the cursor's signature is turnover, not brightness" },
-  { key: "rateKnee", group: "Heat", label: "response knee", type: "range", min: 1, max: 8, step: 0.1, def: 5.2,
-    help: "exponential steepness — a lazy hover does nothing, a real gesture melts the field" },
-  { key: "densityGain", group: "Heat", label: "heat weight", type: "range", min: 0, max: 0.5, step: 0.01, def: 0.13,
-    help: "how much denser glyphs get when hot" },
-  { key: "energyThreshold", group: "Heat", label: "warm threshold", type: "range", min: 0, max: 0.5, step: 0.01, def: 0.05 },
+  // ---- scrolling: the scroll position turns every cell's flap ----
+  { key: "turn", group: "Scroll", label: "turn", type: "select", def: "flap",
+    options: [["flap", "split-flap"], ["drum", "drum"]] },
+  { key: "detent", group: "Scroll", label: "detent", type: "range", min: 0, max: 0.9, step: 0.01, def: 0.3,
+    help: "how much of each row of scroll the flaps hold still" },
+  { key: "sweep", group: "Scroll", label: "sweep", type: "range", min: 0, max: 0.8, step: 0.01, def: 0.2,
+    help: "left cells turn a little before right ones" },
+  { key: "flipMs", group: "Scroll", label: "clock flap", type: "range", min: 40, max: 600, step: 10, def: 150, unit: "ms",
+    help: "how long a resting cell takes to turn when its content changes (typing, hover)" },
+  { key: "shade", group: "Scroll", label: "fold shade", type: "range", min: 0, max: 1, step: 0.05, def: 0.6,
+    help: "how much a face dims as it turns edge-on" },
+  { key: "wake", group: "Scroll", label: "wake", type: "range", min: 0, max: 1.5, step: 0.05, def: 1,
+    help: "warmth a passing letter leaves in its cell" },
+  { key: "wakeInk", group: "Scroll", label: "wake ink", type: "range", min: 0, max: 4, step: 0.05, def: 1.5,
+    help: "how much darker a cell's mark draws while it is still warm" },
+  { key: "wakeMs", group: "Scroll", label: "wake cooling", type: "range", min: 40, max: 1500, step: 10, def: 260, unit: "ms" },
+  { key: "wheelMs", group: "Scroll", label: "wheel ease", type: "range", min: 0, max: 900, step: 10, def: 320, unit: "ms" },
+  { key: "settleMs", group: "Scroll", label: "settle ease", type: "range", min: 0, max: 700, step: 10, def: 220, unit: "ms" },
 
-  // ---- flow: strokes lean along the current ----
-  { key: "flowGain", group: "Flow", label: "flow pickup", type: "range", min: 0, max: 3, step: 0.05, def: 1 },
-  { key: "flowDecay", group: "Flow", label: "flow persistence", type: "range", min: 0.7, max: 0.999, step: 0.001, def: 0.86 },
-  { key: "flowThreshold", group: "Flow", label: "flow threshold", type: "range", min: 0.01, max: 1.5, step: 0.01, def: 0.22,
-    help: "current needed before strokes align to it" },
+  // ---- touch: the cursor warms the lattice ----
+  { key: "lens", group: "Touch", label: "lens", type: "range", min: 0, max: 3, step: 0.05, def: 1.1,
+    help: "how much the marks swell around the pointer" },
+  { key: "lensRadius", group: "Touch", label: "lens radius", type: "range", min: 1, max: 16, step: 0.5, def: 7, unit: "cells" },
+  { key: "warmRadius", group: "Touch", label: "wake radius", type: "range", min: 1, max: 12, step: 0.5, def: 3.5, unit: "cells" },
+  { key: "warmGain", group: "Touch", label: "wake strength", type: "range", min: 0, max: 3, step: 0.02, def: 1.2 },
+  { key: "coolMs", group: "Touch", label: "cooling", type: "range", min: 60, max: 3000, step: 20, def: 520, unit: "ms" },
+  { key: "flowGain", group: "Touch", label: "lean", type: "range", min: 0, max: 3, step: 0.05, def: 1 },
+  { key: "flowThreshold", group: "Touch", label: "lean threshold", type: "range", min: 0.02, max: 2, step: 0.01, def: 0.6 },
+  { key: "waveSpeed", group: "Touch", label: "ripple speed", type: "range", min: 0, max: 0.7, step: 0.01, def: 0.45 },
+  { key: "waveDamp", group: "Touch", label: "ripple damping", type: "range", min: 0.88, max: 0.999, step: 0.001, def: 0.965 },
+  { key: "waveHeat", group: "Touch", label: "ripple energy", type: "range", min: 0, max: 3, step: 0.05, def: 1.2 },
+  { key: "clickStrength", group: "Touch", label: "click force", type: "range", min: 0, max: 12, step: 0.1, def: 5 },
+  { key: "cursorEmbed", group: "Touch", label: "embedded cursor", type: "bool", def: true,
+    help: "hide the pointer; the cell under it becomes the cursor" },
+  { key: "cursorGlyph", group: "Touch", label: "cursor glyph", type: "select", def: "+",
+    options: [["+", "+"], ["×", "×"], ["•", "•"], ["○", "○"]] },
+  { key: "shimmerTick", group: "Touch", label: "link shimmer", type: "range", min: 60, max: 900, step: 10, def: 240, unit: "ms" },
 
-  // ---- waves: clicks ring outward ----
-  { key: "waveSpeed", group: "Wave", label: "ripple speed", type: "range", min: 0, max: 0.9, step: 0.01, def: 0.42 },
-  { key: "waveDamp", group: "Wave", label: "ripple damping", type: "range", min: 0.88, max: 0.999, step: 0.001, def: 0.955 },
-  { key: "waveHeat", group: "Wave", label: "ripple energy", type: "range", min: 0, max: 3, step: 0.05, def: 1.1 },
-  { key: "clickStrength", group: "Wave", label: "click force", type: "range", min: 0, max: 8, step: 0.1, def: 2.4 },
-
-  // ---- the aperture ----
-  { key: "vignette", group: "Aperture", label: "vignette", type: "range", min: 0, max: 1, step: 0.05, def: 0.4 },
-  { key: "glitch", group: "Aperture", label: "unstable glyphs", type: "bool", def: true },
-  { key: "glitchMs", group: "Aperture", label: "instability interval", type: "range", min: 400, max: 12000, step: 100, def: 2600, unit: "ms" },
-
-  // ---- the board: scrolling is every cell flipping to its new letter ----
-  { key: "flipMs", group: "Board", label: "flip duration", type: "range", min: 80, max: 900, step: 10, def: 260, unit: "ms",
-    help: "how long a cell takes to become its new character" },
-  { key: "flipSteps", group: "Board", label: "flip ladder", type: "range", min: 2, max: 8, step: 1, def: 5,
-    help: "intermediate letterforms a cell walks through on the way" },
-  { key: "flipSweep", group: "Board", label: "column sweep", type: "range", min: 0, max: 8, step: 0.25, def: 1, unit: "ms/col",
-    help: "stagger across columns, so a row change ripples instead of snapping" },
-  { key: "flipDrift", group: "Board", label: "row drift", type: "range", min: 0, max: 16, step: 0.5, def: 2, unit: "ms/row" },
-  { key: "flipHysteresis", group: "Board", label: "row threshold", type: "range", min: 0.5, max: 0.9, step: 0.01, def: 0.58,
-    help: "how far past a row boundary the scroll must travel before the board flips" },
-  { key: "flipCoalesce", group: "Board", label: "coalesce window", type: "range", min: 0, max: 1.5, step: 0.05, def: 0.7,
-    help: "a flip arriving while the last is still this far from done lands instantly — continuous scrolling never stacks ladders" },
-  { key: "releaseRatio", group: "Board", label: "release speed", type: "range", min: 0.15, max: 1, step: 0.05, def: 0.45,
-    help: "at rest, how fast a departing letter sinks relative to an arriving one rising" },
-  { key: "traceRows", group: "Board", label: "scroll trace", type: "range", min: 0, max: 6, step: 0.25, def: 3, unit: "rows",
-    help: "while scrolling, departing text lingers for this many rows of travel before it is gone" },
-  { key: "wheelMs", group: "Board", label: "wheel ease", type: "range", min: 0, max: 700, step: 10, def: 220, unit: "ms" },
-  { key: "settleMs", group: "Board", label: "settle ease", type: "range", min: 0, max: 700, step: 10, def: 150, unit: "ms" },
-  { key: "scrollHeat", group: "Board", label: "scroll warms field", type: "range", min: 0, max: 1.5, step: 0.05, def: 0.35 },
-
-  // ---- the cursor: a glyph that lives in the grid ----
-  { key: "cursorEmbed", group: "Cursor", label: "embedded cursor", type: "bool", def: true,
-    help: "hide the pointer; the cell under it becomes the cursor glyph" },
-  { key: "cursorGlyph", group: "Cursor", label: "cursor glyph", type: "select", def: "+",
-    options: [["+", "+"], ["·", "·"], ["×", "×"], ["┼", "┼"], ["■", "■"], ["○", "○"]] },
-  { key: "cursorMs", group: "Cursor", label: "cursor flip", type: "range", min: 30, max: 400, step: 10, def: 110, unit: "ms",
-    help: "how fast an oncoming cell becomes the cursor, and how fast it recovers" },
-
-  // ---- paper: the environment the ink lives on ----
-  { key: "grain", group: "Paper", label: "grain", type: "range", min: 0, max: 1, step: 0.02, def: 0,
-    help: "paper tooth multiplied into the page" },
-  { key: "grainScale", group: "Paper", label: "grain size", type: "range", min: 1, max: 6, step: 0.5, def: 1.5, unit: "px" },
-  { key: "grainLive", group: "Paper", label: "live grain", type: "bool", def: false,
-    help: "grain shifts every frame (film) instead of sitting still (paper)" },
-  { key: "inkVariance", group: "Paper", label: "ink variance", type: "range", min: 0, max: 1, step: 0.05, def: 0.25,
-    help: "per-cell weight variation, like a ribbon that does not strike evenly" },
-  { key: "baselineJitter", group: "Paper", label: "baseline jitter", type: "range", min: 0, max: 1, step: 0.05, def: 0.12,
-    help: "fraction of cells struck one device pixel high or low — typewriter misregistration" },
-  { key: "bleed", group: "Paper", label: "ink bleed", type: "range", min: 0, max: 1, step: 0.05, def: 0,
-    help: "a faint second impression, offset a hair, as ink spreads into fibre" },
-
-  // ---- reading ----
-  { key: "shimmerTick", group: "Reading", label: "hover shimmer", type: "range", min: 60, max: 900, step: 10, def: 280, unit: "ms" },
-  { key: "textAlpha", group: "Reading", label: "content ink", type: "range", min: 0.5, max: 1, step: 0.02, def: 1 },
-  { key: "faintAlpha", group: "Reading", label: "secondary ink", type: "range", min: 0.08, max: 0.9, step: 0.02, def: 0.42 },
-  { key: "shelter", group: "Reading", label: "text shelter", type: "range", min: 0, max: 1, step: 0.05, def: 0.55,
-    help: "how much the substrate calms behind text so reading stays easy" },
-
-  // ---- type ----
-  { key: "font", group: "Type", label: "typeface", type: "select", def: "geist",
-    options: [["geist", "Geist Mono"], ["plex", "IBM Plex Mono"], ["departure", "Departure Mono"], ["fragment", "Fragment Mono"], ["space", "Space Mono"],
-              ["kode", "Kode Mono"], ["courier", "Courier Prime"], ["azeret", "Azeret Mono"]], layout: true },
-  { key: "size", group: "Type", label: "size", type: "range", min: 11, max: 44, step: 1, def: 21, unit: "px", layout: true },
-  { key: "tracking", group: "Type", label: "tracking", type: "range", min: 0.02, max: 0.45, step: 0.01, def: 0.18, layout: true },
-  { key: "leading", group: "Type", label: "leading", type: "range", min: 1, max: 1.7, step: 0.02, def: 1.24, layout: true },
-  { key: "measure", group: "Type", label: "measure", type: "range", min: 40, max: 96, step: 1, def: 66, unit: "cols", layout: true },
-  { key: "alphabet", group: "Type", label: "alphabet", type: "select", def: "latin", layout: true,
-    options: [["latin", "letters + digits"], ["marks", "marks & strokes"], ["wide", "everything"], ["geometric", "geometric"]] },
+  // ---- first contact ----
+  { key: "revealSpeed", group: "Reveal", label: "ring speed", type: "range", min: 10, max: 300, step: 5, def: 85, unit: "cols/s" },
+  { key: "revealRing", group: "Reveal", label: "ring energy", type: "range", min: 0, max: 2, step: 0.05, def: 0.7 },
 
   // ---- ink ----
+  { key: "textAlpha", group: "Ink", label: "content ink", type: "range", min: 0.5, max: 1, step: 0.02, def: 1 },
+  { key: "faintAlpha", group: "Ink", label: "secondary ink", type: "range", min: 0.1, max: 0.9, step: 0.02, def: 0.46 },
   { key: "paper", group: "Ink", label: "paper", type: "color", def: "#fdfdfb" },
   { key: "ink", group: "Ink", label: "ink", type: "color", def: "#1a1a1a" },
   { key: "accent", group: "Ink", label: "accent", type: "color", def: "#c8401f" },
 ];
 
-export const FONTS = {
-  // Geist Mono is the default: a contemporary vector mono that hints cleanly
-  // and renders razor-crisp at native resolution — the "white page, black
-  // text, why does this look so good" register.
-  geist: { family: "Geist Mono", css: "Geist+Mono:wght@400" },
-  // A true pixel face: unitsPerEm 550 with a 350 advance, so the advance is
-  // only an integer at multiples of 11px (11->7, 22->14, 33->21). Its designed
-  // cell is 7x14 units — a true 1:2 ratio — so it wants no added tracking and
-  // its own 14/11 line box. computeMetrics() enforces this contract.
-  departure: {
-    family: "Departure Mono",
-    local: true,
-    grid: { sizeStep: 11, minSize: 11, tracking: 0, leading: 14 / 11 },
-  },
-  plex: { family: "IBM Plex Mono", css: "IBM+Plex+Mono:wght@400" },
-  fragment: { family: "Fragment Mono", css: "Fragment+Mono" },
-  space: { family: "Space Mono", css: "Space+Mono" },
-  kode: { family: "Kode Mono", css: "Kode+Mono:wght@400" },
-  courier: { family: "Courier Prime", css: "Courier+Prime" },
-  azeret: { family: "Azeret Mono", css: "Azeret+Mono:wght@400" },
-};
-
-// Candidate glyph sets for the substrate. Every character here is verified to
-// render with a consistent advance width in the mono faces we offer.
-export const ALPHABETS = {
-  latin: "abcdefghijklmnopqrstuvwxyz0123456789",
-  marks: ".,:;'\"`^~-_=+*/\\|()[]{}<>!?iloxvnmwustcr0123456789",
-  wide: "abcdefghijklmnopqrstuvwxyz0123456789.,:;'\"`^~-_=+*/\\|()[]{}<>!?@#$%&",
-  geometric: ".,:;'`^~-_=+*/\\|()[]{}<>·•◦○◌□▫■▲▼◄►◊─│┌┐└┘├┤┬┴┼╱╲",
-};
+export const FONT = { family: "Geist Mono" };
 
 export const BY_KEY = new Map(SCHEMA.map((entry) => [entry.key, entry]));
 

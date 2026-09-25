@@ -3,13 +3,8 @@
 // Every letter owns a family of typographic siblings — the same letter as
 // other languages write it. Shimmering through a family keeps a word
 // readable while making it visibly alive. Families are restricted to
-// Latin-1 + Latin Extended-A/B ranges that IBM Plex Mono actually covers;
+// Latin-1 + Latin Extended-A/B ranges that Geist Mono covers;
 // letters with no safe siblings stay inert, which is its own kind of charm.
-
-export const AMBIENT = "0123456789abcdefghijklmnopqrstuvwxyz";
-
-// Ink-density ramp for condensation/dissolution.
-export const RAMP = ["·", ":", "+"];
 
 const COUSIN_FAMILIES = [
   "aàáâãäåāăą", "cçćĉċč", "dďđ", "eèéêëēĕėęě", "gĝğġģ", "hĥħ",

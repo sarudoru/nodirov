@@ -1,529 +1,293 @@
-// The field: a fixed grid of character cells — the only place anything is
-// ever painted.
+// The field: a fixed grid of character cells, the only place anything is
+// painted.
 //
-// Three things share this grid and never contradict each other:
+// Every cell is a small flap mechanism. Each frame it is told which glyph
+// it shows, which glyph it is turning to, and how far the turn has gone:
 //
-//   the substrate   a living medium of glyphs (substrate.js), warmed by the
-//                   cursor, transitioning through the morphospace
-//   the document    committed text, poured row to row by scroll position
-//   the aperture    vignette, and the small chrome of links and position
+//   the document   typeset into world rows. The scroll position says which
+//                  world row each grid row shows, and its fraction is the
+//                  turn: half a row of scroll is every flap half turned.
+//                  Nothing is on a timer; the reader's finger turns the flaps
+//                  and turns them back.
+//   the substrate  the resting lattice and everything that disturbs it.
 //
-// Law: nothing moves; cells only change.
+// Law: nothing moves; cells change.
 
-import { cousinsFor } from "./glyphs.js";
-import { buildGlyphSpace } from "./glyphspace.js";
+import { createAtlas } from "./atlas.js";
+import { createRenderer } from "./renderer.js";
 import { createSubstrate } from "./substrate.js";
-import { createPlanes } from "./plane.js";
-import { ALPHABETS } from "./params.js";
+import { cousinsFor } from "./glyphs.js";
 
-// cell kinds
-export const K_AMBIENT = 0;
 export const K_TEXT = 1;
 export const K_FAINT = 2;
 export const K_LINK = 3;
-export const K_HOLE = 4;
 
+// flags shared with the shader
+const F_ACCENT_X = 1;
+const F_CARET = 2;
+const F_FADE = 4;
+const F_ACCENT_Y = 8;
 
-export function createField(canvas, params) {
-  const context = canvas.getContext("2d", { alpha: false });
+export function createField(canvasElement, params) {
   let P = params;
-
-  let space = null;
-  let substrate = null;
-  let planes = null;
+  const renderer = createRenderer(canvasElement);
+  const canvas = renderer.canvas;
 
   let metrics = null;
-  let width = 0;
-  let height = 0;
+  let atlas = null;
+  let substrate = null;
+
   let cols = 0;
   let rows = 0;
-  let xOffset = 0;
-  let camera = 0;
-  let worldRows = 0;
+  let originX = 0; // device px
   let reducedMotion = false;
-  let ratio = 1;
-  let prevChar = new Uint16Array(0);
-  let lastFlipAt = -1e9; // when the board last received a flip request
-  let scrollSpeed = 0;   // rows per second, smoothed
-  let lastScrollAt = 0;
 
-  // the embedded cursor: one glyph that lives in the grid
+  // the document, typeset: one glyph per world cell
+  let worldRows = 0;
+  let worldGlyph = new Uint16Array(0);
+  let worldKind = new Uint8Array(0);
+  let worldLink = new Int16Array(0);
+  let lines = [];
+
+  // scroll: the camera is a real number of rows
+  let camera = 0;
+
+  // frame buffers handed to the renderer
+  let glyphs = new Uint16Array(0);
+  let inks = new Uint8Array(0);
+
+  // Changes that happen while the page rests (a typed letter, a hovered
+  // link's cousins) turn on a clock instead of the scroll: each cell
+  // remembers what it last showed and flaps from it.
+  let lastShown = new Uint16Array(0);
+  let lastInk = new Float32Array(0);
+  let flapFrom = new Uint16Array(0);
+  let flapFromInk = new Float32Array(0);
+  let flapAt = new Float32Array(0);
+  let restRow = -1;
+  let steadyFrame = false;
+
+  // view overlays
+  const status = { left: "", leftCol: 2, leftInk: 0.5, right: "" };
   let cursorCell = -1;
-
-  // paper: static per-cell handwriting, and a grain tile
-  let inkNoise = new Float32Array(0);
-  let jitterNoise = new Float32Array(0);
-  let grainTile = null;
-  let grainTileScale = 0;
-  let tokenGlyph = new Int16Array(0); // text token -> morphospace index
-  let lastRowFloat = 0;
-
-  let worldData = new Map();
-  let masks = new Set();
-  let vigMap = new Float32Array(0);
-  let shelterMap = new Float32Array(0);
-
-  // view-anchored committed content
-  let cellChar = new Uint16Array(0);
-  let cellKind = new Uint8Array(0);
-  let cellLink = new Int16Array(0);
-  const textPalette = [" "];
-  const textIndex = new Map([[" ", 0]]);
-  function textToken(ch) {
-    let i = textIndex.get(ch);
-    if (i === undefined) {
-      i = textPalette.length;
-      textPalette.push(ch);
-      textIndex.set(ch, i);
-    }
-    return i;
-  }
-
-  let overlay = new Map();
-  let hud = "";
-  let inbox = null;
+  let cursorGlyph = 0;
   let hoveredLink = -1;
-
-  const glitches = new Map();
-  let glitchTimer = 0;
-  let glitchCells = new Map(); // view index -> {until, token}
-
-  // looping cousin shimmer on hovered words
+  const shimmer = new Map(); // world index -> glyph
   let shimmerCells = [];
-  let shimmerShown = new Map();
   let shimmerTimer = 0;
-  let shimmerKey = "";
+  let inbox = null;
 
   let rafId = 0;
   let running = false;
-  let lastFrameAt = 0;
+  let lastFrame = 0;
 
-  const worldKey = (row, col) => row * 512 + col;
+  const inkOf = (kind) => (kind === K_FAINT ? P.faintAlpha : P.textAlpha);
 
-  // Every read out of the morphospace goes through here. An out-of-range or
-  // negative index would otherwise reach fillText as `undefined` and paint
-  // that word across the field, which is exactly the bug this guards.
-  function glyphAt(index) {
-    const ch = space.chars[index];
-    return ch === undefined ? " " : ch;
-  }
+  // ---------- the world ----------
 
-  // ---------- world & view ----------
+  let blank = 0;
 
-  function kindAlpha(kind) {
-    if (kind === K_TEXT || kind === K_LINK) return P.textAlpha;
-    if (kind === K_FAINT) return P.faintAlpha;
-    return 0;
-  }
-
-  function glyphForToken(token) {
-    if (token < tokenGlyph.length) return tokenGlyph[token];
-    // a character committed after the space was built: resolve live
-    return space ? space.indexOf(textPalette[token]) : -1;
-  }
-
-  // Compose the view for the current camera, then hand every changed cell to
-  // the substrate: a cell that gains a character commits (its glyph walks up
-  // out of the murmur), a cell that loses one releases (walks back down).
-  // mode: "instant" | "flip" | "reveal"
-  function composeView(mode = "instant", direction = 1) {
-    const n = cols * rows;
-    const fresh = cellChar.length !== n;
-    if (fresh) {
-      prevChar = new Uint16Array(n);
-      cellChar = new Uint16Array(n);
-      cellKind = new Uint8Array(n);
-      cellLink = new Int16Array(n);
-      shelterMap = new Float32Array(n);
-    } else {
-      prevChar.set(cellChar);
-    }
-    stopShimmer();
-    glitchCells.clear();
-    shelterMap.fill(1);
-    substrate.setShelter(shelterMap);
-
-    for (let row = 0; row < rows; row += 1) {
-      const worldRow = camera + row;
-      const data = worldData.get(worldRow);
-      const inRange = data && data.chars.length >= cols;
-      for (let col = 0; col < cols; col += 1) {
-        const i = row * cols + col;
-        const token = inRange ? data.chars[col] : 0;
-        if (token !== 0 && !(masks.size > 0 && masks.has(worldKey(worldRow, col)))) {
-          cellChar[i] = token;
-          cellKind[i] = data.kinds[col];
-        } else {
-          cellChar[i] = 0;
-          cellKind[i] = K_AMBIENT;
-        }
-        cellLink[i] = inRange ? data.links[col] : -1;
+  function buildWorld() {
+    blank = atlas.ensure("\u00a0");
+    worldGlyph = new Uint16Array(worldRows * cols);
+    worldKind = new Uint8Array(worldRows * cols);
+    worldLink = new Int16Array(worldRows * cols).fill(-1);
+    for (const line of lines) {
+      if (line.row < 0 || line.row >= worldRows) continue;
+      for (let k = 0; k < line.text.length; k++) {
+        const col = line.col + k;
+        if (col < 0 || col >= cols) continue;
+        const w = line.row * cols + col;
+        if (line.linkId !== undefined && line.linkId >= 0) worldLink[w] = line.linkId;
+        const ch = line.text[k];
+        // a space inside a line belongs to the text: the cell holds a blank
+        worldGlyph[w] = ch === " " ? blank : atlas.ensure(ch);
+        worldKind[w] = line.kind;
       }
     }
+  }
 
-    // Reading shelter: the substrate calms in the rows that carry text, so a
-    // paragraph never has to compete with its own background. This is a
-    // *rate* reduction, not a clearing — the murmur stays present.
-    if (P.shelter > 0) {
-      for (let row = 0; row < rows; row += 1) {
-        let inked = 0;
-        for (let col = 0; col < cols; col += 1) {
-          if (cellKind[row * cols + col] === K_TEXT || cellKind[row * cols + col] === K_LINK) inked += 1;
-        }
-        if (inked < 3) continue;
-        for (let dr = -1; dr <= 1; dr += 1) {
-          const r = row + dr;
-          if (r < 0 || r >= rows) continue;
-          const factor = 1 - P.shelter * (dr === 0 ? 1 : 0.5);
-          for (let col = 0; col < cols; col += 1) {
-            const i = r * cols + col;
-            if (factor < shelterMap[i]) shelterMap[i] = factor;
-          }
-        }
+  // What the document holds at a world cell: glyph, ink, accent. Reused.
+  const doc = { glyph: 0, ink: 0, accent: false };
+  function docAt(worldRow, col) {
+    doc.glyph = 0;
+    doc.ink = 0;
+    doc.accent = false;
+    if (worldRow < 0 || worldRow >= worldRows) return doc;
+    const w = worldRow * cols + col;
+    if (inbox) {
+      const note = inbox.at(worldRow, col);
+      if (note) {
+        doc.glyph = atlas.ensure(note.ch);
+        doc.ink = P.textAlpha;
+        doc.accent = note.accent;
+        return doc;
       }
     }
-
-    driveBoard(mode, direction, fresh);
-  }
-
-  // The board: every cell whose character changed flips. A scroll is a wave
-  // of flips sweeping the grid; nothing slides, nothing is covered.
-  function driveBoard(mode, direction, fresh) {
-    if (!substrate) return;
-    const now = performance.now();
-    // A flip that arrives while the previous one is still mostly in flight
-    // lands instantly. Deliberate steps ripple; continuous scrolling never
-    // stacks ladders into a jumble, and costs one paint per cell.
-    const crowded = mode === "flip" && now - lastFlipAt < P.flipMs * P.flipCoalesce;
-    const instant = mode === "instant" || reducedMotion || crowded;
-    if (mode === "flip") lastFlipAt = now; // every request counts: a pause earns the ripple
-    // Under continuous scroll, a departing letter lingers for traceRows of
-    // travel — the trace is a distance, so it looks the same at any speed.
-    // At rest it is a fraction of a flip.
-    const releaseMs = crowded
-      ? Math.max(40, Math.min(P.flipMs * 2.5, (P.traceRows / Math.max(scrollSpeed, 0.5)) * 1000))
-      : P.flipMs * P.releaseRatio;
-    const fadeTrace = crowded && P.traceRows > 0;
-    const cx = cols / 2;
-    const cy = rows * 0.42;
-    const aspect = metrics.cellH / metrics.cellW;
-
-    for (let row = 0; row < rows; row += 1) {
-      for (let col = 0; col < cols; col += 1) {
-        const i = row * cols + col;
-        const token = cellChar[i];
-        const before = fresh ? 0 : prevChar[i];
-        if (token === before && !fresh && mode !== "reveal") continue;
-
-        let delay = 0;
-        if (!instant) {
-          if (mode === "reveal") {
-            const dx = (col - cx) / aspect;
-            const dy = row - cy;
-            delay = 140 + Math.hypot(dx, dy) * 12 + Math.random() * 80;
-          } else {
-            const sweepRow = direction >= 0 ? row : rows - 1 - row;
-            delay = col * P.flipSweep + sweepRow * P.flipDrift;
-          }
-        }
-
-        if (token !== 0) {
-          const glyph = glyphForToken(token);
-          if (glyph < 0) continue;
-          if (mode === "reveal") substrate.release(i, now, 0, true);
-          substrate.commit(i, glyph, kindAlpha(cellKind[i]), now, delay, instant);
-        } else if (before !== 0 || fresh) {
-          // a departing letter sinks: quickly at rest, as a measured trace
-          // while scrolling (dimming in place, never cycling)
-          substrate.release(i, now, delay * 0.5, instant && !fadeTrace, releaseMs, fadeTrace);
-        }
-      }
+    const g = shimmer.get(w) ?? worldGlyph[w];
+    if (g) {
+      doc.glyph = g;
+      doc.ink = inkOf(worldKind[w]);
     }
-    if (cursorCell >= 0) placeCursor(cursorCell, true);
-  }
-
-  // ---------- the embedded cursor ----------
-
-  function cursorGlyph() {
-    return space ? space.indexOf(P.cursorGlyph) : -1;
-  }
-
-  // Give a cell back whatever it should be holding: its letter, or nothing.
-  function restoreCell(i, now, instant) {
-    const token = cellChar[i];
-    if (token !== 0) {
-      const glyph = glyphForToken(token);
-      if (glyph >= 0) substrate.commit(i, glyph, kindAlpha(cellKind[i]), now, 0, instant, P.cursorMs);
-    } else {
-      substrate.release(i, now, 0, instant, P.cursorMs);
-    }
-  }
-
-  function placeCursor(i, reassert = false) {
-    if (!substrate || !P.cursorEmbed) return;
-    const glyph = cursorGlyph();
-    if (glyph < 0) return;
-    const now = performance.now();
-    if (i !== cursorCell) {
-      if (cursorCell >= 0) restoreCell(cursorCell, now, false);
-      cursorCell = i;
-    }
-    // the oncoming cell becomes the cursor — instantly after a board flip so
-    // it never flickers, otherwise through a quick ladder
-    substrate.commit(i, glyph, 1, now, 0, reassert, P.cursorMs);
-    requestDraw();
-  }
-
-  function clearCursor() {
-    if (cursorCell < 0 || !substrate) return;
-    restoreCell(cursorCell, performance.now(), false);
-    cursorCell = -1;
-    requestDraw();
-  }
-
-  // ---------- paper ----------
-
-  function buildGrain() {
-    const size = 192;
-    const tile = document.createElement("canvas");
-    tile.width = size;
-    tile.height = size;
-    const tc = tile.getContext("2d");
-    const img = tc.createImageData(size, size);
-    const d = img.data;
-    for (let k = 0; k < d.length; k += 4) {
-      // paper tooth: mostly white, a few fibres pressing darker
-      const v = 255 - Math.min(60, Math.pow(Math.random(), 2.2) * 70);
-      d[k] = v; d[k + 1] = v; d[k + 2] = v; d[k + 3] = 255;
-    }
-    tc.putImageData(img, 0, 0);
-    grainTile = tile;
-  }
-
-  function drawPaper(now) {
-    if (P.grain <= 0) return;
-    if (!grainTile) buildGrain();
-    const tileCss = (192 * P.grainScale) / ratio;
-    const ox = P.grainLive ? -Math.random() * tileCss : 0;
-    const oy = P.grainLive ? -Math.random() * tileCss : 0;
-    context.save();
-    context.globalCompositeOperation = "multiply";
-    context.globalAlpha = P.grain;
-    for (let y = oy; y < height; y += tileCss) {
-      for (let x = ox; x < width; x += tileCss) context.drawImage(grainTile, x, y, tileCss, tileCss);
-    }
-    context.restore();
-  }
-
-
-  // Block elements mean "this much of the cell is ink". A font's █ fills
-  // its own advance, not our tracked cell, so on the grid it would read as
-  // a slat. Painting blocks as cell geometry keeps display type solid and
-  // makes the metaphor exact: the cell is the pixel.
-  const BLOCKS = {
-    "█": [0, 0, 1, 1],
-    "▀": [0, 0, 1, 0.5], "▄": [0, 0.5, 1, 0.5],
-    "▌": [0, 0, 0.5, 1], "▐": [0.5, 0, 0.5, 1],
-    "▘": [0, 0, 0.5, 0.5], "▝": [0.5, 0, 0.5, 0.5],
-    "▖": [0, 0.5, 0.5, 0.5], "▗": [0.5, 0.5, 0.5, 0.5],
-  };
-
-  function paintGlyph(ch, x, y) {
-    const block = BLOCKS[ch];
-    if (!block) {
-      context.fillText(ch, x, y);
-      return;
-    }
-    const cw = metrics.cellW;
-    const chh = metrics.cellH;
-    // snap rect edges to device pixels so adjacent cells tile without seams
-    const left = Math.round((x - cw / 2 + block[0] * cw) * ratio) / ratio;
-    const top = Math.round((y - chh / 2 + block[1] * chh) * ratio) / ratio;
-    const right = Math.round((x - cw / 2 + (block[0] + block[2]) * cw) * ratio) / ratio;
-    const bottom = Math.round((y - chh / 2 + (block[1] + block[3]) * chh) * ratio) / ratio;
-    context.fillRect(left, top, right - left, bottom - top);
+    return doc;
   }
 
   // ---------- the frame ----------
 
+  // The detent: a row holds still for part of the scroll before its flaps
+  // turn, the way a picker wheel clicks into each position.
+  function turnOf(fraction, col) {
+    const sweep = P.sweep * (col / Math.max(1, cols - 1));
+    const d = P.detent;
+    const start = d / 2 + sweep * (1 - d);
+    const span = (1 - d) * (1 - P.sweep);
+    const t = Math.min(1, Math.max(0, (fraction - start) / Math.max(0.001, span)));
+    return t * t * (3 - 2 * t);
+  }
 
-  function draw(now) {
-    context.fillStyle = P.paper;
-    context.fillRect(0, 0, width, height);
-    context.font = metrics.font;
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    // A pixel face wants its edges untouched; a vector face wants the
-    // platform rasterizer's hinting, which geometricPrecision disables.
-    if (context.textRendering !== undefined) {
-      context.textRendering = metrics.pixelFace ? "geometricPrecision" : "auto";
-    }
-    context.fillStyle = P.ink;
+  function put(o, x, inkX, y, inkY, phase, flags, under = 0) {
+    glyphs[o] = x;
+    glyphs[o + 1] = y;
+    glyphs[o + 2] = flags;
+    inks[o] = Math.round(Math.min(1, inkX) * 255);
+    inks[o + 1] = Math.round(Math.min(1, inkY) * 255);
+    inks[o + 2] = Math.round(phase * 255);
+    inks[o + 3] = Math.round(under * 255);
+  }
 
-    for (let row = 0; row < rows; row += 1) {
-      // glyph origins land on whole device pixels, so stems never straddle
-      // two columns of the backing store
-      const y = Math.round((row * metrics.cellH + metrics.cellH / 2) * ratio) / ratio;
-      const worldA = camera + row;
+  function compose(now) {
+    const view = reducedMotion ? Math.round(camera) : camera;
+    const k = Math.floor(view);
+    const fraction = view - k;
+    const blink = !reducedMotion && Math.floor(now / 530) % 2 === 0;
+    const revealing = substrate.revealing();
+    // clock flaps only compare a resting page with itself
+    steadyFrame = fraction === 0 && k === restRow && !revealing;
+    restRow = fraction === 0 ? k : -1;
+    if (!steadyFrame) flapAt.fill(-1e9);
 
-      for (let col = 0; col < cols; col += 1) {
-        const i = row * cols + col;
-        const x = Math.round((xOffset + col * metrics.cellW + metrics.cellW / 2) * ratio) / ratio;
+    for (let r = 0; r < rows; r++) {
+      const wa = k + r;
+      for (let c = 0; c < cols; c++) {
+        const i = r * cols + c;
+        const o = i * 4;
+        const sub = substrate.sample(i, now, reducedMotion);
+        const phase = fraction > 0 ? turnOf(fraction, c) : 0;
 
-        const over = overlay.get(i);
-        if (over) {
-          if (over.ch !== " ") {
-            context.fillStyle = over.ink;
-            context.globalAlpha = 1;
-            context.fillText(over.ch, x, y);
-            context.fillStyle = P.ink;
+        const a = docAt(wa, c);
+        const gA = a.glyph;
+        const inkA = a.ink;
+        const accA = a.accent;
+        let gB = 0;
+        let inkB = 0;
+        let accB = false;
+        if (phase > 0) {
+          const b = docAt(wa + 1, c);
+          gB = b.glyph;
+          inkB = b.ink;
+          accB = b.accent;
+        }
+
+        // the ink the document puts in this cell right now, for the wake
+        let shownInk = phase < 0.5 ? inkA : inkB;
+
+        if (gA || gB) {
+          if (phase > 0) {
+            // the document turns this cell from one row to the next; an empty
+            // side is whatever the lattice holds
+            put(o,
+              gA || sub.glyph, gA ? inkA : sub.ink,
+              gB || sub.glyph, gB ? inkB : sub.ink,
+              phase, (accA ? F_ACCENT_X : 0) | (accB ? F_ACCENT_Y : 0));
+          } else {
+            let under = 0;
+            let flags = accA ? F_ACCENT_X : 0;
+            const w = wa * cols + c;
+            const link = worldLink[w];
+            if (link >= 0 && worldKind[w] === K_LINK) under = link === hoveredLink ? 0.85 : 0.3;
+            const gate = revealing ? substrate.contentGate(i, now) : 1;
+            if (gate < 1) {
+              // first contact: the cell turns from its lattice mark to the letter
+              put(o, sub.glyph, sub.ink, gA, inkA, gate, flags << 3, under * gate);
+              shownInk = gate > 0.5 ? inkA : 0;
+            } else if (!clockFlap(i, o, now, gA, gA, inkA, flags << 3, sub.glyph)) {
+              put(o, gA, inkA, 0, 0, 0, flags, under);
+            }
           }
-          continue;
+        } else if (!(phase === 0 && clockFlap(i, o, now, 0, sub.glyph, sub.ink, 0, sub.glyph))) {
+          put(o, sub.from, sub.fromInk, sub.glyph, sub.ink, sub.t, F_FADE);
+        }
+        if (phase === 0) {
+          lastShown[i] = gA;
+          lastInk[i] = gA ? inkA : sub.ink;
         }
 
-        const shimmerToken = shimmerShown.get(i);
-        if (shimmerToken !== undefined) {
-          context.globalAlpha = kindAlpha(cellKind[i]) || P.textAlpha;
-          context.fillText(textPalette[shimmerToken], x, y);
-          continue;
-        }
+        if (inbox && phase === 0 && inbox.caretAt(wa, c) && (blink || !inbox.focused())) glyphs[o + 2] |= F_CARET;
 
-        const glitch = glitchCells.get(i);
-        if (glitch !== undefined && now < glitch.until) {
-          context.globalAlpha = kindAlpha(cellKind[i]) || P.textAlpha;
-          context.fillText(glitch.ch, x, y);
-          continue;
-        }
-
-        // A media plane covers this cell unless the document has committed
-        // text here — a photograph never paints over a word.
-        const planeCell = planes && cellChar[i] === 0 ? planes.at(worldA, col) : null;
-        if (planeCell) {
-          context.globalAlpha = Math.min(1, 0.10 + planeCell.ink * 0.9);
-          paintGlyph(glyphAt(planeCell.glyph), x, y);
-          continue;
-        }
-
-        // The message box paints its own interior: typed characters, a
-        // notice, or faint resting glyphs, and the caret line at a cell.
-        const note = inbox && cellChar[i] === 0 ? inbox.at(worldA, col, now, !reducedMotion) : null;
-        if (note) {
-          context.fillStyle = note.accent ? P.accent : P.ink;
-          context.globalAlpha = note.ink;
-          paintGlyph(note.ch, x, y);
-          if (note.cursor) {
-            context.globalAlpha = 1;
-            context.fillRect(x - metrics.cellW / 2, y - metrics.cellH / 2 + 2, 2, metrics.cellH - 4);
-          }
-          context.fillStyle = P.ink;
-          continue;
-        }
-
-        // One readout for every cell. Murmur, a letter rising out of it, a
-        // letter settled, a letter sinking back: all the same call.
-        const s = substrate.read(i, now, vigMap[i]);
-        if (s.alpha <= 0.006) continue;
-
-        // handwriting: a ribbon that does not strike evenly, keys that sit
-        // a hair high or low. Static per cell, snapped to device pixels, so
-        // the page reads as typed rather than rendered, and stays crisp.
-        const weight = 1 - P.inkVariance * inkNoise[i] * 0.35;
-        const yy = P.baselineJitter > 0 && jitterNoise[i] < P.baselineJitter
-          ? y + (inkNoise[i] < 0.5 ? -1 : 1) / ratio
-          : y;
-        const ink = s.alpha * weight;
-        if (s.b < 0) {
-          context.globalAlpha = Math.min(1, ink);
-          paintGlyph(glyphAt(s.a), x, yy);
-          if (P.bleed > 0 && ink > 0.5) {
-            // a second, fainter impression a hair off: ink spreading into fibre
-            context.globalAlpha = Math.min(1, ink * P.bleed * 0.35);
-            paintGlyph(glyphAt(s.a), x + 1 / ratio, yy);
-          }
-        } else {
-          // cross-fade only between adjacent hops of the morph walk
-          const fromAlpha = ink * (1 - s.blend);
-          const toAlpha = ink * s.blend;
-          if (fromAlpha > 0.006) {
-            context.globalAlpha = Math.min(1, fromAlpha);
-            paintGlyph(glyphAt(s.a), x, yy);
-          }
-          if (toAlpha > 0.006) {
-            context.globalAlpha = Math.min(1, toAlpha);
-            paintGlyph(glyphAt(s.b), x, yy);
+        if (i === cursorCell && P.cursorEmbed) {
+          if (gA && gA !== blank && phase === 0) {
+            glyphs[o + 2] |= F_ACCENT_X;
+          } else if ((!gA || gA === blank) && !gB) {
+            put(o, cursorGlyph, 1, 0, 0, 0, 0);
           }
         }
+
+        if (!reducedMotion && shownInk > 0) substrate.trailTo(i, shownInk * P.wake);
       }
     }
 
-    drawChrome(0);
-    drawHud();
-    context.globalAlpha = 1;
-    drawPaper(now);
-  }
-
-  function chromeRowFor(worldRow, y, alpha) {
-    const data = worldData.get(worldRow);
-    if (!data || data.links.length < cols || alpha < 0.02) return;
-    let col = 0;
-    while (col < cols) {
-      const id = data.links[col];
-      if (id === -1 || data.kinds[col] !== K_LINK ||
-          (masks.size > 0 && masks.has(worldKey(worldRow, col)))) {
-        col += 1;
-        continue;
+    // the status row, anchored to the screen rather than the document: the
+    // sound switch on the left, the read head's position on the right
+    const r = rows - 2;
+    const label = (text, start, ink) => {
+      for (let q = 0; q < text.length; q++) {
+        const c = start + q;
+        if (r < 0 || c < 0 || c >= cols) continue;
+        const o = (r * cols + c) * 4;
+        if (text[q] === " ") put(o, blank, 1, 0, 0, 0, 0);
+        else put(o, atlas.ensure(text[q]), ink, 0, 0, 0, 0);
       }
-      let end = col;
-      while (end < cols && data.links[end] === id && data.kinds[end] === K_LINK &&
-             !(masks.size > 0 && masks.has(worldKey(worldRow, end)))) end += 1;
-      context.globalAlpha = alpha * (id === hoveredLink ? 0.85 : 0.25);
-      context.fillRect(xOffset + col * metrics.cellW + 1, y, (end - col) * metrics.cellW - 2, 1);
-      col = end;
-    }
+    };
+    if (status.left) label(status.left, status.leftCol, status.leftInk);
+    if (status.right) label(status.right, cols - status.right.length - 2, P.faintAlpha);
   }
 
-  function drawChrome(ef) {
-    context.fillStyle = P.ink;
-    for (let row = 0; row < rows; row += 1) {
-      const y = row * metrics.cellH + metrics.cellH - 3;
-      chromeRowFor(camera + row, y, 1 - ef);
-      if (ef > 0.004) chromeRowFor(camera + row + 1, y, ef);
+  // A resting cell whose content changed flaps from what it showed before.
+  // `target` is the document glyph, or 0 for the lattice. Returns true when
+  // it painted the cell.
+  function clockFlap(i, o, now, target, g, ink, flagsY, latticeGlyph) {
+    if (steadyFrame && target !== lastShown[i]) {
+      flapFrom[i] = lastShown[i] || latticeGlyph;
+      flapFromInk[i] = lastInk[i];
+      flapAt[i] = now;
     }
+    const age = now - flapAt[i];
+    if (age < 0 || age >= P.flipMs) return false;
+    const t = age / P.flipMs;
+    put(o, flapFrom[i], flapFromInk[i], g, ink, t * t * (3 - 2 * t), flagsY);
+    return true;
   }
 
-  function drawHud() {
-    if (!hud) return;
-    context.globalAlpha = P.faintAlpha;
-    const row = rows - 2;
-    const start = cols - hud.length - 2;
-    const y = row * metrics.cellH + metrics.cellH / 2;
-    for (let k = 0; k < hud.length; k += 1) {
-      if (hud[k] === " ") continue;
-      context.fillText(hud[k], xOffset + (start + k) * metrics.cellW + metrics.cellW / 2, y);
-    }
+  function frame(now) {
+    const dt = lastFrame ? Math.min(100, now - lastFrame) : 16;
+    lastFrame = now;
+    if (!reducedMotion) substrate.step(now, dt);
+    compose(now);
+    renderer.atlas(atlas);
+    renderer.draw(glyphs, inks);
   }
-
-  // ---------- the loop ----------
 
   function tick(now) {
     rafId = 0;
-    const minDelta = 1000 / P.fps;
-    const dt = now - lastFrameAt;
-    if (dt >= minDelta - 1) {
-      if (substrate && !reducedMotion) substrate.step(now, Math.min(dt, 120));
-      if (planes) { planes.playVisible(camera, rows); planes.update(); }
-      lastFrameAt = now;
-      draw(now);
-    }
+    frame(now);
     if (running) rafId = requestAnimationFrame(tick);
   }
 
   function start() {
     if (running || !metrics) return;
     running = true;
-    lastFrameAt = performance.now() - 1000;
+    lastFrame = 0;
     rafId = requestAnimationFrame(tick);
-    restartGlitchTimer();
   }
 
   function stop() {
@@ -533,390 +297,214 @@ export function createField(canvas, params) {
   }
 
   function requestDraw() {
-    if (running || !metrics) return;
-    if (rafId) return;
+    if (running || !metrics || rafId) return;
     rafId = requestAnimationFrame((now) => {
       rafId = 0;
-      draw(now);
+      frame(now);
     });
   }
 
-  // ---------- shimmer & instability ----------
-
-  function stopShimmer() {
-    if (shimmerTimer) window.clearInterval(shimmerTimer);
-    shimmerTimer = 0;
-    shimmerCells = [];
-    shimmerShown.clear();
-    shimmerKey = "";
+  function applyStyle() {
+    renderer.style({ paper: P.paper, ink: P.ink, accent: P.accent, turn: P.turn, shade: P.shade });
   }
 
-  function startShimmer(indices, key) {
+  // ---------- shimmer: hovered links walk through their cousins ----------
+
+  function stopShimmer() {
+    if (shimmerTimer) clearInterval(shimmerTimer);
+    shimmerTimer = 0;
+    shimmerCells = [];
+    shimmer.clear();
+  }
+
+  function startShimmer(cells) {
     stopShimmer();
-    if (reducedMotion || indices.length === 0) return;
-    shimmerCells = indices;
-    shimmerKey = key;
+    if (reducedMotion || !cells.length) return;
+    shimmerCells = cells;
     const step = () => {
-      for (const i of shimmerCells) {
-        const family = cousinsFor(textPalette[cellChar[i]]);
+      for (const w of shimmerCells) {
+        const family = cousinsFor(atlas.char(worldGlyph[w]));
         if (!family) continue;
-        shimmerShown.set(i, textToken(family[(Math.random() * family.length) | 0]));
+        shimmer.set(w, atlas.ensure(family[(Math.random() * family.length) | 0]));
       }
       requestDraw();
     };
     step();
-    shimmerTimer = window.setInterval(step, P.shimmerTick);
+    shimmerTimer = setInterval(step, P.shimmerTick);
   }
 
-  function restartGlitchTimer() {
-    window.clearInterval(glitchTimer);
-    glitchTimer = 0;
-    if (!P.glitch) return;
-    glitchTimer = window.setInterval(() => {
-      if (reducedMotion || glitches.size === 0 || document.visibilityState !== "visible") return;
-      const all = [...glitches.values()];
-      const g = all[(Math.random() * all.length) | 0];
-      const row = g.row - camera;
-      if (row < 1 || row >= rows - 1) return;
-      const i = row * cols + g.col;
-      const family = cousinsFor(textPalette[cellChar[i]]);
-      if (!family) return;
-      glitchCells.set(i, {
-        ch: family[(Math.random() * family.length) | 0],
-        until: performance.now() + 420,
-      });
-      requestDraw();
-    }, P.glitchMs);
+  // ---------- public ----------
+
+  function pointerCell(x, y) {
+    const dpr = metrics.dpr;
+    const col = Math.floor((x * dpr - originX) / metrics.cellWd);
+    const row = Math.floor((y * dpr) / metrics.cellHd);
+    return { col, row, inside: col >= 0 && col < cols && row >= 0 && row < rows };
   }
-
-  // The morphospace spans the substrate alphabet, every printable ASCII
-  // character, the typographic set the typesetter emits, the block elements
-  // display type is built from, and every character the document has
-  // committed so far. Characters are appended in a stable order, so indices
-  // already held by cells survive a rebuild.
-  function buildSpace() {
-    const alphabet = ALPHABETS[P.alphabet] ?? ALPHABETS.latin;
-    let printable = "";
-    for (let code = 33; code <= 126; code += 1) printable += String.fromCharCode(code);
-    const typographic = "·—–─│┌┐└┘├┤┬┴┼’‘“”…×█▓▒░▀▄▌▐■□▪▫●○◦•";
-    const committed = textPalette.join("");
-    const chars = Array.from(new Set(Array.from(alphabet + printable + typographic + committed)));
-    space = buildGlyphSpace(chars, metrics.font, metrics.cellW, metrics.cellH, metrics.pixelFace);
-    tokenGlyph = new Int16Array(textPalette.length);
-    for (let t = 0; t < textPalette.length; t += 1) tokenGlyph[t] = space.indexOf(textPalette[t]);
-
-    const eligible = [];
-    const inAlphabet = new Set(Array.from(alphabet));
-    for (let i = 0; i < chars.length; i += 1) if (inAlphabet.has(chars[i])) eligible.push(i);
-    return eligible;
-  }
-
-  // ---------- public API ----------
 
   return {
-    setMetrics(m) { metrics = m; },
+    canvas,
+    renderer: renderer.kind,
+
+    setMetrics(m) {
+      metrics = m;
+      atlas = createAtlas({ family: m.family, size: m.fontSize, dpr: m.dpr, cellWd: m.cellWd, cellHd: m.cellHd });
+      cursorGlyph = atlas.ensure(P.cursorGlyph);
+      substrate = createSubstrate(atlas, P);
+    },
 
     resize(w, h) {
-      width = w;
-      height = h;
-      ratio = Math.min(window.devicePixelRatio || 1, 3);
-      // The backing store and the CSS box must agree exactly, or the browser
-      // resamples the whole canvas and every glyph edge goes soft.
-      canvas.width = Math.round(w * ratio);
-      canvas.height = Math.round(h * ratio);
+      const dpr = metrics.dpr;
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(h * dpr);
       canvas.style.width = w + "px";
       canvas.style.height = h + "px";
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      cols = Math.max(10, Math.floor(w / metrics.cellW));
-      rows = Math.max(6, Math.ceil(h / metrics.cellH));
-      xOffset = Math.floor((w - cols * metrics.cellW) / 2);
-
-      const eligible = buildSpace();
-
-      if (!planes) planes = createPlanes(space);
-      else planes.setSpace(space);
-
-      const subParams = { ...P, aspect: metrics.cellH / metrics.cellW };
-      if (!substrate) substrate = createSubstrate(space, subParams, eligible);
-      else substrate.setSpace(space), substrate.setEligible(eligible), substrate.setParams(subParams, []);
-      substrate.resize(cols, rows);
-
-      const n = cols * rows;
-      inkNoise = new Float32Array(n);
-      jitterNoise = new Float32Array(n);
-      for (let i = 0; i < n; i += 1) {
-        inkNoise[i] = Math.random();
-        jitterNoise[i] = Math.random();
-      }
-      vigMap = new Float32Array(n);
-      for (let r = 0; r < rows; r += 1) {
-        for (let c = 0; c < cols; c += 1) {
-          const dx = ((c + 0.5) / cols) * 2 - 1;
-          const dy = ((r + 0.5) / rows) * 2 - 1;
-          const excess = Math.max(0, Math.hypot(dx * 0.72, dy) - 0.78) / 0.5;
-          vigMap[r * cols + c] = 1 - P.vignette * Math.min(1, excess * excess);
-        }
-      }
-
-      cellChar = new Uint16Array(0);
-      composeView("instant");
-      requestDraw();
+      cols = Math.max(10, Math.floor(canvas.width / metrics.cellWd));
+      rows = Math.max(6, Math.ceil(canvas.height / metrics.cellHd));
+      originX = Math.floor((canvas.width - cols * metrics.cellWd) / 2);
+      glyphs = new Uint16Array(cols * rows * 4);
+      inks = new Uint8Array(cols * rows * 4);
+      lastShown = new Uint16Array(cols * rows);
+      lastInk = new Float32Array(cols * rows);
+      flapFrom = new Uint16Array(cols * rows);
+      flapFromInk = new Float32Array(cols * rows);
+      flapAt = new Float32Array(cols * rows).fill(-1e9);
+      restRow = -1;
+      substrate.resize(cols, rows, metrics.cellHd / metrics.cellWd);
+      renderer.configure({
+        cols, rows, cellWd: metrics.cellWd, cellHd: metrics.cellHd, originX,
+        perRow: atlas.perRow, dpr, underY: Math.min(metrics.cellHd - dpr, atlas.baseline + Math.round(3 * dpr)),
+      });
+      applyStyle();
+      cursorCell = -1;
     },
 
-    setWorld(lines, totalRows) {
-      worldData = new Map();
-      glitches.clear();
+    setWorld(nextLines, totalRows) {
+      lines = nextLines;
       worldRows = totalRows;
-      for (const line of lines) {
-        let data = worldData.get(line.row);
-        if (!data) {
-          data = {
-            chars: new Uint16Array(cols),
-            kinds: new Uint8Array(cols),
-            links: new Int16Array(cols).fill(-1),
-          };
-          worldData.set(line.row, data);
-        }
-        for (let k = 0; k < line.text.length; k += 1) {
-          const col = line.col + k;
-          if (col < 0 || col >= cols) continue;
-          const ch = line.text[k];
-          if (line.linkId !== undefined && line.linkId >= 0) data.links[col] = line.linkId;
-          if (ch === " ") continue;
-          data.chars[col] = textToken(ch);
-          data.kinds[col] = line.kind;
-        }
-      }
-      if (space) {
-        let missing = tokenGlyph.length < textPalette.length;
-        if (!missing) for (let t = 1; t < tokenGlyph.length; t += 1) if (tokenGlyph[t] < 0) { missing = true; break; }
-        if (missing) {
-          const eligible = buildSpace();
-          if (substrate) substrate.setSpace(space), substrate.setEligible(eligible);
-          if (planes) planes.setSpace(space);
-        }
-      }
-      composeView("instant");
+      stopShimmer();
+      buildWorld();
       requestDraw();
     },
 
-    setScroll(scrollTopPx) {
-      const rowFloat = Math.max(0, scrollTopPx / metrics.cellH);
-      const delta = Math.abs(rowFloat - lastRowFloat);
-      const tNow = performance.now();
-      if (lastScrollAt > 0) {
-        const dt = Math.max(1, tNow - lastScrollAt);
-        const v = (delta / dt) * 1000;
-        scrollSpeed = dt > 400 ? v : scrollSpeed * 0.6 + v * 0.4;
-      }
-      lastScrollAt = tNow;
-      // scrolling stirs the medium: the document passing through leaves warmth
-      if (substrate && P.scrollHeat > 0 && delta > 0.01 && !reducedMotion) {
-        const strength = Math.min(1, delta * 0.5) * P.scrollHeat;
-        const row = rows - 1;
-        for (let c = 0; c < cols; c += 4) substrate.warm(c, row, 0, -1, strength * 0.35);
-      }
-      lastRowFloat = rowFloat;
-
-      // The board only ever shows whole rows. A flip needs the scroll to
-      // travel past the midpoint by a margin (hysteresis), so resting on a
-      // boundary never chatters; a long jump always lands on its row.
-      const maxCamera = Math.max(0, worldRows - 1);
-      const candidate = Math.min(maxCamera, Math.round(rowFloat));
-      if (candidate !== camera &&
-          (Math.abs(rowFloat - camera) >= P.flipHysteresis || Math.abs(candidate - camera) > 1)) {
-        const direction = candidate > camera ? 1 : -1;
-        camera = candidate;
-        composeView("flip", direction);
-      }
+    setScroll(px) {
+      camera = Math.max(0, px / metrics.cellH);
       requestDraw();
     },
 
-    // The cursor warms the medium along its whole path, so a fast sweep
-    // leaves a continuous wake rather than a dotted line.
-    // the cursor glyph follows the pointer through the grid
     pointerAt(x, y) {
-      if (!P.cursorEmbed) return;
-      const col = Math.floor((x - xOffset) / metrics.cellW);
-      const row = Math.floor(y / metrics.cellH);
-      if (col < 0 || col >= cols || row < 0 || row >= rows) { clearCursor(); return; }
-      placeCursor(row * cols + col);
+      const { col, row, inside } = pointerCell(x, y);
+      cursorCell = inside ? row * cols + col : -1;
+      if (inside && !reducedMotion) substrate.setPointer(col + 0.5, row + 0.5);
+      else substrate.setPointer(null);
+      requestDraw();
     },
-    pointerLeft() { clearCursor(); },
+    pointerLeft() {
+      cursorCell = -1;
+      substrate.setPointer(null);
+      requestDraw();
+    },
 
     touch(x, y, px, py, dt) {
-      if (!substrate || reducedMotion) return;
-      const col = (x - xOffset) / metrics.cellW;
-      const row = y / metrics.cellH;
-      const pcol = (px - xOffset) / metrics.cellW;
-      const prow = py / metrics.cellH;
+      if (reducedMotion) return;
+      const dpr = metrics.dpr;
+      const col = (x * dpr - originX) / metrics.cellWd;
+      const row = (y * dpr) / metrics.cellHd;
+      const pcol = (px * dpr - originX) / metrics.cellWd;
+      const prow = (py * dpr) / metrics.cellHd;
       const dx = col - pcol;
       const dy = row - prow;
-      const distance = Math.hypot(dx, dy);
-      const speed = dt > 0 ? distance / (dt / 16.67) : 0;
-      const steps = Math.min(12, Math.max(1, Math.ceil(distance / 1.2)));
-      const vx = distance > 0.001 ? dx / distance : 0;
-      const vy = distance > 0.001 ? dy / distance : 0;
-      const push = Math.min(1.6, 0.35 + speed * 0.4);
-      for (let s = 1; s <= steps; s += 1) {
+      const dist = Math.hypot(dx, dy * (metrics.cellHd / metrics.cellWd));
+      const speed = dt > 0 ? dist / (dt / 16.67) : 0;
+      const steps = Math.min(16, Math.max(1, Math.ceil(dist / 0.8)));
+      const vx = dist > 1e-3 ? dx / dist : 0;
+      const vy = dist > 1e-3 ? dy / dist : 0;
+      const strength = Math.min(1.2, 0.15 + speed * 0.22);
+      for (let s = 1; s <= steps; s++) {
         const t = s / steps;
-        substrate.warm(pcol + dx * t, prow + dy * t, vx * push, vy * push, 1 / steps + 0.08);
+        substrate.warm(pcol + dx * t, prow + dy * t, vx * P.flowGain, vy * P.flowGain, strength / Math.sqrt(steps));
       }
       requestDraw();
     },
 
     strike(x, y) {
-      if (!substrate || reducedMotion) return;
-      const col = Math.round((x - xOffset) / metrics.cellW);
-      const row = Math.round(y / metrics.cellH);
+      if (reducedMotion) return;
+      const { col, row } = pointerCell(x, y);
       substrate.impulse(col, row, P.clickStrength);
-      substrate.warm(col, row, 0, 0, 1.4);
       requestDraw();
     },
 
     hoverLink(linkId, on) {
       hoveredLink = on ? linkId : -1;
-      if (on) {
-        const indices = [];
-        for (let i = 0; i < cellLink.length; i += 1) {
-          if (cellLink[i] === linkId && cellChar[i] !== 0 && cellKind[i] === K_LINK) indices.push(i);
-        }
-        startShimmer(indices, "link:" + linkId);
-      } else {
+      if (!on) {
         stopShimmer();
-      }
-      requestDraw();
-    },
-
-    shimmerWordAt(x, y) {
-      if (hoveredLink !== -1 || reducedMotion) return;
-      const col = Math.floor((x - xOffset) / metrics.cellW);
-      const row = Math.floor(y / metrics.cellH);
-      if (row < 0 || row >= rows || col < 0 || col >= cols) {
-        if (shimmerKey.startsWith("word:")) stopShimmer();
+        requestDraw();
         return;
       }
-      const i = row * cols + col;
-      if (cellKind[i] !== K_TEXT || cellChar[i] === 0) {
-        if (shimmerKey.startsWith("word:")) {
-          stopShimmer();
-          requestDraw();
-        }
-        return;
+      const cells = [];
+      for (let w = 0; w < worldLink.length; w++) {
+        if (worldLink[w] === linkId && worldGlyph[w] && worldKind[w] === K_LINK) cells.push(w);
       }
-      let from = col;
-      while (from > 0 && cellKind[row * cols + from - 1] === K_TEXT &&
-             cellChar[row * cols + from - 1] !== 0) from -= 1;
-      let to = col;
-      while (to < cols - 1 && cellKind[row * cols + to + 1] === K_TEXT &&
-             cellChar[row * cols + to + 1] !== 0) to += 1;
-      const key = "word:" + row + ":" + from + ":" + to;
-      if (key === shimmerKey) return;
-      const indices = [];
-      for (let c = from; c <= to; c += 1) indices.push(row * cols + c);
-      startShimmer(indices, key);
+      startShimmer(cells);
+    },
+
+    setStatus(next) {
+      Object.assign(status, next);
       requestDraw();
     },
 
-    registerGlitches(cells) {
-      glitches.clear();
-      for (const cell of cells) glitches.set(cell.row + ":" + cell.col, cell);
-    },
-
-    setOverlayCells(cells) {
-      overlay.clear();
-      for (const cell of cells) {
-        if (cell.row < 0 || cell.row >= rows || cell.col < 0 || cell.col >= cols) continue;
-        overlay.set(cell.row * cols + cell.col, { ch: cell.ch, ink: cell.ink ?? P.ink });
-      }
-      requestDraw();
-    },
-
-    setHud(text) {
-      if (text === hud) return;
-      hud = text;
-      requestDraw();
-    },
-
-    // First contact: every letter walks in from the murmur through the
-    // morphospace, staggered by distance from the centre so meaning arrives
-    // as an expanding wave rather than a curtain.
-    // Workbench/diagnostic: what one cell holds and what it would paint.
-    probe(row, col) {
-      const i = row * cols + col;
-      const token = cellChar[i];
-      const r = substrate ? substrate.read(i, performance.now(), vigMap[i]) : null;
-      return {
-        token, ch: textPalette[token], kind: cellKind[i],
-        glyph: glyphForToken(token), glyphCh: glyphForToken(token) >= 0 ? glyphAt(glyphForToken(token)) : null,
-        committed: substrate ? substrate.isCommitted(i) : null,
-        read: r ? { a: r.a, aCh: glyphAt(r.a), b: r.b, bCh: r.b >= 0 ? glyphAt(r.b) : null, blend: r.blend, alpha: r.alpha } : null,
-      };
-    },
-
-    crystallize() {
-      if (reducedMotion || !space || !substrate) return;
-      driveBoard("reveal", 1, false);
+    // First contact: the lattice switches on from the origin outward, and the
+    // document's cells turn to their letters in the ring's wake.
+    crystallize(originCol, originRow) {
+      if (reducedMotion) return;
+      substrate.startReveal(performance.now(), originCol ?? cols / 2, originRow ?? rows / 3);
       requestDraw();
     },
 
     setReducedMotion(v) {
       reducedMotion = v;
-      if (v) {
-        stopShimmer();
-        stop();
-        requestDraw();
-      } else {
-        start();
-      }
-    },
-
-    applyParams(next, changed) {
-      if ((changed ?? []).some((k) => k === "grainScale" || k === "grain")) grainTile = null;
-      if ((changed ?? []).includes("cursorEmbed") && !next.cursorEmbed) clearCursor();
-      if ((changed ?? []).includes("cursorGlyph") && cursorCell >= 0) { const c = cursorCell; P = next; placeCursor(c, true); }
-      P = next;
-      const touched = changed ?? Object.keys(next);
-      if (substrate) substrate.setParams({ ...P, aspect: metrics.cellH / metrics.cellW }, touched);
-      if (touched.includes("vignette") && cols > 0) {
-        for (let r = 0; r < rows; r += 1) {
-          for (let c = 0; c < cols; c += 1) {
-            const dx = ((c + 0.5) / cols) * 2 - 1;
-            const dy = ((r + 0.5) / rows) * 2 - 1;
-            const excess = Math.max(0, Math.hypot(dx * 0.72, dy) - 0.78) / 0.5;
-            vigMap[r * cols + c] = 1 - P.vignette * Math.min(1, excess * excess);
-          }
-        }
-      }
-      if (touched.includes("shelter")) composeView();
-      if (touched.includes("glitch") || touched.includes("glitchMs")) restartGlitchTimer();
-      if (touched.includes("shimmerTick") && shimmerTimer) startShimmer(shimmerCells, shimmerKey);
+      if (v) stopShimmer();
       requestDraw();
     },
 
-    // Synchronous render at an explicit timestamp — deterministic frames for
-    // the workbench and for tests, independent of the animation clock.
-    renderAt(now, dt = 1000 / P.fps) {
-      if (substrate) substrate.step(now, dt);
-      draw(now);
+    applyParams(next, changed = []) {
+      P = next;
+      substrate.setParams(P, changed);
+      if (changed.includes("cursorGlyph")) cursorGlyph = atlas.ensure(P.cursorGlyph);
+      applyStyle();
+      requestDraw();
     },
 
     setInbox(value) {
       inbox = value;
-      inbox?.setGlyphs(ALPHABETS[P.alphabet] ?? Object.values(ALPHABETS)[0] ?? "");
     },
-    collectPlanes(article) { return planes ? planes.collect(article) : []; },
-    placePlane(el, worldRow, col, c, r) { if (planes) planes.place(el, worldRow, col, c, r); },
-    planeCount: () => (planes ? planes.count() : 0),
+
+    // Deterministic frames for tests and the workbench.
+    renderAt(now) {
+      frame(now);
+    },
+
+    // What one cell holds right now, for tests.
+    probe(row, col) {
+      const o = (row * cols + col) * 4;
+      return {
+        x: atlas.char(glyphs[o]),
+        y: atlas.char(glyphs[o + 1]),
+        inkX: inks[o] / 255,
+        inkY: inks[o + 1] / 255,
+        phase: inks[o + 2] / 255,
+      };
+    },
+
+    stats: () => ({ ...substrate.stats(), glyphs: atlas.size(), renderer: renderer.kind }),
     requestDraw,
     start,
     stop,
-    stats: () => (substrate ? substrate.stats() : null),
-    glyphCount: () => (space ? space.size : 0),
     cols: () => cols,
     rows: () => rows,
-    camera: () => camera,
+    camera: () => Math.round(camera),
     worldRows: () => worldRows,
-    xOffset: () => xOffset,
+    // left edge of the grid in CSS px
+    xOffset: () => originX / metrics.dpr,
   };
 }

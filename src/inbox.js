@@ -1,17 +1,16 @@
 // The message box: a native textarea that lives inside the grid. The browser
 // keeps the typing, pasting, IME, and the caret; the field draws the result
-// as cells. Cells nobody has typed into hold faint resting glyphs, so the box
-// reads as a place where characters are waiting to be chosen.
+// as cells. Cells nobody has typed into are left to the substrate, so typing
+// is the same act the page performs on itself: a resting cell takes a
+// letter.
 //
 // The textarea is transparent and sits exactly over its cells. A hidden
 // mirror with the same metrics reports where the browser broke each line,
-// so the drawn text, the native caret, and click-to-place agree.
+// so the drawn text, the caret, and click-to-place agree.
 
-const REST_INK = 0.2;
-const BLINK_MS = 530;
 // a real character after the text, so a trailing newline still makes a line
 // box and the caret can be measured at the end of the text
-const END = " ";
+const END = " ";
 
 export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
   const textarea = form.querySelector("textarea");
@@ -24,7 +23,6 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
   let region = null;
   let metrics = null;
   let xOffset = 0;
-  let glyphs = "";
   let cells = new Map();
   let caret = null;
   let selected = new Set();
@@ -36,14 +34,6 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
   const inside = (p) =>
     p.row >= 0 && p.row < region.rows && p.col >= 0 && p.col < region.cols;
   const focused = () => document.activeElement === textarea;
-  // a fixed resting glyph per cell; the box never churns on its own
-  const rest = (i) => {
-    let h = Math.imul(i + 1, 0x9e3779b1);
-    h ^= h >>> 15;
-    h = Math.imul(h, 0x85ebca77);
-    h ^= h >>> 13;
-    return glyphs[(h >>> 0) % glyphs.length] || " ";
-  };
 
   function styleBox(el) {
     const { cellW, cellH, fontSize, pad, spacing } = metrics;
@@ -168,35 +158,31 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
       metrics = next;
       xOffset = offset;
     },
-    setGlyphs(alphabet) {
-      glyphs = alphabet;
-    },
     place(worldRow, col, cols, rows) {
       region = { worldRow, col, cols, rows };
       styleBox(textarea);
       styleBox(mirror);
       layoutText();
     },
-    // What the field paints at a cell: a typed character, a notice, or a
-    // resting glyph. `cursor` asks for the line at the cell's left; it blinks
-    // only while the field is animating, otherwise it stays lit.
-    at(worldRow, col, now, blink = true) {
+    // What the document holds at a cell of the box: a typed character or a
+    // notice, or null to leave the cell to the substrate.
+    at(worldRow, col) {
       if (!region) return null;
       const r = worldRow - region.worldRow;
       const c = col - region.col;
       if (r < 0 || r >= region.rows || c < 0 || c >= region.cols) return null;
       const k = key(r, c);
-      const cursor =
-        focused() &&
-        caret?.row === r &&
-        caret.col === c &&
-        (!blink || Math.floor(now / BLINK_MS) % 2 === 0);
       const typed = cells.get(k);
-      if (typed) return { ch: typed, ink: 1, accent: selected.has(k), cursor };
+      if (typed) return { ch: typed, accent: selected.has(k) };
       const note = notice.get(k);
-      if (note) return { ch: note, ink: 1, accent: true, cursor: false };
-      return { ch: rest(k), ink: REST_INK, accent: false, cursor };
+      if (note) return { ch: note, accent: true };
+      return null;
     },
+    caretAt(worldRow, col) {
+      if (!region || !caret || !focused()) return false;
+      return caret.row === worldRow - region.worldRow && caret.col === col - region.col;
+    },
+    focused,
     state: () => ({ typed: cells.size, caret, focused: focused() }),
   };
 }

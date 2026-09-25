@@ -1,21 +1,20 @@
-// Boot and wiring. The browser keeps its native powers — scrolling, links,
-// selection, find-in-page — while the field renders every visible mark.
+// Boot and wiring. The browser keeps its native powers (scrolling, links,
+// selection, find-in-page) while the field renders every visible mark.
 
 import { createField } from "./field.js";
 import { createInbox } from "./inbox.js";
 import { createTicker } from "./tick.js";
 import { parseArticle, typeset } from "./typesetter.js";
-import { fromQuery, toQuery, defaults, needsRelayout, FONTS, SCHEMA } from "./params.js";
+import { fromQuery, toQuery, defaults, needsRelayout, FONT, SCHEMA } from "./params.js";
 import { POSTHOG, startAnalytics, track, identify } from "./analytics.js";
 
-const canvas = document.getElementById("field");
 const scroller = document.getElementById("scroller");
 const article = document.getElementById("article");
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 let P = fromQuery();
-const field = createField(canvas, P);
+const field = createField(document.getElementById("field"), P);
 
 // Messages go to PostHog as events. Without analytics the mail client opens
 // with the text filled in; the box keeps the text then, since a mail handler
@@ -45,33 +44,31 @@ let metrics = null;
 let resizeTimer = 0;
 let scrollEndTimer = 0;
 let lastPointer = { x: 0, y: 0, t: 0 };
+let lastRow = 0;
 
 function computeMetrics() {
-  const face = FONTS[P.font];
-  const grid = face.grid;
-  let fontSize = window.innerWidth < 720 ? Math.max(12, Math.round(P.size * 0.72)) : P.size;
-
-  // A pixel face has no fractional sizes: off-step, its advance lands between
-  // device pixels and every stem smears. Snap to the design step instead of
-  // letting the workbench hand it an unrenderable size.
-  if (grid) fontSize = Math.max(grid.minSize, Math.round(fontSize / grid.sizeStep) * grid.sizeStep);
-
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  const fontSize = window.innerWidth < 720 ? Math.max(12, Math.round(P.size * 0.8)) : P.size;
+  const font = `${fontSize}px "${FONT.family}", ui-monospace, Menlo, monospace`;
   const probe = document.createElement("canvas").getContext("2d");
-  const font = `${fontSize}px "${face.family}", Menlo, monospace`;
   probe.font = font;
-  if (probe.textRendering !== undefined) probe.textRendering = "geometricPrecision";
   const adv = probe.measureText("M").width;
-
-  const tracking = grid ? grid.tracking : P.tracking;
-  const leading = grid ? grid.leading : P.leading;
-  const cellW = Math.round(adv + fontSize * tracking);
+  // Cells are whole device pixels, so every cell starts on a pixel edge and
+  // the atlas copies glyphs one to one.
+  const cellWd = Math.round((adv + fontSize * P.tracking) * dpr);
+  const cellHd = Math.round(fontSize * P.leading * dpr);
+  const cellW = cellWd / dpr;
+  const cellH = cellHd / dpr;
   return {
+    family: FONT.family,
+    font,
     fontSize,
     adv,
-    font,
-    pixelFace: !!grid,
+    dpr,
+    cellWd,
+    cellHd,
     cellW,
-    cellH: Math.round(fontSize * leading),
+    cellH,
     // a glyph sits centred in its cell: this much on the left, and this much
     // added after every character
     pad: (cellW - adv) / 2,
@@ -83,7 +80,6 @@ function layout() {
   metrics = computeMetrics();
   field.setMetrics(metrics);
   field.resize(window.innerWidth, window.innerHeight);
-  field.collectPlanes(article);
   inbox?.setMetrics(metrics, field.xOffset());
   layoutResult = typeset(blocks, article, {
     cols: field.cols(),
@@ -95,13 +91,12 @@ function layout() {
     pad: metrics.pad,
     spacing: metrics.spacing,
     measure: P.measure,
-    placePlane: (el, r, c, cc, rr) => field.placePlane(el, r, c, cc, rr),
     placeInbox: (el, r, c, cc, rr) => inbox?.place(r, c, cc, rr),
   });
   field.setWorld(layoutResult.lines, layoutResult.worldRows);
-  field.registerGlitches(layoutResult.glitches);
   bindLinks(layoutResult.links);
   article.classList.add("ready");
+  placeSound();
   updateHud();
 }
 
@@ -114,16 +109,45 @@ function currentSection() {
   return current;
 }
 
+const soundButton = document.getElementById("sound");
+
 function updateHud() {
+  if (soundButton.hidden) return;
   const camera = field.camera();
-  if (camera === 0) {
-    field.setHud("");
+  const last = Math.max(0, layoutResult.worldRows - field.rows());
+  field.setStatus({
+    right: `${String(Math.min(camera, last)).padStart(3, "0")}/${String(last).padStart(3, "0")}`,
+  });
+}
+
+// The sound switch lives on the status row, fixed to the screen. The button
+// is real and transparent; the field draws its label.
+function placeSound() {
+  const text = ticker.enabled() ? "sound on" : "sound off";
+  // the status row lives in the margins; a screen too narrow for that keeps
+  // the document clear and goes without it
+  const col = 2;
+  const room = layoutResult.left - col - 2 >= "sound off".length;
+  soundButton.hidden = !room;
+  if (!room) {
+    field.setStatus({ left: "", right: "" });
     return;
   }
-  const section = currentSection();
-  const position = String(camera).padStart(3, "0");
-  field.setHud(section.label ? `${position} · ${section.label}` : position);
+  const row = field.rows() - 2;
+  soundButton.textContent = text;
+  Object.assign(soundButton.style, {
+    left: field.xOffset() + col * metrics.cellW + "px",
+    top: row * metrics.cellH + "px",
+    width: text.length * metrics.cellW + "px",
+    height: metrics.cellH + "px",
+    fontSize: metrics.fontSize + "px",
+    lineHeight: metrics.cellH + "px",
+    letterSpacing: metrics.spacing + "px",
+    paddingLeft: metrics.pad + "px",
+  });
+  field.setStatus({ left: text, leftCol: col, leftInk: soundHover ? P.textAlpha : P.faintAlpha });
 }
+let soundHover = false;
 
 function bindLinks(links) {
   for (const a of links) {
@@ -141,12 +165,12 @@ function bindLinks(links) {
 const anim = { raf: 0, target: null, lastWrite: -1 };
 
 function syncFromScroll() {
-  const before = field.camera();
   field.setScroll(scroller.scrollTop);
-  const passed = field.camera() - before;
-  if (passed) {
+  const row = Math.floor(scroller.scrollTop / metrics.cellH + 0.5);
+  if (row !== lastRow) {
+    ticker.tick(row - lastRow, performance.now());
+    lastRow = row;
     updateHud();
-    ticker.tick(passed, performance.now());
   }
 }
 
@@ -170,7 +194,8 @@ function animateScrollTo(target, duration) {
   const t0 = performance.now();
   const step = (now) => {
     const p = Math.min(1, (now - t0) / duration);
-    anim.lastWrite = start + dist * (1 - Math.pow(1 - p, 3));
+    // ease out quint: the page arrives, it does not stop
+    anim.lastWrite = start + dist * (1 - Math.pow(1 - p, 5));
     scroller.scrollTop = anim.lastWrite;
     syncFromScroll();
     if (p < 1) anim.raf = window.requestAnimationFrame(step);
@@ -186,19 +211,19 @@ function onScroll() {
   }
   syncFromScroll();
   window.clearTimeout(scrollEndTimer);
-  scrollEndTimer = window.setTimeout(onScrollSettled, 160);
+  scrollEndTimer = window.setTimeout(onScrollSettled, 140);
 }
 
 function onScrollSettled() {
   if (anim.target === null) {
     const target = Math.round(scroller.scrollTop / metrics.cellH) * metrics.cellH;
-    if (Math.abs(scroller.scrollTop - target) > 1) animateScrollTo(target, P.settleMs);
+    if (Math.abs(scroller.scrollTop - target) > 0.5) animateScrollTo(target, P.settleMs);
   }
   const section = currentSection();
   const hash = section.id ? `#${section.id}` : "";
-  if (hash && window.location.hash !== hash) {
-    history.replaceState(null, "", hash);
-    track("section_reached", { section: section.id });
+  if (window.location.hash !== hash) {
+    history.replaceState(null, "", hash || window.location.pathname + window.location.search);
+    if (hash) track("section_reached", { section: section.id });
   }
   try {
     sessionStorage.setItem("glyph-camera", String(field.camera()));
@@ -218,24 +243,25 @@ function onResize() {
       const section = layoutResult.sections.find((s) => s.id === anchor.id);
       if (section) scroller.scrollTop = (section.row + anchor.offset) * metrics.cellH;
     }
-    field.setScroll(scroller.scrollTop);
+    syncFromScroll();
   }, 140);
 }
 
 function onKey(event) {
   if (event.target.closest("textarea, input, button, a")) return;
   if (event.metaKey || event.ctrlKey || event.altKey) return;
-  const page = (field.rows() - 3) * metrics.cellH;
+  const page = (field.rows() - 4) * metrics.cellH;
   let delta = null;
   if (event.key === "ArrowDown") delta = metrics.cellH;
   else if (event.key === "ArrowUp") delta = -metrics.cellH;
   else if (event.key === "PageDown" || (event.key === " " && !event.shiftKey)) delta = page;
   else if (event.key === "PageUp" || (event.key === " " && event.shiftKey)) delta = -page;
-  else if (event.key === "Home") { animateScrollTo(0, 420); event.preventDefault(); return; }
-  else if (event.key === "End") { animateScrollTo(scroller.scrollHeight, 420); event.preventDefault(); return; }
+  else if (event.key === "Home") { animateScrollTo(0, 600); event.preventDefault(); return; }
+  else if (event.key === "End") { animateScrollTo(scroller.scrollHeight, 600); event.preventDefault(); return; }
   if (delta !== null) {
     const base = anim.target !== null ? anim.target : scroller.scrollTop;
-    animateScrollTo(base + delta, 200);
+    const target = Math.round((base + delta) / metrics.cellH) * metrics.cellH;
+    animateScrollTo(target, Math.abs(delta) > metrics.cellH ? 520 : 200);
     event.preventDefault();
   }
 }
@@ -247,10 +273,7 @@ function onPointerMove(event) {
   const py = lastPointer.t === 0 ? event.clientY : lastPointer.y;
   lastPointer = { x: event.clientX, y: event.clientY, t: now };
   field.touch(event.clientX, event.clientY, px, py, dt);
-  if (event.pointerType !== "touch") {
-    field.shimmerWordAt(event.clientX, event.clientY);
-    field.pointerAt(event.clientX, event.clientY);
-  }
+  if (event.pointerType !== "touch") field.pointerAt(event.clientX, event.clientY);
 }
 
 function onClick(event) {
@@ -259,17 +282,9 @@ function onClick(event) {
 }
 
 async function loadFont() {
-  const font = FONTS[P.font];
-  if (!font.local && font.family !== "IBM Plex Mono" && !document.querySelector(`link[data-font="${P.font}"]`)) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.dataset.font = P.font;
-    link.href = `https://fonts.googleapis.com/css2?family=${font.css}&display=swap`;
-    document.head.appendChild(link);
-  }
   try {
     await Promise.race([
-      Promise.all([document.fonts.load(`16px "${font.family}"`), document.fonts.ready]),
+      Promise.all([document.fonts.load(`16px "${FONT.family}"`), document.fonts.ready]),
       new Promise((resolve) => setTimeout(resolve, 2500)),
     ]);
   } catch { /* fall back to whatever monospace we have */ }
@@ -281,6 +296,12 @@ function applyCssVars() {
   style.setProperty("--paper", P.paper);
   style.setProperty("--ink", P.ink);
   style.setProperty("--accent", P.accent);
+}
+
+function heroOrigin(startRow) {
+  const hero = layoutResult.hero;
+  if (!hero || startRow > 0) return { col: field.cols() * 0.3, row: field.rows() * 0.3 };
+  return { col: hero.col + 1, row: hero.row };
 }
 
 async function boot() {
@@ -303,13 +324,12 @@ async function boot() {
   }
   if (startRow > 0) {
     scroller.scrollTop = startRow * metrics.cellH;
-    field.setScroll(scroller.scrollTop);
-    updateHud();
-  } else {
-    field.crystallize();
+    syncFromScroll();
   }
+  const origin = heroOrigin(startRow);
+  field.crystallize(origin.col, origin.row);
 
-  if (!reducedMotion.matches) field.start();
+  field.start();
 
   scroller.addEventListener("scroll", onScroll, { passive: true });
   window.addEventListener("resize", onResize);
@@ -318,22 +338,22 @@ async function boot() {
   document.documentElement.addEventListener("mouseleave", () => field.pointerLeft());
   window.addEventListener("blur", () => field.pointerLeft());
   scroller.addEventListener("click", onClick);
-  scroller.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-sound]");
-    if (!button) return;
+  soundButton.addEventListener("click", () => {
     const on = ticker.toggle();
-    button.setAttribute("aria-pressed", String(on));
+    soundButton.setAttribute("aria-pressed", String(on));
     track("sound_toggled", { on });
-    const nav = blocks.find((b) => b.type === "nav");
-    const run = nav?.runs.find((r) => r.a === button);
-    if (run) run.text = on ? "[ sound on ]" : "[ sound off ]";
-    const top = scroller.scrollTop;
-    layout();
-    scroller.scrollTop = top;
-    syncFromScroll();
+    placeSound();
   });
+  const hoverSound = (on) => () => {
+    soundHover = on;
+    placeSound();
+  };
+  soundButton.addEventListener("pointerenter", hoverSound(true));
+  soundButton.addEventListener("pointerleave", hoverSound(false));
+  soundButton.addEventListener("focus", hoverSound(true));
+  soundButton.addEventListener("blur", hoverSound(false));
 
-  // Discrete wheels jump ~100px per notch, which teleports the pour. Route
+  // Discrete wheels jump ~100px per notch, which would skip rows. Route
   // coarse deltas through the animator; trackpads keep their native feel.
   scroller.addEventListener("wheel", (event) => {
     if (event.ctrlKey || !P.wheelMs) return;
@@ -342,11 +362,11 @@ async function boot() {
     event.preventDefault();
     const delta = event.deltaMode === 1 ? event.deltaY * metrics.cellH : event.deltaY;
     const base = anim.target !== null ? anim.target : scroller.scrollTop;
-    animateScrollTo(base + delta, P.wheelMs);
+    animateScrollTo(Math.round((base + delta) / metrics.cellH) * metrics.cellH, P.wheelMs);
   }, { passive: false });
 
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && !reducedMotion.matches) field.start();
+    if (document.visibilityState === "visible") field.start();
     else field.stop();
   });
 
@@ -354,7 +374,7 @@ async function boot() {
 
   function navigateHash() {
     const section = layoutResult.sections.find((s) => s.id === decodeURIComponent(location.hash.slice(1)));
-    if (section) animateScrollTo(section.row * metrics.cellH, 420);
+    if (section) animateScrollTo(section.row * metrics.cellH, 700);
   }
   window.addEventListener("hashchange", navigateHash);
   scroller.addEventListener("click", (event) => {
@@ -371,33 +391,29 @@ async function boot() {
     defaults,
     get: () => ({ ...P }),
     query: () => toQuery(P),
-    renderAt: (now, dt) => field.renderAt(now, dt),
+    renderAt: (now) => field.renderAt(now),
     probe: (row, col) => field.probe(row, col),
-    planeCount: () => field.planeCount(),
     inbox: () => inbox?.state() ?? null,
     sound: () => ticker.enabled(),
     stats: () => field.stats(),
-    glyphCount: () => field.glyphCount(),
+    view: () => ({ scrollTop: scroller.scrollTop, cellH: metrics.cellH, cols: field.cols(), rows: field.rows() }),
     touch: (x, y, px, py, dt) => field.touch(x, y, px, py, dt),
     strike: (x, y) => field.strike(x, y),
-    reveal: () => field.crystallize(),
+    reveal: () => {
+      const o = heroOrigin(field.camera());
+      field.crystallize(o.col, o.row);
+    },
     set(patch) {
       const changed = Object.keys(patch);
       P = { ...P, ...patch };
       applyCssVars();
       if (needsRelayout(patch)) {
-        if (patch.font) {
-          loadFont().then(() => {
-            const top = scroller.scrollTop;
-            layout();
-            scroller.scrollTop = top;
-            field.applyParams(P, changed);
-          });
-          return;
-        }
         const top = scroller.scrollTop;
+        field.applyParams(P, changed);
         layout();
         scroller.scrollTop = top;
+        syncFromScroll();
+        return;
       }
       field.applyParams(P, changed);
     },
@@ -405,8 +421,8 @@ async function boot() {
   window.dispatchEvent(new CustomEvent("glyph-ready"));
 
   startAnalytics(POSTHOG, {
-    font: P.font,
     grid: `${field.cols()}x${field.rows()}`,
+    renderer: field.renderer,
     reduced_motion: reducedMotion.matches,
   });
 }

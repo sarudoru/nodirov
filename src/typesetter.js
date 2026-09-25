@@ -1,75 +1,92 @@
 // The typesetter compiles the semantic HTML article into two aligned outputs:
 //
-//   1. field lines  — {row, col, text, kind, linkId} consumed by the canvas
-//   2. positioned DOM spans — transparent, grid-aligned text laid over the
+//   1. field lines  {row, col, text, kind, linkId}, which the field turns
+//      into cells
+//   2. positioned DOM spans: transparent, grid-aligned text laid over the
 //      canvas so selection, find-in-page, focus, and links stay native
 //
 // The article element is the single source of truth. The field is a renderer.
+//
+// What it understands:
+//   h1                 the name
+//   p.tagline          a faint line under the name
+//   p                  a paragraph
+//   p.hint             a faint aside
+//   p.colophon         a faint closing line
+//   h2                 a section heading, ruled to the column's edge
+//   li                 an entry: its text on the left, a <time> at the
+//                      column's right edge, an optional <small> note below.
+//                      The cells between them are left to the lattice, so
+//                      its dots become the leaders.
+//   form[data-inbox]   the message box, drawn from box cells
+//   .actions           a row of links or buttons
 
 import { K_TEXT, K_FAINT, K_LINK } from "./field.js";
 
-// Parse once at boot; the blueprint keeps element references and raw runs so
-// the article can be re-typeset at any column count (resize, zoom).
-export function parseArticle(article) {
-  const blocks = [];
+const collapse = (text) => text.replace(/\s+/g, " ");
 
-  function runsOf(el) {
-    const runs = [];
-    for (const node of el.childNodes) {
-      if (node.nodeType === Node.TEXT_NODE) {
-        // whitespace between two controls is a run too: "[ a ] [ b ]"
-        const text = node.textContent.replace(/\s+/g, " ");
-        if (text) runs.push({ text, a: null });
-      } else if (node.nodeType === Node.ELEMENT_NODE && ["A", "BUTTON"].includes(node.tagName)) {
-        runs.push({ text: node.textContent.replace(/\s+/g, " ").trim(), a: node });
-      } else if (node.nodeType === Node.ELEMENT_NODE) {
-        const text = node.textContent.replace(/\s+/g, " ");
-        if (text.trim()) runs.push({ text, a: null });
+// Split an element's content into runs of plain text and controls.
+function runsOf(el, skip = () => false) {
+  const runs = [];
+  for (const node of el.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = collapse(node.textContent);
+      if (text) runs.push({ text, a: null });
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      if (skip(node)) continue;
+      if (node.tagName === "A" || node.tagName === "BUTTON") {
+        runs.push({ text: collapse(node.textContent).trim(), a: node });
+      } else {
+        for (const run of runsOf(node, skip)) runs.push(run);
       }
     }
-    // trim outer whitespace across run boundaries
-    if (runs.length) {
-      runs[0].text = runs[0].text.replace(/^\s+/, "");
-      runs[runs.length - 1].text = runs[runs.length - 1].text.replace(/\s+$/, "");
-    }
-    return runs;
   }
+  if (runs.length) {
+    runs[0].text = runs[0].text.replace(/^\s+/, "");
+    runs[runs.length - 1].text = runs[runs.length - 1].text.replace(/\s+$/, "");
+  }
+  return runs.filter((r) => r.text || r.a);
+}
 
+// Parse once at boot; the blueprint keeps element references and raw runs so
+// the article can be re-typeset at any column count.
+export function parseArticle(article) {
+  const blocks = [];
   function walk(el) {
     for (const child of el.children) {
       const tag = child.tagName;
-      if (tag === "HEADER" || tag === "SECTION") {
-        if (tag === "SECTION") blocks.push({ type: "sectionStart", id: child.id });
+      if (tag === "HEADER" || tag === "SECTION" || tag === "FOOTER") {
         walk(child);
-      } else if (tag === "NAV") {
-        blocks.push({ type: "nav", el: child, runs: runsOf(child) });
       } else if (tag === "H1") {
-        blocks.push({ type: "h1", el: child, text: child.textContent.trim() });
+        blocks.push({ type: "name", el: child, text: collapse(child.textContent).trim() });
       } else if (tag === "H2") {
-        blocks.push({ type: "h2", el: child, text: child.textContent.trim() });
-      } else if (tag === "P") {
+        blocks.push({ type: "heading", el: child, text: collapse(child.textContent).trim() });
+      } else if (tag === "P" || tag === "DIV") {
         const cls = child.classList;
         const type = cls.contains("tagline") ? "tagline"
           : cls.contains("hint") ? "hint"
-          : cls.contains("interstitial") ? "interstitial"
+          : cls.contains("colophon") ? "colophon"
+          : cls.contains("actions") ? "actions"
           : "p";
         blocks.push({ type, el: child, runs: runsOf(child) });
-      } else if (tag === "FIGURE" && child.dataset.glyph) {
-        blocks.push({ type: "plane", el: child, rows: parseInt(child.dataset.rows ?? "16", 10),
-                      aspect: parseFloat(child.dataset.aspect ?? "0"),
-                      caption: child.querySelector("figcaption")?.textContent.trim() ?? "" });
       } else if (tag === "UL") {
         for (const li of child.children) {
-          blocks.push({ type: "li", el: li, runs: runsOf(li) });
+          const time = li.querySelector(":scope > time");
+          const note = li.querySelector(":scope > small");
+          blocks.push({
+            type: "entry",
+            el: li,
+            runs: runsOf(li, (n) => n === time || n === note),
+            time: time ? { el: time, text: collapse(time.textContent).trim() } : null,
+            note: note ? { el: note, runs: runsOf(note) } : null,
+          });
         }
       } else if (tag === "FORM" && child.hasAttribute("data-inbox")) {
-        blocks.push({ type: "inbox", el: child, rows: parseInt(child.dataset.rows ?? "6", 10),
-                      label: child.dataset.label || "" });
+        blocks.push({ type: "inbox", el: child, rows: parseInt(child.dataset.rows ?? "6", 10) });
         walk(child);
       }
     }
   }
-
   walk(article);
   return blocks;
 }
@@ -77,25 +94,26 @@ export function parseArticle(article) {
 export function typeset(blocks, article, ctx) {
   const { cols, viewRows, cellW, cellH, fontSize, xOffset, measure, pad, spacing } = ctx;
   const contentW = Math.min(cols - 4, measure);
-  const left = Math.floor((cols - contentW) / 2);
+  // the column sits a little left of centre, so the lattice keeps a wide
+  // field on the right
+  const slack = cols - contentW;
+  const left = Math.max(2, Math.min(Math.floor(slack * 0.34), slack - 2));
 
   const lines = [];
   const sections = [{ row: 0, id: "", label: "" }];
   const links = [];
-  const glitchPool = [];
-  let row = 0;
+  let hero = null;
+  let row = 3;
 
-  const spacingWide = (spacing + cellW).toFixed(2);
-
-  function span(el, text, r, c, wide, hidden) {
+  function span(el, text, r, c, hidden = false) {
     const s = document.createElement("span");
     s.className = "gl";
     s.textContent = text;
     s.style.left = (xOffset + c * cellW + pad).toFixed(2) + "px";
-    s.style.top = r * cellH + "px";
+    s.style.top = (r * cellH).toFixed(2) + "px";
     s.style.fontSize = fontSize + "px";
     s.style.lineHeight = cellH + "px";
-    s.style.letterSpacing = (wide ? spacingWide : spacing.toFixed(2)) + "px";
+    s.style.letterSpacing = spacing.toFixed(3) + "px";
     if (hidden) s.setAttribute("aria-hidden", "true");
     el.appendChild(s);
     return s;
@@ -115,8 +133,8 @@ export function typeset(blocks, article, ctx) {
   }
 
   // Wrap runs into lines of pieces; a piece is {text, a}.
-  function wrapRuns(runs, limit) {
-    const widthLimit = Math.max(1, limit);
+  function wrap(runs, limit) {
+    const width = Math.max(1, limit);
     const words = [];
     for (const run of runs) {
       for (const part of run.text.split(/(\s+)/)) {
@@ -129,22 +147,19 @@ export function typeset(blocks, article, ctx) {
     let len = 0;
     let pending = false;
     let pendingA = null;
-
-    function flush() {
+    const flush = () => {
       if (line.length) out.push(line);
       line = [];
       len = 0;
       pending = false;
       pendingA = null;
-    }
-
-    function push(piece) {
+    };
+    const push = (text, a) => {
       const last = line[line.length - 1];
-      if (last && last.a === piece.a) last.text += piece.text;
-      else line.push({ text: piece.text, a: piece.a });
-      len += piece.text.length;
-    }
-
+      if (last && last.a === a) last.text += text;
+      else line.push({ text, a });
+      len += text.length;
+    };
     for (const word of words) {
       if (word.space) {
         if (len > 0) {
@@ -156,17 +171,16 @@ export function typeset(blocks, article, ctx) {
       let text = word.text;
       while (text.length > 0) {
         const need = text.length + (pending ? 1 : 0);
-        if (len + need <= widthLimit) {
-          if (pending) push({ text: " ", a: pendingA });
+        if (len + need <= width) {
+          if (pending) push(" ", pendingA);
           pending = false;
-          push({ text, a: word.a });
+          push(text, word.a);
           text = "";
-        } else if (text.length > widthLimit) {
-          // a word longer than the measure: hard break
+        } else if (text.length > width) {
           pending = false;
-          const take = widthLimit - len;
+          const take = width - len;
           if (take <= 0) { flush(); continue; }
-          push({ text: text.slice(0, take), a: word.a });
+          push(text.slice(0, take), word.a);
           text = text.slice(take);
           flush();
         } else {
@@ -175,156 +189,116 @@ export function typeset(blocks, article, ctx) {
       }
     }
     flush();
-    // wrapped lines lost their breaking space; remember it for DOM copy fidelity
-    for (let i = 0; i < out.length - 1; i += 1) out[i].brokeAfter = true;
+    // wrapped lines lost their breaking space; keep it for copy fidelity
+    for (let i = 0; i < out.length - 1; i++) out[i].brokeAfter = true;
     return out;
   }
 
-  // Lay out wrapped lines at a column, emitting field lines and DOM spans.
-  function layoutRuns(block, startCol, widthLimit, kind, { center = false, gapAfter = 1 } = {}) {
-    const el = block.el;
-    el.textContent = "";
-    const wrapped = wrapRuns(block.runs, widthLimit);
-    for (const pieces of wrapped) {
-      const lineLen = pieces.reduce((n, p) => n + p.text.length, 0);
-      let c = center ? Math.max(startCol, Math.floor((cols - lineLen) / 2)) : startCol;
+  // Place runs at a column, wrapping at a width; returns the rows used.
+  function place(el, runs, r, c, width, kind) {
+    const wrapped = wrap(runs, width);
+    wrapped.forEach((pieces, n) => {
+      let cc = c;
       pieces.forEach((piece, k) => {
-        const domText = piece.text + (k === pieces.length - 1 && pieces.brokeAfter ? " " : "");
+        const text = piece.text + (k === pieces.length - 1 && pieces.brokeAfter ? " " : "");
         if (piece.a) {
           const id = linkIdFor(piece.a);
-          if (!piece.a.parentNode) el.appendChild(piece.a);
-          span(piece.a, domText, row, c, false);
-          emit(row, c, piece.text, K_LINK, id);
+          if (!piece.a.parentNode || !el.contains(piece.a)) el.appendChild(piece.a);
+          span(piece.a, text, r + n, cc);
+          emit(r + n, cc, piece.text, K_LINK, id);
         } else {
-          span(el, domText, row, c, false);
-          emit(row, c, piece.text, kind);
-          if (kind === K_TEXT) glitchPool.push({ row, col: c, len: piece.text.length });
+          span(el, text, r + n, cc);
+          emit(r + n, cc, piece.text, kind);
         }
-        c += piece.text.length;
+        cc += piece.text.length;
       });
-      row += 1;
-    }
-    row += gapAfter;
+    });
+    return Math.max(1, wrapped.length);
   }
 
   // --- reset the DOM we own ---
   for (const a of article.querySelectorAll("a, button")) a.textContent = "";
+  for (const b of blocks) {
+    if (b.type === "entry") {
+      b.el.textContent = "";
+      if (b.time) b.time.el.textContent = "";
+      if (b.note) b.note.el.textContent = "";
+    } else if (b.type !== "inbox") {
+      b.el.textContent = "";
+    }
+  }
 
+  let first = true;
   for (const block of blocks) {
     switch (block.type) {
-      case "sectionStart":
-        break;
-
-      case "nav": {
-        row = 2;
-        layoutRuns(block, left, contentW, K_LINK, { gapAfter: 2 });
-        break;
-      }
-
-      case "h1": {
-        // The name is a line of type, not a banner: the page is minimal and
-        // the content starts almost at once. Letter-spaced capitals carry
-        // enough weight to read as a heading without taking any room.
-        row = Math.max(row, 2);
-        const el = block.el;
-        el.textContent = "";
-        const text = block.text.toUpperCase();
-        span(el, text, row, left, false);
-        emit(row, left, text, K_TEXT);
+      case "name": {
+        span(block.el, block.text, row, left);
+        emit(row, left, block.text, K_TEXT);
+        hero = { row, col: left };
         row += 1;
         break;
       }
 
       case "tagline": {
-        layoutRuns(block, left, contentW, K_FAINT, { gapAfter: 2 });
-        break;
-      }
-
-      case "hint": {
-        // pinned near the bottom of the first viewport if we are still in it
-        if (row < viewRows - 4) row = viewRows - 3;
-        layoutRuns(block, left, contentW, K_FAINT, { center: true, gapAfter: 0 });
-        break;
-      }
-
-      case "interstitial": {
-        row += 3;
-        const el = block.el;
-        el.textContent = "";
-        const text = block.runs.map((r) => r.text).join("").toUpperCase();
-        const wide = text.length * 2 - 1 <= cols - 2;
-        if (wide) {
-          const width = text.length * 2 - 1;
-          const c = Math.max(1, Math.floor((cols - width) / 2));
-          span(el, text, row, c, true);
-          emit(row, c, [...text].join(" "), K_TEXT);
-          row += 1;
-        } else {
-          const wrapped = wrapRuns([{ text, a: null }], cols - 4);
-          for (const pieces of wrapped) {
-            const lineText = pieces.map((p) => p.text).join("");
-            const c = Math.max(1, Math.floor((cols - lineText.length) / 2));
-            span(el, lineText + (pieces.brokeAfter ? " " : ""), row, c, false);
-            emit(row, c, lineText, K_TEXT);
-            row += 1;
-          }
-        }
-        row += 4;
-        break;
-      }
-
-      case "h2": {
-        row += 4;
-        const el = block.el;
-        el.textContent = "";
-        const text = block.text.toUpperCase();
-        const wide = text.length * 2 - 1 <= contentW;
-        span(el, text, row, left, wide);
-        emit(row, left, wide ? [...text].join(" ") : text, K_TEXT);
-        const width = wide ? text.length * 2 - 1 : text.length;
-        emit(row + 1, left, "─".repeat(width), K_FAINT);
-        row += 3;
-        const section = el.closest("section");
-        sections.push({ row: row - 3, id: section ? section.id : "", label: block.text.toLowerCase() });
+        row += place(block.el, block.runs, row, left, contentW, K_FAINT);
+        row += 2;
         break;
       }
 
       case "p": {
-        layoutRuns(block, left, contentW, K_TEXT, { gapAfter: 1 });
+        row += place(block.el, block.runs, row, left, contentW, K_TEXT);
+        row += 1;
         break;
       }
 
-      case "plane": {
-        const el = block.el;
-        const planeCols = Math.min(contentW, cols - 4);
-        const wanted = block.aspect
-          ? Math.round((planeCols * cellW * block.aspect) / cellH)
-          : block.rows;
-        const planeRows = Math.max(4, Math.min(wanted, viewRows - 4));
-        const c = Math.floor((cols - planeCols) / 2);
+      case "hint": {
+        row += place(block.el, block.runs, row, left, contentW, K_FAINT);
+        row += 1;
+        break;
+      }
+
+      case "heading": {
+        row += first ? 1 : 3;
+        first = false;
+        const text = block.text;
+        span(block.el, text, row, left);
+        emit(row, left, text, K_TEXT);
+        const ruleFrom = left + text.length + 2;
+        const ruleLen = left + contentW - ruleFrom;
+        if (ruleLen > 2) emit(row, ruleFrom, "─".repeat(ruleLen), K_FAINT);
+        const section = block.el.closest("section");
+        sections.push({ row: Math.max(0, row - 3), id: section ? section.id : "", label: text.toLowerCase() });
         row += 2;
-        // The region is reserved here; the plane writes the glyphs each frame.
-        // Screen readers and no-JS get the real <img>/<figcaption> instead.
-        if (ctx.placePlane) ctx.placePlane(el, row, c, planeCols, planeRows);
-        row += planeRows + 1;
-        if (block.caption) {
-          const width = Math.min(block.caption.length, contentW);
-          const cc = Math.floor((cols - width) / 2);
-          emit(row, cc, block.caption.slice(0, width), K_FAINT);
-          row += 1;
+        break;
+      }
+
+      case "entry": {
+        const when = block.time?.text ?? "";
+        const gap = when ? when.length + 3 : 0;
+        const used = place(block.el, block.runs, row, left, contentW - gap, K_TEXT);
+        if (when) {
+          const c = left + contentW - when.length;
+          block.el.appendChild(block.time.el);
+          // the space before the date belongs to the copied text
+          span(block.time.el, " " + when, row, c - 1);
+          emit(row, c, when, K_FAINT);
         }
-        row += 2;
+        let r = row + used;
+        if (block.note) {
+          block.el.appendChild(block.note.el);
+          span(block.note.el, " ", r, left - 1);
+          r += place(block.note.el, block.note.runs, r, left, contentW - gap, K_FAINT);
+        }
+        row = r + 1;
         break;
       }
 
       case "inbox": {
-        // A box drawn from the cells around it. The textarea is placed over
-        // the interior, one cell in from the border, and paints itself.
-        const boxCols = Math.min(70, contentW);
-        const label = block.label && block.label.length + 6 < boxCols ? ` ${block.label} ` : "";
-        row += 1;
-        emit(row, left, "┌" + label + "─".repeat(boxCols - 2 - label.length) + "┐", K_FAINT);
-        for (let r = 1; r <= block.rows; r += 1) {
+        // A box drawn from the cells around it. The textarea sits over the
+        // interior, one cell in from the border; untyped cells stay lattice.
+        const boxCols = contentW;
+        emit(row, left, "┌" + "─".repeat(boxCols - 2) + "┐", K_FAINT);
+        for (let r = 1; r <= block.rows; r++) {
           emit(row + r, left, "│", K_FAINT);
           emit(row + r, left + boxCols - 1, "│", K_FAINT);
         }
@@ -334,40 +308,23 @@ export function typeset(blocks, article, ctx) {
         break;
       }
 
-      case "li": {
-        const el = block.el;
-        el.textContent = "";
-        span(el, "·", row, left, false, true);
-        emit(row, left, "·", K_FAINT);
-        // re-wrap runs at reduced width with a hanging indent of 2
-        const saved = row;
-        const wrapped = wrapRuns(block.runs, contentW - 2);
-        for (const pieces of wrapped) {
-          let c = left + 2;
-          pieces.forEach((piece, k) => {
-            const domText = piece.text + (k === pieces.length - 1 && pieces.brokeAfter ? " " : "");
-            if (piece.a) {
-              const id = linkIdFor(piece.a);
-              if (!piece.a.parentNode) el.appendChild(piece.a);
-              span(piece.a, domText, row, c, false);
-              emit(row, c, piece.text, K_LINK, id);
-            } else {
-              span(el, domText, row, c, false);
-              emit(row, c, piece.text, K_TEXT);
-              glitchPool.push({ row, col: c, len: piece.text.length });
-            }
-            c += piece.text.length;
-          });
-          row += 1;
-        }
-        if (row === saved) row += 1;
+      case "actions": {
+        row += place(block.el, block.runs, row, left, contentW, K_TEXT);
         row += 1;
+        break;
+      }
+
+      case "colophon": {
+        row += 3;
+        row += place(block.el, block.runs, row, left, contentW, K_FAINT);
         break;
       }
     }
   }
 
-  const worldRows = row + Math.round(viewRows * 0.5);
+  // the document ends a little before the screen does, so the last line can
+  // rise to the middle rather than pin to the bottom edge
+  const worldRows = row + Math.round(viewRows * 0.45);
   article.style.height = worldRows * cellH + "px";
 
   // Native controls need a real box for focus, accessibility, and hit testing.
@@ -389,17 +346,5 @@ export function typeset(blocks, article, ctx) {
     }
   }
 
-  // one unstable glyph per section, chosen from ordinary text
-  const glitches = [];
-  for (let s = 1; s < sections.length; s += 1) {
-    const from = sections[s].row;
-    const to = s + 1 < sections.length ? sections[s + 1].row : worldRows;
-    const candidates = glitchPool.filter((g) => g.row >= from && g.row < to && g.len > 4);
-    if (!candidates.length) continue;
-    const pick = candidates[Math.floor(Math.random() * candidates.length)];
-    const offset = 1 + Math.floor(Math.random() * (pick.len - 2));
-    glitches.push({ row: pick.row, col: pick.col + offset });
-  }
-
-  return { lines, worldRows, sections, links, glitches };
+  return { lines, worldRows, sections, links, hero, left, contentW };
 }

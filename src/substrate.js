@@ -1,479 +1,396 @@
-// The living substrate.
+// The substrate: what every cell shows when the document is not using it.
 //
-// One law governs the whole field: every cell has a temperature. Temperature
-// decides how dense a glyph the cell wants to hold, how quickly it changes,
-// and how brightly it burns. A separate flow vector decides which way its
-// strokes lean. The cursor does not "trigger an effect" — it warms the medium,
-// and the medium answers the only way it can: by changing glyphs.
+// At rest each cell holds one small mark, so the whole screen reads as a
+// fixed lattice. That lattice is the reference the eye needs: whatever
+// passes through it, the marks stay where they are.
 //
-//   heat   diffuses and cools     -> density, transition rate, opacity
-//   flow   advects and slackens   -> stroke orientation
-//   wave   propagates and damps   -> click ripples, expanding rings
+// Each cell has an energy. Energy decides which character the cell holds:
+// the resting mark when cool, then heavier marks up a ramp as it warms.
+// Energy comes from four places, and all of them change cells in place:
 //
-// Transitions are never a cross-fade between unrelated shapes. Each is a walk
-// through the glyph morphospace (see glyphspace.js), cross-fading only between
-// visually adjacent hops, so a change reads as one form deforming into another.
+//   heat      the cursor's path, and the document's ink as it passes
+//             through (the wake a scrolled line leaves behind)
+//   flow      the direction the cursor moved, so warm marks lean with it
+//   waves     a click rings outward
+//   weather   a slow field that swells and fades in place, never drifting
 
-const MAX_STEPS = 8;
+import { DOT } from "./atlas.js";
 
-export function createSubstrate(space, params, eligible) {
+export function createSubstrate(atlas, params) {
   let P = params;
-  // indices of glyphs the resting field is allowed to draw from — the space
-  // itself is wider, because reveals morph into arbitrary text characters
-  let allowed = eligible && eligible.length ? eligible.slice() : null;
   let cols = 0;
   let rows = 0;
   let n = 0;
+  let aspect = 1.5;
 
-  // simulation channels
   let heat = new Float32Array(0);
-  let heatNext = new Float32Array(0);
+  let trail = new Float32Array(0);
   let flowX = new Float32Array(0);
   let flowY = new Float32Array(0);
   let wave = new Float32Array(0);
   let wavePrev = new Float32Array(0);
   let waveNext = new Float32Array(0);
+  let waveLive = false;
 
-  // per-cell glyph animation
-  let bursting = new Uint8Array(0);  // two-state Markov: still or in weather
-  let shelter = new Float32Array(0); // 1 = open field, <1 = calm, near text
-  let current = new Int16Array(0);   // settled glyph index
-  let path = new Int16Array(0);      // morph sequence, MAX_STEPS per cell
-  let pathLen = new Uint8Array(0);
-  let started = new Float32Array(0); // ms
-  let duration = new Float32Array(0);
-  let lit = new Uint8Array(0);       // density mask
-  let twPhase = new Float32Array(0);
-  let twRate = new Float32Array(0);
+  let restGlyph = new Uint16Array(0);
+  let restInk = new Float32Array(0);
+  let vignette = new Float32Array(0);
+  let level = new Int8Array(0);
+  let shown = new Uint16Array(0);
+  let from = new Uint16Array(0);
+  let fromInk = new Float32Array(0);
+  let changedAt = new Float32Array(0);
+  let weather = new Float32Array(0);
+  let weatherAt = -1e9;
 
-  // Commitment. A committed cell holds a document character at full ink and
-  // is exempt from the weather; it got there by morphing up out of the murmur
-  // and it leaves the same way. There is no second layer: text is a state of
-  // the same cells that murmur.
-  let committed = new Uint8Array(0);  // 1 = holds a document character
-  let inkMode = new Uint8Array(0);    // 0 free, 1 rising to text, 2 falling to murmur
-  let inkFrom = new Float32Array(0);
-  let inkTo = new Float32Array(0);
-  let fadeOnly = new Uint8Array(0); // release by ink alone: the letter dims, then the murmur takes the cell
+  let rest = [];
+  let ramp = [];
+  let strokes = [];
 
-  let ambientPool = [];
-  let rngState = 0x2f6e2b1;
+  // the pointer presses on the lattice: marks swell around it
+  let pointer = null;
 
-  // xorshift: deterministic, allocation-free, and faster than Math.random
+  // first contact: a ring leaves the origin and switches the lattice on
+  let reveal = null;
+  let arrival = new Float32Array(0);
+
+  let seed = 0x6d2b79f5;
   function rnd() {
-    rngState ^= rngState << 13;
-    rngState ^= rngState >>> 17;
-    rngState ^= rngState << 5;
-    return ((rngState >>> 0) % 100000) / 100000;
+    seed ^= seed << 13;
+    seed ^= seed >>> 17;
+    seed ^= seed << 5;
+    return (seed >>> 0) / 4294967296;
   }
 
-  function buildAmbientPool() {
-    // the resting field draws from the quiet end of the density ramp,
-    // restricted to the chosen alphabet
-    const ordered = allowed
-      ? space.byDensity.filter((i) => allowed.includes(i))
-      : space.byDensity.slice();
-    const cut = Math.max(4, Math.round(ordered.length * P.ambientBand));
-    ambientPool = ordered.slice(0, cut);
-    if (ambientPool.length === 0) ambientPool = space.byDensity.slice(0, 8);
+  function hash3(x, y, z) {
+    let h = Math.imul(x, 0x27d4eb2d) ^ Math.imul(y, 0x165667b1) ^ Math.imul(z, 0x61c88647);
+    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+    h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+    return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
   }
 
-  function resize(nextCols, nextRows) {
+  function noise3(x, y, z) {
+    const xi = Math.floor(x);
+    const yi = Math.floor(y);
+    const zi = Math.floor(z);
+    const fx = x - xi;
+    const fy = y - yi;
+    const fz = z - zi;
+    const u = fx * fx * (3 - 2 * fx);
+    const v = fy * fy * (3 - 2 * fy);
+    const w = fz * fz * (3 - 2 * fz);
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const x00 = lerp(hash3(xi, yi, zi), hash3(xi + 1, yi, zi), u);
+    const x10 = lerp(hash3(xi, yi + 1, zi), hash3(xi + 1, yi + 1, zi), u);
+    const x01 = lerp(hash3(xi, yi, zi + 1), hash3(xi + 1, yi, zi + 1), u);
+    const x11 = lerp(hash3(xi, yi + 1, zi + 1), hash3(xi + 1, yi + 1, zi + 1), u);
+    return lerp(lerp(x00, x10, v), lerp(x01, x11, v), w);
+  }
+
+  const SETS = {
+    rest: {
+      dot: [DOT[0]],
+      plus: ["+"],
+      mark: [DOT[0], DOT[0], DOT[0], ".", "'", "`", ","],
+    },
+    ramp: {
+      dots: DOT.slice(1),
+      marks: [":", "+", "*"],
+      soft: [DOT[1], ":", "+", "*"],
+    },
+  };
+
+  function buildSets() {
+    rest = (SETS.rest[P.restMark] ?? SETS.rest.dot).map((ch) => atlas.ensure(ch));
+    ramp = (SETS.ramp[P.ramp] ?? SETS.ramp.soft).map((ch) => atlas.ensure(ch));
+    // strokes by orientation, a quarter turn in four steps
+    strokes = ["-", "\\", "|", "/"].map((ch) => atlas.ensure(ch));
+    for (let i = 0; i < n; i++) {
+      restGlyph[i] = rest[(hash3(i, 7, 3) * rest.length) | 0];
+      if (level[i] === 0) shown[i] = restGlyph[i];
+    }
+  }
+
+  function buildVignette() {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const dx = ((c + 0.5) / cols) * 2 - 1;
+        const dy = ((r + 0.5) / rows) * 2 - 1;
+        const excess = Math.max(0, Math.hypot(dx * 0.8, dy) - 0.7) / 0.6;
+        vignette[r * cols + c] = 1 - P.vignette * Math.min(1, excess * excess);
+      }
+    }
+  }
+
+  function resize(nextCols, nextRows, nextAspect) {
     cols = nextCols;
     rows = nextRows;
+    aspect = nextAspect;
     n = cols * rows;
-
     heat = new Float32Array(n);
-    heatNext = new Float32Array(n);
+    trail = new Float32Array(n);
     flowX = new Float32Array(n);
     flowY = new Float32Array(n);
     wave = new Float32Array(n);
     wavePrev = new Float32Array(n);
     waveNext = new Float32Array(n);
-
-    current = new Int16Array(n);
-    path = new Int16Array(n * MAX_STEPS);
-    pathLen = new Uint8Array(n);
-    started = new Float32Array(n);
-    duration = new Float32Array(n);
-    lit = new Uint8Array(n);
-    bursting = new Uint8Array(n);
-    committed = new Uint8Array(n);
-    inkMode = new Uint8Array(n);
-    inkFrom = new Float32Array(n);
-    inkTo = new Float32Array(n);
-    fadeOnly = new Uint8Array(n);
-    twPhase = new Float32Array(n);
-    twRate = new Float32Array(n);
-
-    buildAmbientPool();
-    for (let i = 0; i < n; i += 1) {
-      current[i] = ambientPool[(rnd() * ambientPool.length) | 0];
-      lit[i] = rnd() < P.density ? 1 : 0;
-      twPhase[i] = rnd();
-      twRate[i] = 1 / ((P.twMin + rnd() * Math.max(0.1, P.twMax - P.twMin)) * 1000);
-    }
+    restGlyph = new Uint16Array(n);
+    restInk = new Float32Array(n);
+    vignette = new Float32Array(n);
+    level = new Int8Array(n);
+    shown = new Uint16Array(n);
+    from = new Uint16Array(n);
+    fromInk = new Float32Array(n);
+    changedAt = new Float32Array(n).fill(-1e9);
+    weather = new Float32Array(n);
+    arrival = new Float32Array(n);
+    for (let i = 0; i < n; i++) restInk[i] = 0.82 + rnd() * 0.36;
+    buildSets();
+    buildVignette();
+    if (reveal) placeReveal();
   }
 
-  // --- injection -------------------------------------------------------
+  // ---- input ----
 
-  // Warm a disc of cells and push flow through them. Called along the pointer's
-  // path, not just at its destination, so a fast sweep leaves a continuous
-  // wake instead of a dotted line.
   function warm(col, row, vx, vy, strength) {
     const radius = P.warmRadius;
-    const r2 = radius * radius;
+    const r0 = Math.max(0, Math.floor(row - radius / aspect));
+    const r1 = Math.min(rows - 1, Math.ceil(row + radius / aspect));
     const c0 = Math.max(0, Math.floor(col - radius));
     const c1 = Math.min(cols - 1, Math.ceil(col + radius));
-    const r0 = Math.max(0, Math.floor(row - radius));
-    const r1 = Math.min(rows - 1, Math.ceil(row + radius));
-    for (let r = r0; r <= r1; r += 1) {
-      for (let c = c0; c <= c1; c += 1) {
-        const dx = c - col;
-        const dy = (r - row) * P.aspect;
-        const d2 = dx * dx + dy * dy;
-        if (d2 > r2) continue;
-        const falloff = 1 - Math.sqrt(d2) / radius;
-        const w = falloff * falloff * strength;
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const dx = c + 0.5 - col;
+        const dy = (r + 0.5 - row) * aspect;
+        const d = Math.hypot(dx, dy) / radius;
+        if (d >= 1) continue;
+        const w = (1 - d) * (1 - d) * strength;
         const i = r * cols + c;
-        heat[i] = Math.min(P.heatCeiling, heat[i] + w * P.warmGain);
-        flowX[i] += vx * w * P.flowGain;
-        flowY[i] += vy * w * P.flowGain;
+        heat[i] = Math.min(1.6, heat[i] + w * P.warmGain);
+        flowX[i] += vx * w;
+        flowY[i] += vy * w;
       }
     }
   }
 
   function impulse(col, row, strength) {
-    const i = (row | 0) * cols + (col | 0);
-    if (i < 0 || i >= n) return;
-    wave[i] += strength;
-    wavePrev[i] -= strength * 0.5;
+    const c = Math.round(col);
+    const r = Math.round(row);
+    if (c < 0 || c >= cols || r < 0 || r >= rows) return;
+    wave[r * cols + c] += strength;
+    wavePrev[r * cols + c] -= strength * 0.5;
+    waveLive = true;
   }
 
-  // --- simulation ------------------------------------------------------
-
-  function stepSimulation(dt) {
-    const k = Math.min(1, dt / 16.67);
-
-    // heat: 5-point diffusion, then exponential cooling
-    const diffuse = P.heatDiffuse * k;
-    const cool = Math.pow(P.heatCool, k);
-    for (let r = 0; r < rows; r += 1) {
-      const up = r > 0 ? -cols : 0;
-      const down = r < rows - 1 ? cols : 0;
-      for (let c = 0; c < cols; c += 1) {
-        const i = r * cols + c;
-        const left = c > 0 ? -1 : 0;
-        const right = c < cols - 1 ? 1 : 0;
-        const laplace = heat[i + up] + heat[i + down] + heat[i + left] + heat[i + right] - 4 * heat[i];
-        heatNext[i] = (heat[i] + diffuse * laplace) * cool;
+  function placeReveal() {
+    const { oc, or } = reveal;
+    let last = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const d = Math.hypot(c - oc, (r - or) * aspect);
+        // a little grain in the front so it reads as matter, not a vector ring
+        const t = (d / P.revealSpeed) * 1000 + hash3(c, r, 11) * 70;
+        arrival[r * cols + c] = t;
+        if (t > last) last = t;
       }
     }
-    const swapHeat = heat;
-    heat = heatNext;
-    heatNext = swapHeat;
+    reveal.duration = last + 700;
+  }
 
-    // flow simply slackens; direction matters, magnitude decays
-    const slack = Math.pow(P.flowDecay, k);
-    for (let i = 0; i < n; i += 1) {
+  // ---- simulation ----
+
+  function step(now, dt) {
+    const k = Math.min(4, dt / 16.67);
+    const cool = Math.exp(-dt / Math.max(1, P.coolMs));
+    const fade = Math.exp(-dt / Math.max(1, P.wakeMs));
+    const slack = Math.exp(-dt / 180);
+    for (let i = 0; i < n; i++) {
+      heat[i] *= cool;
+      trail[i] *= fade;
       flowX[i] *= slack;
       flowY[i] *= slack;
     }
 
-    // wave equation with damping: expanding rings from clicks
-    if (P.waveSpeed > 0) {
-      const c2 = P.waveSpeed * P.waveSpeed * k;
+    if (waveLive) {
+      const c2 = P.waveSpeed * P.waveSpeed * Math.min(1, k);
       const damp = Math.pow(P.waveDamp, k);
       let energy = 0;
-      for (let r = 0; r < rows; r += 1) {
+      for (let r = 0; r < rows; r++) {
         const up = r > 0 ? -cols : 0;
         const down = r < rows - 1 ? cols : 0;
-        for (let c = 0; c < cols; c += 1) {
+        for (let c = 0; c < cols; c++) {
           const i = r * cols + c;
           const left = c > 0 ? -1 : 0;
           const right = c < cols - 1 ? 1 : 0;
-          const laplace = wave[i + up] + wave[i + down] + wave[i + left] + wave[i + right] - 4 * wave[i];
-          waveNext[i] = ((2 * wave[i] - wavePrev[i]) + c2 * laplace) * damp;
+          const lap = wave[i + up] + wave[i + down] + wave[i + left] + wave[i + right] - 4 * wave[i];
+          waveNext[i] = (2 * wave[i] - wavePrev[i] + c2 * lap) * damp;
           energy += Math.abs(waveNext[i]);
         }
       }
-      const swapPrev = wavePrev;
+      const swap = wavePrev;
       wavePrev = wave;
       wave = waveNext;
-      waveNext = swapPrev;
-      if (energy < 0.01) wave.fill(0), wavePrev.fill(0);
+      waveNext = swap;
+      if (energy < 0.02 * Math.max(1, n / 1000)) {
+        wave.fill(0);
+        wavePrev.fill(0);
+        waveLive = false;
+      }
     }
-  }
 
-  // --- glyph transitions ----------------------------------------------
-
-  function startTransition(i, now) {
-    const energy = Math.min(1, heat[i] + Math.abs(wave[i]) * P.waveHeat);
-    const vx = flowX[i];
-    const vy = flowY[i];
-    const speed = Math.hypot(vx, vy);
-
-    // temperature decides how dense a glyph this cell wants
-    const targetDensity = P.restDensity + energy * P.densityGain;
-    let target;
-    if (speed > P.flowThreshold) {
-      // flowing: choose a glyph whose strokes lean along the current
-      target = space.forFlow(Math.atan2(vy * P.aspect, vx), targetDensity);
-    } else if (energy > P.energyThreshold) {
-      target = space.atDensity(targetDensity + (rnd() - 0.5) * 0.02);
-    } else {
-      target = ambientPool[(rnd() * ambientPool.length) | 0];
-    }
-    if (target === current[i]) return;
-
-    // hotter cells settle faster; the field feels quick where you touch it
-    const steps = Math.max(2, Math.round(P.morphSteps - energy * 1.5));
-    const sequence = space.morph(current[i], target, steps);
-    const len = Math.min(MAX_STEPS, sequence.length);
-    for (let s = 0; s < len; s += 1) path[i * MAX_STEPS + s] = sequence[s];
-    pathLen[i] = len;
-    started[i] = now;
-    duration[i] = (P.morphMs * (1 - energy * P.hasteGain)) * (0.75 + rnd() * 0.5);
-  }
-
-  function stepTransitions(now, dt) {
-    const perCell = dt / 1000;
-    for (let i = 0; i < n; i += 1) {
-      if (!lit[i]) continue;
-      if (pathLen[i] > 0) {
-        if (now - started[i] >= duration[i]) {
-          current[i] = path[i * MAX_STEPS + pathLen[i] - 1];
-          pathLen[i] = 0;
-          if (inkMode[i] === 2) {
-            inkMode[i] = 0; // released: free again
-            if (fadeOnly[i]) {
-              // the letter has dimmed to murmur level; swap it for a murmur
-              // glyph now, while nobody can see the difference
-              fadeOnly[i] = 0;
-              current[i] = ambientPool[(rnd() * ambientPool.length) | 0];
-            }
-          }
+    // weather changes slowly; ten updates a second are plenty
+    if (P.weather > 0 && now - weatherAt > 100) {
+      weatherAt = now;
+      const z = now * 0.001 * P.weatherSpeed;
+      const sx = 1 / P.weatherScale;
+      const sy = aspect / P.weatherScale;
+      const floor = 0.62;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const v = noise3(c * sx, r * sy, z);
+          weather[r * cols + c] = v > floor ? ((v - floor) / (1 - floor)) * P.weather : 0;
         }
-        continue;
       }
-      if (committed[i]) continue;
-      const energy = Math.min(1, heat[i] + Math.abs(wave[i]) * P.waveHeat);
+    } else if (P.weather <= 0 && weatherAt !== -1e9) {
+      weather.fill(0);
+      weatherAt = -1e9;
+    }
 
-      // Two-state Markov chain per cell. Uniform turnover reads as a
-      // screensaver; long-tailed inter-event times with genuinely still
-      // regions between drifting clumps is what weather does.
-      if (bursting[i]) {
-        if (rnd() < P.burstOff * perCell) bursting[i] = 0;
-      } else if (rnd() < P.burstOn * perCell) {
-        bursting[i] = 1;
-      }
+    if (reveal && now - reveal.t0 > reveal.duration) reveal = null;
 
-      // Arrhenius rather than linear: below the knee almost nothing happens,
-      // above it the field liquefies. A lazy hover does nothing; a real
-      // gesture finds the melting point. Shelter raises the activation
-      // energy near text, so protection is exponential and never touches ink.
-      const calm = shelter.length ? 1 - shelter[i] : 0;
-      const rate = P.restRate
-        * Math.exp(P.rateKnee * energy - 3.6 * calm)
-        * (bursting[i] ? P.burstGain : 1);
-      if (rnd() < rate * perCell) startTransition(i, now);
+    // the lens eases in and out rather than popping
+    if (pointer) {
+      const target = pointer.leaving ? 0 : 1;
+      pointer.strength += (target - pointer.strength) * (1 - Math.exp(-dt / 90));
+      if (pointer.leaving && pointer.strength < 0.01) pointer = null;
     }
   }
 
-  function step(now, dt) {
-    stepSimulation(dt);
-    stepTransitions(now, dt);
+  // ---- readout ----
+
+  // Content gate for the first-contact reveal: 0 before the ring reaches the
+  // cell, 1 once it has passed.
+  function contentGate(i, now) {
+    if (!reveal) return 1;
+    const d = now - reveal.t0 - arrival[i];
+    return d <= 30 ? 0 : d >= 330 ? 1 : smooth((d - 30) / 300);
   }
 
-  // --- readout ---------------------------------------------------------
+  function smooth(t) {
+    return t * t * (3 - 2 * t);
+  }
 
-  // Resolve one cell to what should actually be painted: up to two glyph
-  // indices and the blend between them. Consecutive hops are visually adjacent,
-  // so this cross-fade reads as deformation rather than interference.
-  const out = { a: 0, b: -1, blend: 0, alpha: 0, energy: 0 };
+  // What the lattice holds at a cell right now: the glyph, the glyph it is
+  // fading from, and how far along that fade is. `out` is reused.
+  const out = { glyph: 0, from: 0, t: 1, ink: 0, fromInk: 0 };
 
-  function read(i, now, vignetteValue) {
-    const energy = Math.min(1.4, heat[i] + Math.abs(wave[i]) * P.waveHeat);
-    out.energy = energy;
-
-    // The cursor's entire signature is a change in turnover rate. A
-    // screenshot taken under the pointer is identical to one at rest — this
-    // is what keeps disturbance from becoming the lantern glow cliche.
-    let alpha = P.alpha * (1 + energy * P.heatAlpha) * vignetteValue;
-    if (P.twAmp > 0) {
-      const phase = (twPhase[i] + now * twRate[i]) % 1;
-      alpha *= 1 + P.twAmp * Math.sin(phase * Math.PI * 2);
-    }
-    const murmur = lit[i] ? alpha : 0;
-
-    if (pathLen[i] === 0) {
-      out.a = current[i];
-      out.b = -1;
-      out.blend = 0;
-      out.alpha = committed[i] ? inkTo[i] : murmur;
+  function sample(i, now, still = false) {
+    if (still) {
+      out.glyph = restGlyph[i];
+      out.from = restGlyph[i];
+      out.t = 1;
+      out.ink = out.fromInk = P.restAlpha * restInk[i] * vignette[i];
       return out;
     }
-
-    // The Solari law: a drum spins fast, then decelerates into its landing.
-    // Progress through the ladder is quadratically eased so early hops flick
-    // past and the last one arrives slowly — the eye can predict the landing
-    // before it happens, which is what makes a change feel *settled* rather
-    // than merely finished. The tail of the duration is held still on the
-    // final glyph so the arrival has a beat.
-    const raw = Math.max(0, Math.min(1, (now - started[i]) / duration[i]));
-    // the landing beat never eats more than a third of a short ladder, so a
-    // quick flip still shows its intermediate letters
-    const hold = Math.min(P.settleHold, duration[i] * 0.33) / Math.max(1, duration[i]);
-    const t = hold >= 1 ? 1 : Math.min(1, raw / (1 - hold));
-    const eased = 1 - (1 - t) * (1 - t);
-
-    const segments = pathLen[i] - 1;
-    if (segments < 1) {
-      out.a = path[i * MAX_STEPS];
-      out.b = -1;
-      out.blend = 0;
-      return out;
+    // weather and the wake only darken a cell's mark; they never change
+    // which mark it is. Changing marks is for touch.
+    let e = heat[i];
+    if (waveLive) e += Math.abs(wave[i]) * P.waveHeat;
+    if (pointer) {
+      const dx = (i % cols) + 0.5 - pointer.col;
+      const dy = (Math.floor(i / cols) + 0.5 - pointer.row) * aspect;
+      const d2 = (dx * dx + dy * dy) / (P.lensRadius * P.lensRadius);
+      if (d2 < 1) e += (1 - d2) * (1 - d2) * P.lens * pointer.strength;
     }
-    const scaled = eased * segments;
-    const hop = Math.min(segments - 1, Math.floor(scaled));
-    let local = scaled - hop;
+    let lattice = 1;
+    if (reveal) {
+      const d = now - reveal.t0 - arrival[i];
+      lattice = d <= -40 ? 0 : d >= 220 ? 1 : smooth((d + 40) / 260);
+      // the ring itself: cells flare as it passes through them
+      const ring = 1 - Math.abs(d - 40) / 110;
+      if (ring > 0) e += ring * ring * P.revealRing;
+    }
 
-    // flipSharp compresses the cross-fade into the end of each dwell, so most
-    // frames show one clean letterform. A blend is only ever between glyphs
-    // that are neighbours in the morphospace, and at sharpness 1 there is no
-    // blend at all: every rendered frame is a real character, which is the
-    // whole reason this reads as transformation instead of malfunction.
-    const window = Math.max(0.001, 1 - P.flipSharp);
-    local = local <= 1 - window ? 0 : (local - (1 - window)) / window;
-    local = local * local * (3 - 2 * local);
+    // hysteresis keeps a cell on a level boundary from chattering
+    const cur = level[i];
+    const t0 = P.warmThreshold;
+    const stepE = P.levelStep;
+    let want = e < t0 ? 0 : Math.min(ramp.length, 1 + Math.floor((e - t0) / stepE));
+    if (want !== cur) {
+      const edge = want > cur ? t0 + (want - 1) * stepE : t0 + cur * stepE - stepE;
+      if (Math.abs(e - edge) < 0.02) want = cur;
+    }
 
-    out.a = path[i * MAX_STEPS + hop];
-    out.b = path[i * MAX_STEPS + hop + 1];
-    out.blend = local;
+    let target;
+    if (want === 0) {
+      target = restGlyph[i];
+    } else {
+      const fx = flowX[i];
+      const fy = flowY[i];
+      if (Math.hypot(fx, fy) > P.flowThreshold) {
+        // orientation modulo a half turn, snapped to four strokes
+        let angle = Math.atan2(fy * aspect, fx);
+        if (angle < 0) angle += Math.PI;
+        target = strokes[Math.round(angle / (Math.PI / 4)) % 4];
+      } else {
+        target = ramp[want - 1];
+      }
+    }
+    level[i] = want;
 
-    // ink rises with the ladder on the way up and falls with it on the way
-    // down, so a character condenses out of the murmur as one motion
-    if (inkMode[i] === 1) out.alpha = inkFrom[i] + (inkTo[i] - inkFrom[i]) * eased;
-    else if (inkMode[i] === 2) out.alpha = inkFrom[i] + (murmur - inkFrom[i]) * eased;
-    else out.alpha = murmur;
+    const ink = P.restAlpha * restInk[i] * vignette[i] * lattice *
+      (1 + Math.min(e, 1.5) * P.heatInk + trail[i] * P.wakeInk + weather[i]);
+    if (target !== shown[i]) {
+      from[i] = shown[i];
+      fromInk[i] = Math.min(1, ink);
+      shown[i] = target;
+      changedAt[i] = now;
+    }
+    const age = now - changedAt[i];
+    out.glyph = shown[i];
+    out.from = from[i];
+    out.t = age >= P.fadeMs ? 1 : smooth(age / Math.max(1, P.fadeMs));
+    out.ink = Math.min(1, ink);
+    out.fromInk = Math.min(fromInk[i], out.ink + 0.05);
     return out;
   }
 
-  // The glyph a cell is showing right now, mid-ladder or not — a new ladder
-  // must start from what the eye can see, never from a future state.
-  function displayedGlyph(i, now) {
-    if (pathLen[i] === 0) return current[i];
-    const raw = Math.max(0, Math.min(1, (now - started[i]) / duration[i]));
-    const segments = pathLen[i] - 1;
-    const hop = Math.min(segments, Math.floor((1 - (1 - raw) * (1 - raw)) * segments + 0.5));
-    return path[i * MAX_STEPS + hop];
-  }
-
-  function startLadder(i, from, to, steps, now, delay, ms) {
-    let sequence = from === to ? [from, to] : space.morph(from, to, steps);
-    if (sequence.length < 2) sequence = [from, to];
-    const len = Math.min(MAX_STEPS, sequence.length);
-    for (let k = 0; k < len; k += 1) path[i * MAX_STEPS + k] = sequence[k];
-    pathLen[i] = len;
-    started[i] = now + delay;
-    duration[i] = ms;
-  }
-
-  // Ask a cell to hold a document character. Its current glyph walks through
-  // the morphospace to the letter while its ink climbs to the text level.
-  function commit(i, glyph, alpha, now, delay = 0, instant = false, ms = P.flipMs) {
-    const was = committed[i];
-    committed[i] = 1;
-    inkTo[i] = alpha;
-    if (instant) {
-      current[i] = glyph;
-      pathLen[i] = 0;
-      inkMode[i] = 1;
-      return;
-    }
-    const from = displayedGlyph(i, now);
-    // start the ink where it visibly is: murmur level, or the old text level
-    const probe = read(i, now, 1);
-    inkFrom[i] = was ? probe.alpha : Math.min(probe.alpha, alpha);
-    inkMode[i] = 1;
-    if (from === glyph && was && Math.abs(inkFrom[i] - alpha) < 0.01) {
-      current[i] = glyph;
-      pathLen[i] = 0;
-      return;
-    }
-    startLadder(i, from, glyph, P.flipSteps, now, delay, ms);
-  }
-
-  // Let a cell go: it walks back down into the murmur and the weather
-  // reclaims it when the ladder completes.
-  // fade: true keeps the letterform and only lets the ink sink — the trace a
-  // scrolling page leaves behind is dimming text, never cycling letters.
-  function release(i, now, delay = 0, instant = false, ms = P.flipMs, fade = false) {
-    if (!committed[i] && inkMode[i] !== 1) return;
-    committed[i] = 0;
-    if (instant) {
-      current[i] = ambientPool[(rnd() * ambientPool.length) | 0];
-      pathLen[i] = 0;
-      inkMode[i] = 0;
-      fadeOnly[i] = 0;
-      return;
-    }
-    const from = displayedGlyph(i, now);
-    inkFrom[i] = read(i, now, 1).alpha;
-    inkMode[i] = 2;
-    fadeOnly[i] = fade ? 1 : 0;
-    if (fade) {
-      startLadder(i, from, from, 2, now, delay, ms);
-      return;
-    }
-    const target = ambientPool[(rnd() * ambientPool.length) | 0];
-    startLadder(i, from, target, Math.max(2, P.flipSteps - 2), now, delay, ms);
-  }
-
   return {
-    setShelter(map) { shelter = map; },
-    setSpace(next) {
-      space = next;
-      buildAmbientPool();
-    },
-    commit,
-    release,
-    isCommitted: (i) => committed[i] === 1,
     resize,
-    step,
-    read,
+    setParams(next, changed = []) {
+      P = next;
+      if (changed.some((k) => k === "restMark" || k === "ramp")) buildSets();
+      if (changed.includes("vignette")) buildVignette();
+    },
     warm,
     impulse,
-    setEligible(next) {
-      allowed = next && next.length ? next.slice() : null;
-      buildAmbientPool();
-    },
-    heatAt: (i) => heat[i],
-    cellCount: () => n,
-    setParams(next, changed) {
-      P = next;
-      const touched = changed ?? [];
-      if (touched.includes("ambientBand")) buildAmbientPool();
-      if (touched.includes("density")) {
-        for (let i = 0; i < n; i += 1) lit[i] = rnd() < P.density ? 1 : 0;
+    // the document's ink passing through leaves a trail that cools
+    setPointer(col, row) {
+      if (col === null) {
+        if (pointer) pointer.leaving = true;
+        return;
       }
-      if (touched.includes("twMin") || touched.includes("twMax")) {
-        for (let i = 0; i < n; i += 1) {
-          twRate[i] = 1 / ((P.twMin + rnd() * Math.max(0.1, P.twMax - P.twMin)) * 1000);
-        }
-      }
+      if (!pointer) pointer = { col, row, strength: 0, leaving: false };
+      pointer.col = col;
+      pointer.row = row;
+      pointer.leaving = false;
     },
-    // diagnostics for the workbench
+    trailTo(i, amount) {
+      if (amount > trail[i]) trail[i] = amount;
+    },
+    step,
+    sample,
+    contentGate,
+    startReveal(now, oc, or) {
+      reveal = { t0: now, oc, or, duration: 0 };
+      placeReveal();
+    },
+    revealing: () => reveal !== null,
+    busy: () => waveLive || reveal !== null || pointer !== null,
     stats() {
       let hot = 0;
-      let moving = 0;
-      let totalHeat = 0;
-      for (let i = 0; i < n; i += 1) {
-        totalHeat += heat[i];
-        if (heat[i] > 0.05) hot += 1;
-        if (pathLen[i] > 0) moving += 1;
-      }
-      return { cells: n, hot, moving, meanHeat: totalHeat / Math.max(1, n) };
+      for (let i = 0; i < n; i++) if (level[i] > 0) hot++;
+      return { cells: n, hot, wave: waveLive };
     },
   };
 }
