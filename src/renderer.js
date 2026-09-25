@@ -68,6 +68,27 @@ float coverAt(uint glyph, int x, float y) {
   return mix(a, b, t);
 }
 
+// Coverage at a fractional position, bilinearly filtered, for a flap seen
+// in perspective.
+float coverAt2(uint glyph, float x, float y) {
+  if (glyph == 0u) return 0.0;
+  float fx = x - 0.5;
+  float fy = y - 0.5;
+  int x0 = int(floor(fx));
+  int y0 = int(floor(fy));
+  float tx = fx - float(x0);
+  float ty = fy - float(y0);
+  ivec2 slot = slotOf(glyph);
+  float s00 = 0.0, s10 = 0.0, s01 = 0.0, s11 = 0.0;
+  bool xa = x0 >= 0 && x0 < uCell.x, xb = x0 + 1 >= 0 && x0 + 1 < uCell.x;
+  bool ya = y0 >= 0 && y0 < uCell.y, yb = y0 + 1 >= 0 && y0 + 1 < uCell.y;
+  if (xa && ya) s00 = texelFetch(uAtlas, slot + ivec2(x0, y0), 0).r;
+  if (xb && ya) s10 = texelFetch(uAtlas, slot + ivec2(x0 + 1, y0), 0).r;
+  if (xa && yb) s01 = texelFetch(uAtlas, slot + ivec2(x0, y0 + 1), 0).r;
+  if (xb && yb) s11 = texelFetch(uAtlas, slot + ivec2(x0 + 1, y0 + 1), 0).r;
+  return mix(mix(s00, s10, tx), mix(s01, s11, tx), ty);
+}
+
 void main() {
   ivec2 px = ivec2(gl_FragCoord.xy);
   px.y = uHeight - 1 - px.y;
@@ -100,19 +121,28 @@ void main() {
         float mid = floor(H * 0.5);
         float y = float(inner.y) + 0.5;
         float c = cos(phase * PI);
+        float sn = sin(phase * PI);
         // the fold dims as it turns edge-on
         float lit = mix(1.0, abs(c), uShade);
+        // the flap's free edge swings toward the viewer, so it reads a
+        // little wider than its hinge
+        float cxm = float(uCell.x) * 0.5;
+        float x = float(inner.x) + 0.5;
         if (y < mid) {
           float h = c * mid;
           if (phase < 0.5 && y >= mid - h) {
-            cx = coverAt(X, inner.x, mid - (mid - y) / max(c, 0.001)) * a.x * lit;
+            float src = mid - (mid - y) / max(c, 0.001);
+            float grow = 1.0 + 0.16 * sn * (mid - src) / mid;
+            cx = coverAt2(X, cxm + (x - cxm) / grow, src) * a.x * lit;
           } else {
             cy = cover(Y, inner) * a.y;
           }
         } else {
           float h = -c * mid;
           if (phase > 0.5 && y < mid + h) {
-            cy = coverAt(Y, inner.x, mid + (y - mid) / max(-c, 0.001)) * a.y * lit;
+            float src = mid + (y - mid) / max(-c, 0.001);
+            float grow = 1.0 + 0.16 * sn * (src - mid) / mid;
+            cy = coverAt2(Y, cxm + (x - cxm) / grow, src) * a.y * lit;
           } else {
             cx = cover(X, inner) * a.x;
           }

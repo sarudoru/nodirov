@@ -2,24 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "glyph",
+      "name": "v8",
       "runtimeExecutable": "sh",
-      "runtimeArgs": [
-        "-c",
-        "python3 -m http.server \"${PORT:-4180}\" --bind 127.0.0.1"
-      ],
-      "port": 4180,
-      "autoPort": true
-    },
-    {
-      "name": "ascii-cards",
-      "runtimeExecutable": "sh",
-      "runtimeArgs": [
-        "-c",
-        "python3 -m http.server \"${PORT:-4182}\" --bind 127.0.0.1"
-      ],
-      "port": 4182,
-      "autoPort": true
+      "runtimeArgs": ["-c", "python3 -m http.server 4193 --bind 127.0.0.1"],
+      "port": 4193
     }
   ]
 }

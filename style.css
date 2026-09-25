@@ -62,14 +62,17 @@ html:not(.js) #article {
   line-height: 1.7;
 }
 
-
-html:not(.js) .interstitial {
-  margin: 48px 0;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
-  opacity: 0.45;
-  font-size: 12px;
-}
+html:not(.js) h1,
+html:not(.js) h2 { font-size: inherit; font-weight: 400; margin: 2.5em 0 1em; }
+html:not(.js) h1 { margin-top: 0; }
+html:not(.js) .tagline,
+html:not(.js) .hint,
+html:not(.js) .colophon,
+html:not(.js) time,
+html:not(.js) small { opacity: 0.55; }
+html:not(.js) ul { list-style: none; padding: 0; }
+html:not(.js) li { display: grid; grid-template-columns: 1fr auto; column-gap: 2em; margin-bottom: 1em; }
+html:not(.js) li small { grid-column: 1 / -1; font-size: inherit; }
 
 /* ---- Field mode: article becomes a transparent, grid-aligned text layer ---- */
 
@@ -85,7 +88,7 @@ html.js #article.ready * {
   color: transparent;
 }
 
-html.js #article.ready :is(h1, h2, p, ul, li, header, section, nav, figure, figcaption, form) {
+html.js #article.ready :is(h1, h2, p, ul, li, time, small, header, section, footer, form) {
   display: contents;
 }
 
@@ -186,19 +189,6 @@ html:not(.js) ::selection { color: inherit; }
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
-
-/* Declared media: the real <img>/<video> is the no-JS and screen-reader
-   truth. Once the field renders the figure as glyphs, hide the raster but
-   keep it in the accessibility tree via the caption and alt text. */
-html.js #article.ready .glyph-plane :is(img, video) {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-}
-html:not(.js) .glyph-plane :is(img, video) { max-width: 100%; height: auto; }
-html:not(.js) nav { display: flex; flex-wrap: wrap; gap: 1em; }
 
 /* The embedded cursor: the pointer itself is invisible; the cell under it
    becomes the cursor glyph. Links still work — the hand just isn't drawn. */

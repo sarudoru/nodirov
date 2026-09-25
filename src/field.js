@@ -389,6 +389,10 @@ export function createField(canvasElement, params) {
 
     setScroll(px) {
       camera = Math.max(0, px / metrics.cellH);
+      // the browser keeps scroll offsets on whole pixels, so a row edge can
+      // be missed by a fraction of one; that close is resting on it
+      const nearest = Math.round(camera);
+      if (Math.abs(camera - nearest) * metrics.cellH < 0.75) camera = nearest;
       requestDraw();
     },
 

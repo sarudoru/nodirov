@@ -287,7 +287,7 @@ export function typeset(blocks, article, ctx) {
         if (block.note) {
           block.el.appendChild(block.note.el);
           span(block.note.el, " ", r, left - 1);
-          r += place(block.note.el, block.note.runs, r, left, contentW - gap, K_FAINT);
+          r += place(block.note.el, block.note.runs, r, left, contentW, K_FAINT);
         }
         row = r + 1;
         break;
