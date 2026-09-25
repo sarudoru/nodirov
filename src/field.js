@@ -22,17 +22,17 @@
 // Law: nothing moves; cells change.
 
 import { createAtlas } from "./atlas.js";
-import { createRenderer } from "./renderer.js";
+import { createRenderer, TURN } from "./renderer.js";
 import { createSubstrate } from "./substrate.js";
 
 export const K_TEXT = 1;
 export const K_FAINT = 2;
 export const K_LINK = 3;
 
-// flags shared with the shader
+// flags shared with the shader; bits 6 to 8 carry the cell's turn style
 const F_ACCENT_X = 1;
 const F_CARET = 2;
-const F_FADE = 4;
+const F_LATTICE = 4; // the cell shows the substrate, not the document
 const F_ACCENT_Y = 8;
 // a face that carries a letter shows its flap's card while it turns
 const F_BODY_X = 16;
@@ -125,6 +125,15 @@ export function createField(canvasElement, params) {
   let flapsUntil = 0;
 
   const inkOf = (kind) => (kind === K_FAINT ? P.faintAlpha : P.textAlpha);
+
+  // How a cell turns, as flag bits. "mix" gives each cell its own mechanism,
+  // fixed for that cell, so the page reads as many small machines.
+  const MIXED = [TURN.flap, TURN.roll, TURN.fold];
+  function turnBits(name, i) {
+    const named = TURN[name];
+    const t = named !== undefined ? named : MIXED[(Math.imul(i + 1, 0x9e3779b1) >>> 29) % MIXED.length];
+    return t << 6;
+  }
   const smooth = (t) => t * t * (3 - 2 * t);
 
   // ---------- the world ----------
@@ -308,8 +317,12 @@ export function createField(canvasElement, params) {
       y.glyph || sub.glyph, y.glyph ? y.ink : sub.ink,
       phase,
       (x.accent ? F_ACCENT_X : 0) | (y.accent ? F_ACCENT_Y : 0) |
-        (inkedX ? F_BODY_X : 0) | (inkedY ? F_BODY_Y : 0),
+        (inkedX ? F_BODY_X : 0) | (inkedY ? F_BODY_Y : 0) | turnBits(P.turn, o >> 2),
       x.under, y.under);
+  }
+
+  function lattice(o, sub) {
+    put(o, sub.from, sub.fromInk, sub.glyph, sub.ink, sub.t, F_LATTICE | (sub.turn << 6));
   }
 
   function compose(now) {
@@ -352,7 +365,7 @@ export function createField(canvasElement, params) {
             else put(o, a.glyph, a.ink, 0, 0, 0, a.accent ? F_ACCENT_X : 0, a.under);
             shownInk = phase < 0.5 ? a.ink : b.ink;
           } else {
-            put(o, sub.from, sub.fromInk, sub.glyph, sub.ink, sub.t, F_FADE);
+            lattice(o, sub);
           }
         } else {
           const phase = fraction > 0 ? turnOf(fraction, c) : 0;
@@ -364,7 +377,8 @@ export function createField(canvasElement, params) {
           } else if (a.glyph) {
             if (gate < 1) {
               // first contact: the cell turns from its lattice mark to the letter
-              put(o, sub.glyph, sub.ink, a.glyph, a.ink, gate, a.accent ? F_ACCENT_Y : 0, 0, a.under * gate);
+              put(o, sub.glyph, sub.ink, a.glyph, a.ink, gate,
+                (a.accent ? F_ACCENT_Y : 0) | F_BODY_Y | turnBits(P.turn, i), 0, a.under * gate);
               shownInk = gate > 0.5 ? a.ink : 0;
               flapTo[i] = a.glyph | (a.accent ? ACCENT_KEY : 0);
               flapToInk[i] = a.ink;
@@ -377,16 +391,16 @@ export function createField(canvasElement, params) {
               shownInk = a.ink;
             }
           } else if (!(phase === 0 && clockFlap(i, o, now, null, sub, 0))) {
-            put(o, sub.from, sub.fromInk, sub.glyph, sub.ink, sub.t, F_FADE);
+            lattice(o, sub);
           }
         }
 
         if (i === caretCell) glyphs[o + 2] |= F_CARET;
 
         if (i === cursorCell && P.cursorEmbed) {
-          if (glyphs[o] && glyphs[o] !== blank && !(glyphs[o + 2] & F_FADE) && inks[o + 2] === 0) {
+          if (glyphs[o] && glyphs[o] !== blank && !(glyphs[o + 2] & F_LATTICE) && inks[o + 2] === 0) {
             glyphs[o + 2] |= F_ACCENT_X;
-          } else if (glyphs[o + 2] & F_FADE) {
+          } else if (glyphs[o + 2] & F_LATTICE) {
             put(o, cursorGlyph, 1, 0, 0, 0, 0);
           }
         }
@@ -429,7 +443,7 @@ export function createField(canvasElement, params) {
         } else if (t <= 0) {
           if (was !== " ") put(i * 4, face(was), inkOfCh(was), 0, 0, 0, 0);
         } else if (was !== is) {
-          put(i * 4, face(was), inkOfCh(was), face(is), inkOfCh(is), smooth(t), 0);
+          put(i * 4, face(was), inkOfCh(was), face(is), inkOfCh(is), smooth(t), turnBits(P.clockTurn, i));
         }
       }
       if (now - rightAt > P.flipMs + span * P.flipStagger) rightWas = status.right;
@@ -467,8 +481,9 @@ export function createField(canvasElement, params) {
       return true;
     }
     const g = face ? face.glyph : sub.glyph;
+    const inked = (from && from !== blank ? F_BODY_X : 0) | (face && g !== blank ? F_BODY_Y : 0);
     put(o, from, flapFromInk[i], g, flapToInk[i], smooth(age / P.flipMs),
-      fromAccent | (face && face.accent ? F_ACCENT_Y : 0), under, under);
+      fromAccent | (face && face.accent ? F_ACCENT_Y : 0) | inked | turnBits(P.clockTurn, i), under, under);
     return true;
   }
 
@@ -488,14 +503,17 @@ export function createField(canvasElement, params) {
   function tick(now) {
     rafId = 0;
     const idle = now > activeUntil && now > flapsUntil && !steps.length && !substrate.busy();
-    if (!idle || now - lastFrame >= 95) frame(now);
+    // Restless characters keep turning on their own; thirty frames a second
+    // keeps those turns smooth. A still lattice only needs the weather's ten.
+    const pace = substrate.restless() ? 33 : 100;
+    if (!idle || now - lastFrame >= pace - 5) frame(now);
     if (!running) return;
     if (!idle) rafId = requestAnimationFrame(tick);
     else if (!reducedMotion) {
       idleTimer = setTimeout(() => {
         idleTimer = 0;
         if (running) rafId = requestAnimationFrame(tick);
-      }, 100);
+      }, pace);
     }
   }
 
@@ -531,7 +549,7 @@ export function createField(canvasElement, params) {
   }
 
   function applyStyle() {
-    renderer.style({ paper: P.paper, ink: P.ink, accent: P.accent, turn: P.turn, shade: P.shade, body: P.body });
+    renderer.style({ paper: P.paper, ink: P.ink, accent: P.accent, shade: P.shade, body: P.body });
   }
 
   function pointerCell(x, y) {
@@ -732,6 +750,7 @@ export function createField(canvasElement, params) {
         phase: inks[o + 2] / 255,
         accent: (glyphs[o + 2] & (F_ACCENT_X | F_ACCENT_Y)) !== 0,
         caret: (glyphs[o + 2] & F_CARET) !== 0,
+        lattice: (glyphs[o + 2] & F_LATTICE) !== 0,
       };
     },
 

@@ -54,7 +54,8 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
       const v = __glyph.view();
       for (let r = 0; r < v.rows; r++) {
         for (let c = 0; c < v.cols; c++) {
-          if (__glyph.probe(r, c).x === "S") return { r, c };
+          const p = __glyph.probe(r, c);
+          if (p.x === "S" && !p.lattice && p.inkX > 0.5) return { r, c };
         }
       }
       return null;
@@ -113,7 +114,7 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
       for (let r = Math.floor(v.rows / 2); r < v.rows - 3; r++) {
         for (let c = 0; c < v.cols; c++) {
           const p = __glyph.probe(r, c);
-          if (/[A-Za-z]/.test(p.x) && p.inkX > 0.3 && p.phase < 0.5) letters++;
+          if (!p.lattice && /[A-Za-z]/.test(p.x) && p.inkX > 0.3 && p.phase < 0.5) letters++;
         }
       }
       return letters;
@@ -162,7 +163,7 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
       for (let r = 0; r < v.rows; r++) {
         for (let c = 0; c < v.cols; c++) {
           const p = __glyph.probe(r, c);
-          if (p.phase > 0 && p.phase < 1 && /[A-Za-z]/.test(p.x + p.y)) turning++;
+          if (!p.lattice && p.phase > 0 && p.phase < 1 && /[A-Za-z]/.test(p.x + p.y)) turning++;
         }
       }
       return { rows: v.scrollTop / v.cellH, turning, hash: location.hash };
@@ -207,7 +208,7 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
       for (let r = 0; r < v.rows; r++) {
         for (let c = 0; c < v.cols; c++) {
           const p = __glyph.probe(r, c);
-          if (p.x === "S") return p;
+          if (p.x === "S" && !p.lattice) return p;
         }
       }
       return null;

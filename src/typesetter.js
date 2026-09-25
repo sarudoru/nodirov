@@ -268,7 +268,8 @@ export function typeset(blocks, article, ctx) {
         emit(row, left, text, K_TEXT);
         const ruleFrom = left + text.length + 2;
         const ruleLen = left + contentW - ruleFrom;
-        if (ruleLen > 2) emit(row, ruleFrom, "─".repeat(ruleLen), K_FAINT);
+        // the gap before the rule belongs to the heading, so it stays blank
+        if (ruleLen > 2) emit(row, left + text.length, "  " + "─".repeat(ruleLen), K_FAINT);
         const section = block.el.closest("section");
         sections.push({ row: Math.max(0, row - 3), id: section ? section.id : "", label: text.toLowerCase() });
         row += 2;

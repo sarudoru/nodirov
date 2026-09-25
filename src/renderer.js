@@ -6,14 +6,21 @@
 // and reads that pixel out of the atlas, so a resting glyph is copied one to
 // one and stays exactly as sharp as browser text.
 //
-// Turns:
+// Turns, chosen per cell:
 //   flap   split-flap: the upper half folds down over its hinge; the new
 //          face's upper half is behind it, its lower half on the flap's back
-//   drum   the cell is a small wheel; faces roll over its top edge
-//   fade   a plain cross-fade, for the lattice's quiet changes
+//   roll   the old face slides up out of the cell as the new one slides up
+//          in from below, both clipped to the cell
+//   drum   the same on a small wheel: faces bow as they roll over its edge
+//   fold   a card turning on its middle: the old face folds shut, the new
+//          one opens
+//   slide  the old face slides out to the left as the new one comes in
+//   fade   a plain cross-fade
 //
 // Without WebGL2 the same state is painted with Canvas 2D (turns become
 // cross-fades there).
+
+export const TURN = { flap: 0, roll: 1, drum: 2, fold: 3, slide: 4, fade: 5 };
 
 const VERT = `#version 300 es
 void main() {
@@ -35,7 +42,6 @@ uniform int uHeight;
 uniform int uPerRow;
 uniform int uDpr;
 uniform int uUnderY;
-uniform int uTurn;           // 0 flap, 1 drum
 uniform float uShade;
 uniform float uBody;
 uniform vec3 uPaper;
@@ -104,7 +110,7 @@ void main() {
       uint lines = uint(a.w * 255.0 + 0.5);
       float underX = float(lines >> 4u) / 15.0;
       float underY = float(lines & 15u) / 15.0;
-      bool fade = (g.z & 4u) != 0u;
+      uint turn = (g.z >> 6u) & 7u;
       vec3 colorX = (g.z & 1u) != 0u ? uAccent : uInkColor;
       vec3 colorY = (g.z & 8u) != 0u ? uAccent : uInkColor;
       float cx = 0.0;
@@ -114,10 +120,10 @@ void main() {
         cx = faceExact(X, underX, inner) * a.x;
       } else if (phase >= 1.0) {
         cy = faceExact(Y, underY, inner) * a.y;
-      } else if (fade) {
+      } else if (turn == 5u) {
         cx = faceExact(X, underX, inner) * a.x * (1.0 - phase);
         cy = faceExact(Y, underY, inner) * a.y * phase;
-      } else if (uTurn == 0) {
+      } else if (turn == 0u) {
         float H = float(uCell.y);
         float mid = floor(H * 0.5);
         float y = float(inner.y) + 0.5;
@@ -151,8 +157,6 @@ void main() {
             cx = faceExact(X, underX, inner) * a.x;
           }
         }
-        // the flap is a card: a faint body while it moves, and a crease
-        // where it hinges
         // The moving flap is a card: a faint body, a hairline of paper where
         // it meets its neighbour, and a darker free edge. It shows only while
         // it carries a letter: the old face on the way down, the new face's
@@ -169,6 +173,32 @@ void main() {
           }
         }
         if (body && inner.y == int(mid) - 1) color = mix(color, uInkColor, uBody * 1.6 * sn);
+      } else if (turn == 1u) {
+        // roll: both faces travel up by the same amount, clipped to the cell
+        float H = float(uCell.y);
+        float y = float(inner.y) + 0.5 + phase * H;
+        float x = float(inner.x) + 0.5;
+        if (y < H) cx = face(X, underX, x, y) * a.x;
+        else cy = face(Y, underY, x, y - H) * a.y;
+      } else if (turn == 3u) {
+        // fold: the card turns on its middle, so each face is squashed
+        // toward the centre line and dims as it goes edge-on
+        float H = float(uCell.y);
+        float mid = H * 0.5;
+        float c = cos(phase * PI);
+        float y = float(inner.y) + 0.5;
+        float x = float(inner.x) + 0.5;
+        float src = mid + (y - mid) / max(abs(c), 0.001);
+        float lit = mix(1.0, abs(c), uShade);
+        if (phase < 0.5) cx = face(X, underX, x, src) * a.x * lit;
+        else cy = face(Y, underY, x, src) * a.y * lit;
+      } else if (turn == 4u) {
+        // slide: the faces travel left together, clipped to the cell
+        float W = float(uCell.x);
+        float x = float(inner.x) + 0.5 + phase * W;
+        float y = float(inner.y) + 0.5;
+        if (x < W) cx = face(X, underX, x, y) * a.x;
+        else cy = face(Y, underY, x - W, y) * a.y;
       } else {
         // drum: the strip rolls up through the window; faces bow at the edges
         float H = float(uCell.y);
@@ -241,7 +271,7 @@ function createGL(canvas) {
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
     gl.useProgram(program);
     for (const name of ["uGlyph", "uInk", "uAtlas", "uCell", "uGrid", "uOrigin", "uHeight", "uPerRow",
-      "uDpr", "uUnderY", "uTurn", "uShade", "uBody", "uPaper", "uInkColor", "uAccent"]) {
+      "uDpr", "uUnderY", "uShade", "uBody", "uPaper", "uInkColor", "uAccent"]) {
       u[name] = gl.getUniformLocation(program, name);
     }
     gl.bindVertexArray(gl.createVertexArray());
@@ -283,7 +313,6 @@ function createGL(canvas) {
     gl.uniform3fv(u.uPaper, hexToRgb(next.paper));
     gl.uniform3fv(u.uInkColor, hexToRgb(next.ink));
     gl.uniform3fv(u.uAccent, hexToRgb(next.accent));
-    gl.uniform1i(u.uTurn, next.turn === "drum" ? 1 : 0);
     gl.uniform1f(u.uShade, next.shade);
     gl.uniform1f(u.uBody, next.body);
   }

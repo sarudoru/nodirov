@@ -1,17 +1,33 @@
 // The substrate: what every cell shows when the document is not using it.
 //
-// At rest each cell holds one small mark, so the whole screen reads as a
-// fixed lattice. That lattice is the reference the eye needs: whatever
-// passes through it, the marks stay where they are.
+// By default every cell holds a character of its own, picked at random from
+// the face's letters, figures, and marks, in faint ink. The characters stay
+// in their cells and now and then turn into other characters: a flap, a
+// roll, a fold. When the document arrives, the character a cell holds turns
+// into the letter the document needs, and back when it leaves.
 //
-// Each cell has an energy. Energy decides which mark the cell holds: the
-// resting dot when cool, then larger dots as it warms. Energy comes from
-// the pointer (a lens around it, and warmth along its path), from clicks (a
-// ring travelling outward), and from first contact. Two more things only
-// darken a cell's mark, never change it: the wake the document leaves as it
-// passes through, and a slow weather that swells and fades in place.
+// Each cell has an energy, and energy is what makes a cell restless: it
+// turns over sooner and draws darker. Energy comes from the pointer (a lens
+// around it, and warmth along its path), from clicks (a ring travelling
+// outward), and from first contact (the opening ring). A slow weather makes
+// patches restless in place, never drifting, and the wake the document
+// leaves as it passes darkens the cells it held.
+//
+// The older lattice of dots is kept as the other resting mode.
 
 import { DOT } from "./atlas.js";
+import { TURN } from "./renderer.js";
+
+// Every character Geist Mono draws that reads light enough to sit behind
+// text: letters, figures, punctuation, and a spread of symbols. Solid shapes
+// are left out; they read as holes in the page.
+const GLYPHS =
+  "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" +
+  "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~" +
+  "¡¢£¤¥§©«¬®°±µ¶·»¿×÷ßæøðþƒ†‡•…‰‹›€™←↑→↓↔↕∂∆∑−√∞∫≈≠≤≥◊○Ωπ";
+
+// the turns a restless character may take when the style is "mix"
+const MIXED = [TURN.flap, TURN.roll, TURN.fold];
 
 export function createSubstrate(atlas, params) {
   let P = params;
@@ -19,6 +35,7 @@ export function createSubstrate(atlas, params) {
   let rows = 0;
   let n = 0;
   let aspect = 1.5;
+  let frameDt = 16;
 
   let heat = new Float32Array(0);
   let trail = new Float32Array(0);
@@ -34,16 +51,18 @@ export function createSubstrate(atlas, params) {
   let from = new Uint16Array(0);
   let fromInk = new Float32Array(0);
   let changedAt = new Float64Array(0);
+  let style = new Uint8Array(0);
   let weather = new Float32Array(0);
   let weatherAt = -1e9;
 
+  let pool = []; // atlas slots of the characters a cell may hold
   let rest = [];
   let ramp = [];
   // on a narrow screen the text starts a cell or two from the edge, where a
-  // lone dot would read as a bullet; those columns stay empty
+  // lone mark would read as a bullet; those columns stay empty
   let margin = 0;
 
-  // the pointer presses on the lattice: marks swell around it
+  // the pointer presses on the lattice
   let pointer = null;
 
   // first contact: the board comes up, the name's cells turn one by one,
@@ -84,22 +103,22 @@ export function createSubstrate(atlas, params) {
     return lerp(lerp(x00, x10, v), lerp(x01, x11, v), w);
   }
 
-  const SETS = {
-    rest: { dot: [DOT[0]], plus: ["+"] },
-    ramp: { dots: DOT.slice(1), marks: [":", "+", "*"] },
-  };
+  const glyphMode = () => P.lattice !== "dots";
 
   function buildSets() {
-    rest = (SETS.rest[P.restMark] ?? SETS.rest.dot).map((ch) => atlas.ensure(ch));
-    ramp = (SETS.ramp[P.ramp] ?? SETS.ramp.dots).map((ch) => atlas.ensure(ch));
-    // With a stride of two, only every other column holds a dot at rest, so
-    // the lattice spacing is about square on cells twice as tall as wide.
-    const stride = Math.max(1, Math.round(P.latticeStride));
+    pool = Array.from(GLYPHS).map((ch) => atlas.ensure(ch));
+    rest = [atlas.ensure(DOT[0])];
+    ramp = DOT.slice(1).map((ch) => atlas.ensure(ch));
+    // Dots sit every other column, so their spacing is about square on cells
+    // twice as tall as wide. Characters fill every cell.
+    const stride = glyphMode() ? 1 : Math.max(1, Math.round(P.latticeStride));
     for (let i = 0; i < n; i++) {
       const c = cols ? i % cols : 0;
       const on = c % stride === 0 && !(margin <= 3 && c < margin);
-      restGlyph[i] = on ? rest[(hash3(i, 7, 3) * rest.length) | 0] : 0;
-      if (level[i] === 0) shown[i] = restGlyph[i];
+      restGlyph[i] = !on ? 0 : glyphMode() ? pool[(hash3(i, 7, 3) * pool.length) | 0] : rest[0];
+      shown[i] = restGlyph[i];
+      from[i] = restGlyph[i];
+      level[i] = 0;
     }
   }
 
@@ -129,6 +148,7 @@ export function createSubstrate(atlas, params) {
     from = new Uint16Array(n);
     fromInk = new Float32Array(n);
     changedAt = new Float64Array(n).fill(-1e9);
+    style = new Uint8Array(n);
     weather = new Float32Array(n);
     arrival = new Float32Array(n);
     for (let i = 0; i < n; i++) restInk[i] = 0.82 + rnd() * 0.36;
@@ -218,6 +238,7 @@ export function createSubstrate(atlas, params) {
   // ---- simulation ----
 
   function step(now, dt) {
+    frameDt = dt;
     const cool = Math.exp(-dt / Math.max(1, P.coolMs));
     const fade = Math.exp(-dt / Math.max(1, P.wakeMs));
     for (let i = 0; i < n; i++) {
@@ -279,20 +300,27 @@ export function createSubstrate(atlas, params) {
     return t * t * (3 - 2 * t);
   }
 
+  function pickTurn() {
+    const named = TURN[P.ambientTurn];
+    if (named !== undefined) return named;
+    return MIXED[(rnd() * MIXED.length) | 0];
+  }
+
   // What the lattice holds at a cell right now: the glyph, the glyph it is
-  // fading from, and how far along that fade is. `out` is reused.
-  const out = { glyph: 0, from: 0, t: 1, ink: 0, fromInk: 0 };
+  // turning from, how far along that turn is, and how it turns. `out` is
+  // reused.
+  const out = { glyph: 0, from: 0, t: 1, ink: 0, fromInk: 0, turn: TURN.fade };
 
   function sample(i, r, c, now, still = false) {
+    const base = glyphMode() ? P.glyphInk : P.restAlpha;
     if (still) {
       out.glyph = restGlyph[i];
       out.from = restGlyph[i];
       out.t = 1;
-      out.ink = out.fromInk = P.restAlpha * restInk[i] * vignette[i];
+      out.ink = out.fromInk = base * restInk[i] * vignette[i];
+      out.turn = TURN.fade;
       return out;
     }
-    // weather and the wake only darken a cell's mark; they never change
-    // which mark it is. Changing marks is for touch.
     let e = heat[i];
     if (ripples.length) e += rippleAt(c + 0.5, r + 0.5, now);
     if (pointer) {
@@ -316,26 +344,51 @@ export function createSubstrate(atlas, params) {
       if (ring > 0) e += ring * ring * P.revealRing;
     }
 
-    // hysteresis keeps a cell on a level boundary from chattering
+    const ink = Math.min(1, base * restInk[i] * vignette[i] * lattice *
+      (1 + Math.min(e, 1.5) * P.heatInk + trail[i] * P.wakeInk + weather[i]));
+
+    if (glyphMode()) {
+      // A restless cell turns into another character. The chance rises in
+      // the weather and steeply with energy; a turn always finishes before
+      // the next one starts.
+      const age = now - changedAt[i];
+      if (restGlyph[i] && age > P.ambientMs) {
+        const rate = P.ambientRate * (1 + weather[i] * P.weatherRate) + e * P.heatRate;
+        if (rnd() < rate * frameDt * 0.001) {
+          let next = pool[(rnd() * pool.length) | 0];
+          if (next === shown[i]) next = pool[(rnd() * pool.length) | 0];
+          from[i] = shown[i];
+          fromInk[i] = ink;
+          shown[i] = next;
+          changedAt[i] = now;
+          style[i] = pickTurn();
+        }
+      }
+      const t = Math.min(1, (now - changedAt[i]) / P.ambientMs);
+      out.glyph = shown[i];
+      out.from = from[i];
+      out.t = smooth(t);
+      out.ink = ink;
+      out.fromInk = Math.min(fromInk[i], ink + 0.05);
+      out.turn = style[i];
+      return out;
+    }
+
+    // Dots: energy picks a larger dot, with hysteresis so a cell on a level
+    // boundary does not chatter. Only cells on the grid grow.
     const cur = level[i];
     const t0 = P.warmThreshold;
     const stepE = P.levelStep;
-    // only cells on the grid warm into larger marks; the cells between
-    // stay empty, so a disturbance keeps the grid's own spacing
     let want = e < t0 || !restGlyph[i] ? 0 : Math.min(ramp.length, 1 + Math.floor((e - t0) / stepE));
     if (want !== cur) {
       const edge = want > cur ? t0 + (want - 1) * stepE : t0 + cur * stepE - stepE;
       if (Math.abs(e - edge) < 0.02) want = cur;
     }
-
     const target = want === 0 ? restGlyph[i] : ramp[want - 1];
     level[i] = want;
-
-    const ink = P.restAlpha * restInk[i] * vignette[i] * lattice *
-      (1 + Math.min(e, 1.5) * P.heatInk + trail[i] * P.wakeInk + weather[i]);
     if (target !== shown[i]) {
       from[i] = shown[i];
-      fromInk[i] = Math.min(1, ink);
+      fromInk[i] = ink;
       shown[i] = target;
       changedAt[i] = now;
     }
@@ -343,8 +396,9 @@ export function createSubstrate(atlas, params) {
     out.glyph = shown[i];
     out.from = from[i];
     out.t = age >= P.fadeMs ? 1 : smooth(age / Math.max(1, P.fadeMs));
-    out.ink = Math.min(1, ink);
-    out.fromInk = Math.min(fromInk[i], out.ink + 0.05);
+    out.ink = ink;
+    out.fromInk = Math.min(fromInk[i], ink + 0.05);
+    out.turn = TURN.fade;
     return out;
   }
 
@@ -352,7 +406,7 @@ export function createSubstrate(atlas, params) {
     resize,
     setParams(next, changed = []) {
       P = next;
-      if (changed.some((k) => k === "restMark" || k === "ramp" || k === "latticeStride")) buildSets();
+      if (changed.some((k) => k === "lattice" || k === "latticeStride")) buildSets();
       if (changed.includes("vignette")) buildVignette();
     },
     warm,
@@ -403,9 +457,11 @@ export function createSubstrate(atlas, params) {
     // something is changing that needs every frame
     busy: () => ripples.length > 0 || reveal !== null ||
       (pointer !== null && (pointer.leaving || pointer.strength < 0.99)),
+    // characters keep turning over on their own, so the page never fully idles
+    restless: () => glyphMode() && P.ambientRate > 0,
     stats() {
       let hot = 0;
-      for (let i = 0; i < n; i++) if (level[i] > 0) hot++;
+      for (let i = 0; i < n; i++) if (heat[i] > 0.1) hot++;
       return { cells: n, hot, ripples: ripples.length };
     },
   };
