@@ -4,15 +4,15 @@
 // until the visitor asks for it: browsers only let a page make sound after
 // a click.
 
-// A thock: a low body falling from 160 to 75 Hz, a short knock from the
-// case, and a few milliseconds of filtered noise for the contact, all under
-// a low-pass so nothing is bright.
+// A thock: a low body falling from 150 to 70 Hz, a warm resonance like a
+// wooden case, a short knock, and a few milliseconds of filtered noise for
+// the contact, all under a low-pass so nothing is bright.
 async function renderThock(sampleRate) {
-  const length = 0.11;
+  const length = 0.16;
   const ctx = new OfflineAudioContext(1, Math.ceil(sampleRate * length), sampleRate);
   const out = ctx.createBiquadFilter();
   out.type = "lowpass";
-  out.frequency.value = 2200;
+  out.frequency.value = 1900;
   out.Q.value = 0.4;
   out.connect(ctx.destination);
 
@@ -23,22 +23,19 @@ async function renderThock(sampleRate) {
     gain.gain.exponentialRampToValueAtTime(0.0001, decay);
     node.connect(gain).connect(out);
   };
+  const tone = (type, from, to, glide, peak, attack, decay) => {
+    const osc = ctx.createOscillator();
+    osc.type = type;
+    osc.frequency.setValueAtTime(from, 0);
+    osc.frequency.exponentialRampToValueAtTime(to, glide);
+    envelope(osc, peak, attack, decay);
+    osc.start(0);
+    osc.stop(decay + 0.01);
+  };
 
-  const body = ctx.createOscillator();
-  body.type = "sine";
-  body.frequency.setValueAtTime(160, 0);
-  body.frequency.exponentialRampToValueAtTime(75, 0.05);
-  envelope(body, 0.9, 0.002, 0.075);
-  body.start(0);
-  body.stop(0.08);
-
-  const knock = ctx.createOscillator();
-  knock.type = "triangle";
-  knock.frequency.setValueAtTime(430, 0);
-  knock.frequency.exponentialRampToValueAtTime(300, 0.03);
-  envelope(knock, 0.22, 0.001, 0.032);
-  knock.start(0);
-  knock.stop(0.04);
+  tone("sine", 150, 70, 0.06, 0.9, 0.002, 0.12);     // body
+  tone("sine", 250, 215, 0.05, 0.28, 0.002, 0.07);   // case
+  tone("triangle", 430, 300, 0.03, 0.16, 0.001, 0.03); // knock
 
   const frames = Math.floor(sampleRate * 0.006);
   const buffer = ctx.createBuffer(1, frames, sampleRate);
@@ -48,10 +45,10 @@ async function renderThock(sampleRate) {
   contact.buffer = buffer;
   const band = ctx.createBiquadFilter();
   band.type = "bandpass";
-  band.frequency.value = 1700;
+  band.frequency.value = 1500;
   band.Q.value = 0.9;
   contact.connect(band);
-  envelope(band, 0.5, 0.0005, 0.008);
+  envelope(band, 0.4, 0.0005, 0.008);
   contact.start(0);
 
   return ctx.startRendering();
