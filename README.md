@@ -59,6 +59,15 @@ tests/browser.cjs   browser checks
    turning cell is drawn in its style: a flap folding over its hinge, a roll
    up through the cell, a fold on its middle, and so on.
 
+### The settle scroll
+
+`?scroll=settle` swaps the flaps for another scroll. A scroll longer than a
+couple of rows turns every letter into a dot in its cell, so while the page
+moves only dots change. When the page rests, the text settles back in from
+the top, each cell turning from its dot into its letter at its own moment.
+The workbench's Scroll group tunes it (`dotsAfter`, `resolveMs`,
+`resolveFlips` for letters passed on the way, and the dot's size and ink).
+
 ### The workbench
 
 `lab.html` loads the page in a frame and generates a control for every entry

@@ -8,6 +8,10 @@
 // collide with a "·" the document writes.
 const DOT_SIZES = [0.11, 0.145, 0.18, 0.215, 0.25, 0.29, 0.33];
 export const DOT = DOT_SIZES.map((_, k) => String.fromCharCode(0xe000 + k));
+// The dots a letter becomes while the page moves sit on the middle of the
+// x-height, where the letters' own weight is, so a letter and its dot share
+// a line.
+export const TEXT_DOT = DOT_SIZES.map((_, k) => String.fromCharCode(0xe010 + k));
 
 // Glyphs drawn as cell geometry rather than taken from the font: the font's
 // own dots and strokes have its sizes and its advance; these are exact
@@ -15,6 +19,7 @@ export const DOT = DOT_SIZES.map((_, k) => String.fromCharCode(0xe000 + k));
 const PROCEDURAL = {
   // dot diameters as a share of the cell width
   ...Object.fromEntries(DOT.map((ch, k) => [ch, { dot: DOT_SIZES[k] }])),
+  ...Object.fromEntries(TEXT_DOT.map((ch, k) => [ch, { dot: DOT_SIZES[k], mid: true }])),
   // block elements: [x, y, w, h] as cell fractions
   "█": { rect: [0, 0, 1, 1] },
   "▀": { rect: [0, 0, 1, 0.5] },
@@ -92,7 +97,7 @@ export function createAtlas({ family, size, dpr, cellWd, cellHd }) {
     if (shape?.dot) {
       const r = Math.max(1, (shape.dot * cellWd) / 2);
       context.beginPath();
-      context.arc(x + cellWd / 2, y + Math.round(cellHd / 2), r, 0, Math.PI * 2);
+      context.arc(x + cellWd / 2, y + Math.round(shape.mid ? midline : cellHd / 2), r, 0, Math.PI * 2);
       context.fill();
     } else if (shape?.box) {
       const [left, right, up, down] = shape.box;

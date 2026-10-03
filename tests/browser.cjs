@@ -197,6 +197,44 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
       assert.deepEqual(overflow, [], `Text overflow at ${width}px`);
     }
 
+    // The settle scroll: a nudge keeps the text; a real scroll turns the
+    // letters into dots, and once the page rests they settle back into text.
+    const settle = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    watch(settle);
+    await settle.addInitScript(() => sessionStorage.setItem("glyph-seen", "1"));
+    await settle.goto(base + "/?scroll=settle");
+    await ready(settle);
+    await settle.waitForTimeout(1500);
+    const screen = (p) => p.evaluate(() => {
+      const v = __glyph.view();
+      let dots = 0;
+      let letters = 0;
+      for (let r = 0; r < v.rows - 3; r++) {
+        for (let c = 0; c < v.cols; c++) {
+          const q = __glyph.probe(r, c);
+          if (q.lattice) continue;
+          if (/[\ue010-\ue016]/.test(q.x) && q.phase === 0) dots++;
+          if (/[A-Za-z]/.test(q.x) && q.inkX > 0.5 && q.phase === 0) letters++;
+        }
+      }
+      return { dots, letters, state: __glyph.stats().settle };
+    });
+    await scrollToRow(settle, 1);
+    await settle.waitForTimeout(80);
+    assert.equal((await screen(settle)).state, "text", "a nudge keeps the text");
+    await settle.waitForTimeout(600);
+    await settle.evaluate(() => __glyph.set({ restWait: 700 }));
+    await scrollToRow(settle, 20);
+    await settle.waitForTimeout(450);
+    const moving = await screen(settle);
+    assert.equal(moving.state, "dots");
+    assert.ok(moving.dots > 50 && moving.letters === 0, `a real scroll shows dots only (${moving.dots} dots, ${moving.letters} letters)`);
+    await settle.waitForTimeout(700 + 1200 + 400);
+    const rested = await screen(settle);
+    assert.equal(rested.state, "text");
+    assert.ok(rested.letters > 50 && rested.dots === 0, `at rest the text has settled (${rested.letters} letters, ${rested.dots} dots)`);
+    await settle.close();
+
     // Reduced motion: no reveal, no flaps; the document is simply there.
     const calm = await browser.newPage({ viewport: { width: 1024, height: 768 }, reducedMotion: "reduce" });
     watch(calm);
@@ -242,7 +280,7 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
     await labFrame.waitForFunction(() => __glyph.get().restAlpha === 0.3);
 
     assert.deepEqual(errors, []);
-    console.log("PASS: boot, keyboard order, selection, scroll flaps, message box, sound, layouts, reduced motion, no-JS, lab.");
+    console.log("PASS: boot, keyboard order, selection, scroll flaps, message box, sound, layouts, settle scroll, reduced motion, no-JS, lab.");
   } finally {
     await browser.close();
   }

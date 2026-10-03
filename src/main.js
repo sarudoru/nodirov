@@ -245,7 +245,8 @@ function onScrollSettled() {
   if (touching) return;
   if (anim.target === null) {
     const target = Math.round(scroller.scrollTop / metrics.cellH) * metrics.cellH;
-    if (Math.abs(scroller.scrollTop - target) > 0.5) settleTo(target, P.settleMs);
+    // dots need no ease onto the row; the text settles once the page is on it
+    if (Math.abs(scroller.scrollTop - target) > 0.5) settleTo(target, field.settling() ? 0 : P.settleMs);
   }
   const section = currentSection();
   const hash = section.id ? `#${section.id}` : "";
@@ -390,6 +391,7 @@ async function boot() {
     ticker.tick(rows, performance.now());
     updateHud();
   });
+  field.onLand((now) => ticker.land(now));
   // the full opening once per visit; a reload in the same visit is brief
   let seen = false;
   try {

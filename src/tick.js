@@ -59,6 +59,7 @@ export function createTicker() {
   let thock = null;
   let enabled = false;
   let last = 0;
+  let lastLand = 0;
 
   function play(strength, pitch = 1) {
     if (!context || !thock) return;
@@ -98,6 +99,12 @@ export function createTicker() {
     // a typed letter lands with a smaller, higher click
     key() {
       if (enabled) play(0.3, 1.7);
+    },
+    // a row settling back into text lands with a light click
+    land(now) {
+      if (!enabled || now - lastLand < 45) return;
+      lastLand = now;
+      play(0.22, 1.4);
     },
   };
 }

@@ -19,9 +19,14 @@
 // Changes while the page rests (a typed letter, a hovered link) flip on a
 // clock, one cell at a time.
 //
+// The other scroll, "settle": a real scroll turns the document's letters
+// into dots, and while the page moves only dots change, each in its cell.
+// When the page rests, the text settles back in from the top, each cell
+// passing through the letters before its own.
+//
 // Law: nothing moves; cells change.
 
-import { createAtlas } from "./atlas.js";
+import { createAtlas, TEXT_DOT } from "./atlas.js";
 import { createRenderer, TURN } from "./renderer.js";
 import { createSubstrate } from "./substrate.js";
 
@@ -87,6 +92,22 @@ export function createField(canvasElement, params) {
   let lastTurnRow = 0;
   let onTurn = () => {};
 
+  // settle
+  let settle = "text"; // "text", "dots", or "resolve"
+  let anchor = 0;      // the row the text last rested on
+  let dotRow = 0;      // the row the dots show
+  let dotPrev = 0;     // the row they showed before it
+  let dotAt = -1e9;    // when they last changed
+  let leave = { at: -1e9, row: 0, settled: false, across: 0, fall: 0, down: true };
+  let resolveRow = 0;
+  let resolveAt = 0;
+  let resolveSpread = 0;
+  let resolveEnd = 0;
+  let landRow = 0;     // the next screen row whose landing clicks
+  let onLand = () => {};
+  let dotGlyph = 0;
+  let searchCache = new Map();
+
   // frame buffers handed to the renderer
   let glyphs = new Uint16Array(0);
   let inks = new Uint8Array(0);
@@ -135,6 +156,12 @@ export function createField(canvasElement, params) {
     return t << 6;
   }
   const smooth = (t) => t * t * (3 - 2 * t);
+  function hash(a, b, s) {
+    let h = Math.imul(a, 0x27d4eb2d) ^ Math.imul(b, 0x165667b1) ^ Math.imul(s, 0x61c88647);
+    h = Math.imul(h ^ (h >>> 15), 0x2c1b3c6d);
+    h = Math.imul(h ^ (h >>> 12), 0x297a2d39);
+    return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+  }
 
   // ---------- the world ----------
 
@@ -243,6 +270,8 @@ export function createField(canvasElement, params) {
       return;
     }
 
+    if (P.scroll === "settle" && settleAdvance(now)) return;
+
     if (!steps.length) {
       const fast = speed > P.fingerSpeed || jumped || Math.abs(target - shown) > 1;
       jumped = false;
@@ -295,6 +324,229 @@ export function createField(canvasElement, params) {
     lastTurnRow = to;
   }
 
+  // ---------- settle: dots while the page moves, text once it rests ----------
+
+  function turned(row) {
+    if (row === lastTurnRow) return;
+    onTurn(row - lastTurnRow, row);
+    lastTurnRow = row;
+  }
+
+  // Returns true while the settle scroll owns the board.
+  function settleAdvance(now) {
+    const row = Math.round(target);
+    const still = now - lastTargetAt > P.restWait;
+    if (settle === "text") {
+      if (still && !steps.length) anchor = row;
+      // a nudge keeps the text, so reading is never interrupted by one
+      if (Math.abs(target - anchor) <= P.dotsAfter) return false;
+      toDots(now);
+      return true;
+    }
+    if (settle === "resolve") {
+      if (row !== resolveRow) {
+        toDots(now);
+        return true;
+      }
+      landing(now);
+      if (now < resolveEnd) return true;
+      settle = "text";
+      anchor = resolveRow;
+      shown = target;
+      steps = [];
+      jumped = false;
+      return false;
+    }
+    if (row !== dotRow) {
+      dotPrev = dotRow;
+      dotRow = row;
+      dotAt = now;
+    }
+    shown = target;
+    turned(row);
+    // the text turns to dots before it may settle again
+    const left = now - leave.at > P.flipMs + leave.across + leave.fall;
+    if (still && left) startResolve(now, row);
+    return true;
+  }
+
+  function toDots(now) {
+    const from = settle === "resolve" ? resolveRow : steps.length ? steps[steps.length - 1].to : Math.round(shown);
+    leave = {
+      at: now, row: from, settled: settle === "resolve",
+      across: P.cascadeX, fall: P.cascadeY, down: target >= from,
+    };
+    settle = "dots";
+    steps = [];
+    dotRow = dotPrev = Math.round(target);
+    dotAt = -1e9;
+    shown = target;
+    jumped = false;
+    flapsUntil = Math.max(flapsUntil, now + P.flipMs + leave.across + leave.fall);
+    turned(dotRow);
+  }
+
+  function startResolve(now, row) {
+    settle = "resolve";
+    resolveRow = row;
+    resolveAt = now;
+    const tail = (Math.round(P.resolveFlips) + 1) * P.searchMs;
+    resolveSpread = Math.max(0, P.resolveMs - tail);
+    resolveEnd = now + resolveSpread + tail + 20;
+    landRow = 0;
+    flapsUntil = Math.max(flapsUntil, resolveEnd);
+  }
+
+  // When a cell starts to settle, in ms after the screen began: top rows
+  // first, a little later across the words, with some grain so the board
+  // finds its words cell by cell rather than as a wipe.
+  function resolveStart(r, c) {
+    const rowFrac = rows > 1 ? r / (rows - 1) : 0;
+    return resolveSpread * (0.75 * rowFrac + 0.12 * colFrac(c) + 0.13 * hash(resolveRow + r, c, 1));
+  }
+
+  // The letters a cell passes on the way to its own, in the order a
+  // departure board holds them; a figure passes figures. Marks turn straight
+  // from the dot. Returns atlas slots, the nearest predecessor last.
+  const ORDERS = ["abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "0123456789"];
+  const SEARCH_MAX = 12;
+  function searchOf(glyph) {
+    if (searchCache.has(glyph)) return searchCache.get(glyph);
+    const ch = atlas.char(glyph);
+    let seq = null;
+    for (const order of ORDERS) {
+      const at = order.indexOf(ch);
+      if (at < 0) continue;
+      seq = [];
+      for (let k = SEARCH_MAX; k >= 1; k--) seq.push(atlas.ensure(order[(at - k + order.length * 2) % order.length]));
+      break;
+    }
+    searchCache.set(glyph, seq);
+    return seq;
+  }
+
+  function searchCount(glyph, r, c) {
+    const most = Math.min(SEARCH_MAX, Math.round(P.resolveFlips));
+    if (most <= 0 || !searchOf(glyph)) return 0;
+    return Math.max(1, Math.round(most * (0.34 + 0.66 * hash(resolveRow + r, c, 2))));
+  }
+
+  // A row clicks as its first letters land.
+  function landing(now) {
+    const lead = (Math.round(P.resolveFlips) * 0.5 + 1) * P.searchMs;
+    while (landRow < rows) {
+      const rowFrac = rows > 1 ? landRow / (rows - 1) : 0;
+      if (now - resolveAt < resolveSpread * 0.75 * rowFrac + lead) break;
+      const w = (resolveRow + landRow) * cols;
+      if (resolveRow + landRow < worldRows) {
+        for (let c = 0; c < cols; c++) {
+          const g = worldGlyph[w + c];
+          if (g && g !== blank) {
+            onLand(now);
+            break;
+          }
+        }
+      }
+      landRow++;
+    }
+  }
+
+  // The document's face as a dot: a letter becomes a dot in its ink, a
+  // space stays blank paper, so the words keep their shapes.
+  function dotFace(worldRow, c, face, gate) {
+    gated(docAt(worldRow, c, face), gate);
+    if (face.glyph && face.glyph !== blank) {
+      face.glyph = dotGlyph;
+      face.ink *= P.dotInk;
+    }
+    face.accent = false;
+    face.under = 0;
+    return face;
+  }
+
+  // What a settling screen showed at a moment: the letter if the cell had
+  // landed, else its dot.
+  function settledFace(r, c, at, face, gate) {
+    gated(docAt(resolveRow + r, c, face), gate);
+    if (!face.glyph || face.glyph === blank) return face;
+    const landed = at - resolveAt - resolveStart(r, c) >= (searchCount(face.glyph, r, c) + 1) * P.searchMs;
+    return landed ? face : dotFace(resolveRow + r, c, face, gate);
+  }
+
+  function settleCell(o, i, r, c, now, sub, gate) {
+    if (settle === "resolve") {
+      resolveCell(o, i, r, c, now, sub, gate);
+      return;
+    }
+    const to = dotFace(dotRow + r, c, faceB, gate);
+    // the text turns into dots as a wave across the words and down the rows
+    const lt = now - leave.at - cascadeOf(r, c, leave);
+    if (lt < P.flipMs) {
+      const from = leave.settled
+        ? settledFace(r, c, leave.at, faceA, gate)
+        : gated(docAt(leave.row + r, c, faceA), gate);
+      if (!from.glyph && !to.glyph) {
+        lattice(o, sub);
+        return;
+      }
+      if (lt <= 0) {
+        if (from.glyph) put(o, from.glyph, from.ink, 0, 0, 0, from.accent ? F_ACCENT_X : 0, from.under);
+        else lattice(o, sub);
+        return;
+      }
+      turn(o, from, to, smooth(lt / P.flipMs), sub);
+      return;
+    }
+    // the page moved a row: dots come and go in their cells
+    const ft = now - dotAt;
+    if (ft < P.dotMs) {
+      const from = dotFace(dotPrev + r, c, faceA, gate);
+      if (from.glyph !== to.glyph) {
+        put(o, from.glyph || sub.glyph, from.glyph ? from.ink : sub.ink,
+          to.glyph || sub.glyph, to.glyph ? to.ink : sub.ink, smooth(ft / P.dotMs), TURN.fade << 6);
+        return;
+      }
+    }
+    if (to.glyph) {
+      put(o, to.glyph, to.ink, 0, 0, 0, 0);
+      return;
+    }
+    lattice(o, sub);
+  }
+
+  // A cell settling: its dot, then the letters before its own, then its own.
+  function resolveCell(o, i, r, c, now, sub, gate) {
+    const face = gated(docAt(resolveRow + r, c, faceA), gate);
+    if (!face.glyph) {
+      lattice(o, sub);
+      return;
+    }
+    const t = now - resolveAt - resolveStart(r, c);
+    if (face.glyph === blank) {
+      put(o, blank, face.ink, 0, 0, 0, 0, t > 0 ? face.under : 0);
+      return;
+    }
+    const dotInk = face.ink * P.dotInk;
+    if (t < 0) {
+      put(o, dotGlyph, dotInk, 0, 0, 0, 0);
+      return;
+    }
+    const k = searchCount(face.glyph, r, c);
+    const f = P.searchMs;
+    const j = Math.floor(t / f);
+    if (j > k) {
+      put(o, face.glyph, face.ink, 0, 0, 0, face.accent ? F_ACCENT_X : 0, face.under);
+      return;
+    }
+    const seq = k ? searchOf(face.glyph) : null;
+    const glyphAt = (q) => (q === 0 ? dotGlyph : q === k + 1 ? face.glyph : seq[SEARCH_MAX - k + q - 1]);
+    const inkAt = (q) => (q === 0 ? dotInk : q === k + 1 ? face.ink : face.ink * P.searchInk);
+    const last = j === k;
+    put(o, glyphAt(j), inkAt(j), glyphAt(j + 1), inkAt(j + 1), smooth((t - j * f) / f),
+      (last && face.accent ? F_ACCENT_Y : 0) | (j > 0 ? F_BODY_X : 0) | F_BODY_Y | turnBits(P.turn, i),
+      0, last ? face.under : 0);
+  }
+
   // ---------- the frame ----------
 
   function put(o, x, inkX, y, inkY, phase, flags, underX = 0, underY = 0) {
@@ -310,8 +562,8 @@ export function createField(canvasElement, params) {
   // Paint a cell turning from face X to face Y; an empty face is whatever
   // the lattice holds. Only a flap with a letter on it shows its card.
   function turn(o, x, y, phase, sub) {
-    const inkedX = x.glyph && x.glyph !== blank;
-    const inkedY = y.glyph && y.glyph !== blank;
+    const inkedX = x.glyph && x.glyph !== blank && x.glyph !== dotGlyph;
+    const inkedY = y.glyph && y.glyph !== blank && y.glyph !== dotGlyph;
     put(o,
       x.glyph || sub.glyph, x.glyph ? x.ink : sub.ink,
       y.glyph || sub.glyph, y.glyph ? y.ink : sub.ink,
@@ -326,18 +578,20 @@ export function createField(canvasElement, params) {
   }
 
   function compose(now) {
-    const stepping = steps.length > 0;
+    const settling = settle !== "text" && !reducedMotion;
+    const stepping = !settling && steps.length > 0;
     const view = stepping ? steps[0].from : shown;
     const k = Math.floor(view);
     const fraction = stepping ? 0 : view - k;
     const revealing = substrate.revealing();
+    dotGlyph = atlas.ensure(TEXT_DOT[Math.max(0, Math.min(TEXT_DOT.length - 1, Math.round(P.dotSize)))]);
     // clock flaps only compare a resting page with itself
-    steadyFrame = !reducedMotion && !stepping && fraction === 0 && k === restRow && !revealing;
-    restRow = !stepping && fraction === 0 ? k : -1;
+    steadyFrame = !reducedMotion && !settling && !stepping && fraction === 0 && k === restRow && !revealing;
+    restRow = !settling && !stepping && fraction === 0 ? k : -1;
     if (!steadyFrame) flapAt.fill(-1e9);
     // the caret, found once per frame: a line at the left of one cell,
     // blinking, or steady when motion is reduced
-    const caret = inbox && !stepping && fraction === 0 ? inbox.caret() : null;
+    const caret = inbox && !settling && !stepping && fraction === 0 ? inbox.caret() : null;
     const caretCell = caret && (reducedMotion || Math.floor(now / 530) % 2 === 0)
       ? (caret.row - k) * cols + caret.col
       : -1;
@@ -350,7 +604,10 @@ export function createField(canvasElement, params) {
         const gate = revealing ? substrate.contentGate(i, now) : 1;
         let shownInk = 0;
 
-        if (stepping) {
+        if (settling) {
+          // dots leave no wake: while the page moves, nothing smears
+          settleCell(o, i, r, c, now, sub, gate);
+        } else if (stepping) {
           // the latest flip that has reached this cell
           let s = steps.length - 1;
           while (s > 0 && now < steps[s].t0 + cascadeOf(r, c, steps[s])) s--;
@@ -569,6 +826,7 @@ export function createField(canvasElement, params) {
       metrics = m;
       atlas = createAtlas({ family: m.family, size: m.fontSize, dpr: m.dpr, cellWd: m.cellWd, cellHd: m.cellHd });
       cursorGlyph = atlas.ensure(P.cursorGlyph);
+      searchCache = new Map();
       substrate = createSubstrate(atlas, P);
     },
 
@@ -631,6 +889,8 @@ export function createField(canvasElement, params) {
         shown = target;
         lastTurnRow = Math.round(target);
         jumped = false;
+        settle = "text";
+        anchor = Math.round(target);
       }
       requestDraw();
     },
@@ -638,6 +898,11 @@ export function createField(canvasElement, params) {
     onTurn(callback) {
       onTurn = callback;
     },
+    onLand(callback) {
+      onLand = callback;
+    },
+    // the settle scroll is showing dots, or settling them into text
+    settling: () => settle !== "text" && !reducedMotion,
 
     pointerAt(x, y) {
       const { col, row, inside } = pointerCell(x, y);
@@ -718,12 +983,17 @@ export function createField(canvasElement, params) {
       if (v) {
         substrate?.endReveal();
         steps = [];
+        settle = "text";
       }
       requestDraw();
     },
 
     applyParams(next, changed = []) {
       P = next;
+      if (changed.includes("scroll")) {
+        settle = "text";
+        anchor = Math.round(target);
+      }
       substrate.setParams(P, changed);
       if (changed.includes("cursorGlyph")) cursorGlyph = atlas.ensure(P.cursorGlyph);
       applyStyle();
@@ -754,7 +1024,7 @@ export function createField(canvasElement, params) {
       };
     },
 
-    stats: () => ({ ...substrate.stats(), glyphs: atlas.size(), renderer: renderer.kind, flipping: steps.length > 0 }),
+    stats: () => ({ ...substrate.stats(), glyphs: atlas.size(), renderer: renderer.kind, flipping: steps.length > 0, settle }),
     requestDraw,
     start,
     stop,
