@@ -33,9 +33,11 @@ src/substrate.js    the resting field: restless characters (or dots), pointer le
 src/atlas.js        every glyph drawn once at device resolution; dots and box strokes as geometry
 src/renderer.js     one WebGL2 pass; turn styles flap, roll, drum, fold, slide, fade; Canvas 2D fallback
 src/inbox.js        the message box: a transparent textarea whose text lands in cells
+src/cousins.js      each letter's cousins, for the hovered word
 src/tick.js         the sound: one synthesized thock per row
 src/params.js       every tunable: schema, defaults, URL codec, workbench controls
 src/analytics.js    PostHog, off until a key is set
+src/messages.js     the message box's delivery, off until a key is set
 lab.html            the workbench: every knob live on the real page
 tests/browser.cjs   browser checks
 ```
@@ -62,11 +64,18 @@ tests/browser.cjs   browser checks
 ### The settle scroll
 
 `?scroll=settle` swaps the flaps for another scroll. A scroll longer than a
-couple of rows turns every letter into a dot in its cell, so while the page
-moves only dots change. When the page rests, the text settles back in from
-the top, each cell turning from its dot into its letter at its own moment.
-The workbench's Scroll group tunes it (`dotsAfter`, `resolveMs`,
-`resolveFlips` for letters passed on the way, and the dot's size and ink).
+couple of rows turns every letter into a character that keeps changing in
+its cell (or, with `moving=dots`, into a dot), so while the page moves only
+those change. When the page rests, the text settles back in from the top,
+each cell turning into its letter at its own moment. The workbench's Scroll
+group tunes it (`dotsAfter`, `scrambleMs`, `restWait`, `resolveMs`,
+`resolveFlips` for letters passed on the way, and the moving ink).
+
+### The hovered word
+
+While the page rests, the word under the pointer turns through its letters'
+cousins: the same letters as other languages write them (`src/cousins.js`).
+`cousinMs` sets the beat; `cousinMs=0` leaves words alone.
 
 ### The workbench
 
@@ -88,9 +97,23 @@ message box), `p.actions`, `p.colophon`, and inline `<a>`.
 `src/analytics.js` loads PostHog only when `POSTHOG.key` is set: pageviews,
 autocapture, heatmaps, web vitals, session replay with inputs masked, person
 profiles, and GeoIP on the PostHog side. The page adds `section_reached`,
-`sound_toggled`, and `message_sent`. Messages are delivered as PostHog
-events; without a key the visitor's mail client opens with the text filled
-in.
+`sound_toggled`, `theme_toggled`, and `message_sent`.
+
+The message box sends from the page itself. `src/messages.js` posts each
+message to Web3Forms, which forwards it to the inbox its access key belongs
+to; an address in the text becomes the reply-to. Create a key at
+web3forms.com with the inbox's address and set `MESSAGES.key`. The key is
+public by design. Until it is set, the visitor's mail client opens with the
+text filled in (or, with analytics on, the message arrives as a PostHog
+event only).
+
+## Theme
+
+Light and dark. The page follows the system until the visitor uses the
+switch above the sound switch; the choice is kept for later visits.
+`?theme=dark` or `?theme=light` forces one. The dark colours are
+`paperDark`, `inkDark`, and `accentDark` in `src/params.js`, mirrored in
+`style.css` for the first paint.
 
 ## Browser checks
 

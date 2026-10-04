@@ -5,8 +5,9 @@ import { createField } from "./field.js";
 import { createInbox } from "./inbox.js";
 import { createTicker } from "./tick.js";
 import { parseArticle, typeset } from "./typesetter.js";
-import { fromQuery, toQuery, defaults, needsRelayout, FONT, SCHEMA } from "./params.js";
+import { fromQuery, toQuery, defaults, needsRelayout, withTheme, FONT, SCHEMA } from "./params.js";
 import { POSTHOG, startAnalytics, track, identify } from "./analytics.js";
+import { MESSAGES, deliver } from "./messages.js";
 
 const scroller = document.getElementById("scroller");
 const article = document.getElementById("article");
@@ -14,15 +15,43 @@ const article = document.getElementById("article");
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 let P = fromQuery();
-const field = createField(document.getElementById("field"), P);
 
-// Messages go to PostHog as events. Without analytics the mail client opens
-// with the text filled in; the box keeps the text then, since a mail handler
-// may be missing.
-function sendMessage(text) {
+// The theme: what the address asks for, else the visitor's last choice, else
+// the system's. The switch on the status row overrides all three.
+const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+function storedTheme() {
+  try {
+    return localStorage.getItem("glyph-theme");
+  } catch {
+    return null; // private mode
+  }
+}
+function wantsDark() {
+  const choice = P.theme !== "auto" ? P.theme : storedTheme();
+  return choice ? choice === "dark" : darkQuery.matches;
+}
+let dark = wantsDark();
+const look = () => withTheme(P, dark);
+
+const field = createField(document.getElementById("field"), look());
+
+// The page sends a message itself. Analytics, when on, keeps a copy as an
+// event. With neither set up, the mail client opens with the text filled
+// in; the box keeps the text then, since a mail handler may be missing.
+async function sendMessage(text) {
   const contact = text.match(/[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)*\.[a-z]{2,}/i)?.[0];
   identify(contact);
-  if (track("message_sent", { message: text, contact })) return "sent";
+  const tracked = track("message_sent", { message: text, contact });
+  if (MESSAGES.key) {
+    try {
+      await deliver(text, contact);
+      return "sent";
+    } catch (error) {
+      console.warn("The message was not sent:", error.message);
+      return "failed";
+    }
+  }
+  if (tracked) return "sent";
   window.open(
     `mailto:sardor@nodirov.com?subject=${encodeURIComponent("From nodirov.com")}&body=${encodeURIComponent(text)}`,
     "_self",
@@ -30,7 +59,12 @@ function sendMessage(text) {
   return "mail";
 }
 
-const ticker = createTicker();
+// Sound is on unless the visitor turned it off on an earlier visit.
+let soundOn = true;
+try {
+  soundOn = localStorage.getItem("glyph-sound") !== "off";
+} catch { /* private mode */ }
+const ticker = createTicker(soundOn);
 
 const inboxForm = article.querySelector("form[data-inbox]");
 const inbox = inboxForm
@@ -103,7 +137,7 @@ function layout() {
   field.setWorld(layoutResult.lines, layoutResult.worldRows, { left: layoutResult.left, width: layoutResult.contentW });
   bindLinks(layoutResult.links);
   article.classList.add("ready");
-  placeSound();
+  placeSwitches();
   updateHud();
 }
 
@@ -139,6 +173,7 @@ function currentSection() {
 }
 
 const soundButton = document.getElementById("sound");
+const themeButton = document.getElementById("theme");
 
 // The right of the status row names the section the board is showing.
 function updateHud() {
@@ -146,34 +181,55 @@ function updateHud() {
   field.setStatus({ right: currentSection().label, rightInk: P.faintAlpha });
 }
 
-// The sound switch lives on the status row, fixed to the screen. The button
-// is real and transparent; the field draws its label.
-function placeSound() {
-  const text = ticker.enabled() ? "sound on" : "sound off";
+// The switches live on the status row and the row above it, fixed to the
+// screen: sound, and the theme. The buttons are real and transparent; the
+// field draws their labels.
+function placeSwitches() {
   // the status row lives in the margins; a screen too narrow for that keeps
   // the document clear and goes without it
   const col = 2;
   const room = layoutResult.left - col - 2 >= "sound off".length;
-  soundButton.hidden = !room;
+  soundButton.hidden = themeButton.hidden = !room;
+  // a screen with no switch to turn the sound off stays silent
+  ticker.set(soundOn && room);
+  soundButton.setAttribute("aria-pressed", String(ticker.enabled()));
+  const sound = ticker.enabled() ? "sound on" : "sound off";
+  const theme = dark ? "dark" : "light";
   if (!room) {
-    field.setStatus({ left: "", right: "" });
+    field.setStatus({ left: "", upper: "", right: "" });
     return;
   }
   const row = field.rows() - 2;
-  soundButton.textContent = text;
-  Object.assign(soundButton.style, {
-    left: field.xOffset() + col * metrics.cellW + "px",
-    top: row * metrics.cellH + "px",
-    width: text.length * metrics.cellW + "px",
-    height: metrics.cellH + "px",
-    fontSize: metrics.fontSize + "px",
-    lineHeight: metrics.cellH + "px",
-    letterSpacing: metrics.spacing + "px",
-    paddingLeft: metrics.pad + "px",
+  const place = (button, text, at) => {
+    button.textContent = text;
+    Object.assign(button.style, {
+      left: field.xOffset() + col * metrics.cellW + "px",
+      top: at * metrics.cellH + "px",
+      width: text.length * metrics.cellW + "px",
+      height: metrics.cellH + "px",
+      fontSize: metrics.fontSize + "px",
+      lineHeight: metrics.cellH + "px",
+      letterSpacing: metrics.spacing + "px",
+      paddingLeft: metrics.pad + "px",
+    });
+  };
+  place(soundButton, sound, row);
+  place(themeButton, theme, row - 1);
+  const ink = (button) => (hoveredSwitch === button ? P.textAlpha : P.faintAlpha);
+  field.setStatus({
+    left: sound, leftCol: col, leftInk: ink(soundButton),
+    upper: theme, upperInk: ink(themeButton),
   });
-  field.setStatus({ left: text, leftCol: col, leftInk: soundHover ? P.textAlpha : P.faintAlpha });
 }
-let soundHover = false;
+let hoveredSwitch = null;
+
+function setTheme(next) {
+  dark = next;
+  themeButton.setAttribute("aria-pressed", String(dark));
+  applyCssVars();
+  field.applyParams(look(), ["paper", "ink", "accent"]);
+  if (layoutResult) placeSwitches();
+}
 
 function bindLinks(links) {
   for (const a of links) {
@@ -271,7 +327,7 @@ function onResize() {
     if (window.innerWidth === lastSize.w && dpr === lastSize.dpr) {
       field.resize(window.innerWidth, window.innerHeight);
       fitHeight();
-      placeSound();
+      placeSwitches();
       field.setScroll(scroller.scrollTop, true);
       return;
     }
@@ -354,10 +410,13 @@ async function loadFont() {
 
 function applyCssVars() {
   document.documentElement.classList.toggle("embed-cursor", !!P.cursorEmbed);
+  const { paper, ink, accent } = look();
   const style = document.documentElement.style;
-  style.setProperty("--paper", P.paper);
-  style.setProperty("--ink", P.ink);
-  style.setProperty("--accent", P.accent);
+  style.setProperty("--paper", paper);
+  style.setProperty("--ink", ink);
+  style.setProperty("--accent", accent);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  for (const meta of document.querySelectorAll('meta[name="theme-color"]')) meta.content = paper;
 }
 
 // The name on the grid, for the opening: its row as the screen shows it.
@@ -419,19 +478,39 @@ async function boot() {
   window.addEventListener("blur", () => field.pointerLeft());
   scroller.addEventListener("click", onClick);
   soundButton.addEventListener("click", () => {
-    const on = ticker.toggle();
-    soundButton.setAttribute("aria-pressed", String(on));
-    track("sound_toggled", { on });
-    placeSound();
+    soundOn = ticker.toggle();
+    try {
+      localStorage.setItem("glyph-sound", soundOn ? "on" : "off");
+    } catch { /* private mode */ }
+    track("sound_toggled", { on: soundOn });
+    placeSwitches();
   });
-  const hoverSound = (on) => () => {
-    soundHover = on;
-    placeSound();
-  };
-  soundButton.addEventListener("pointerenter", hoverSound(true));
-  soundButton.addEventListener("pointerleave", hoverSound(false));
-  soundButton.addEventListener("focus", hoverSound(true));
-  soundButton.addEventListener("blur", hoverSound(false));
+  // browsers hold a page's sound until the visitor's first click, tap, or key
+  for (const type of ["pointerdown", "pointerup", "keydown"]) {
+    window.addEventListener(type, () => ticker.unlock(), { capture: true, passive: true });
+  }
+  themeButton.setAttribute("aria-pressed", String(dark));
+  themeButton.addEventListener("click", () => {
+    setTheme(!dark);
+    try {
+      localStorage.setItem("glyph-theme", dark ? "dark" : "light");
+    } catch { /* private mode */ }
+    track("theme_toggled", { dark });
+  });
+  // the system's theme leads until the visitor has chosen one
+  darkQuery.addEventListener("change", () => {
+    if (P.theme === "auto" && !storedTheme()) setTheme(darkQuery.matches);
+  });
+  for (const button of [soundButton, themeButton]) {
+    const hover = (on) => () => {
+      hoveredSwitch = on ? button : hoveredSwitch === button ? null : hoveredSwitch;
+      placeSwitches();
+    };
+    button.addEventListener("pointerenter", hover(true));
+    button.addEventListener("pointerleave", hover(false));
+    button.addEventListener("focus", hover(true));
+    button.addEventListener("blur", hover(false));
+  }
 
   // A mouse wheel moves in notches; each notch is one flip of the board.
   // Trackpads keep their native feel and turn the flaps continuously.
@@ -486,16 +565,18 @@ async function boot() {
     set(patch) {
       const changed = Object.keys(patch);
       P = { ...P, ...patch };
+      if (changed.includes("theme")) dark = wantsDark();
       applyCssVars();
       if (needsRelayout(patch)) {
         const top = scroller.scrollTop;
-        field.applyParams(P, changed);
+        field.applyParams(look(), changed);
         layout();
         scroller.scrollTop = top;
         syncFromScroll();
         return;
       }
-      field.applyParams(P, changed);
+      field.applyParams(look(), changed);
+      placeSwitches();
     },
   };
   window.dispatchEvent(new CustomEvent("glyph-ready"));

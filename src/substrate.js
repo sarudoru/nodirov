@@ -62,8 +62,10 @@ export function createSubstrate(atlas, params) {
   // lone mark would read as a bullet; those columns stay empty
   let margin = 0;
 
-  // the pointer presses on the lattice
+  // the pointer presses on the lattice, except while it reads the document
   let pointer = null;
+  let hushed = false;
+  const lensTarget = () => (pointer.leaving || hushed ? 0 : 1);
 
   // first contact: the board comes up, the name's cells turn one by one,
   // then a ring leaves the name and everything else turns in behind it
@@ -270,8 +272,7 @@ export function createSubstrate(atlas, params) {
 
     // the lens eases in and out rather than popping
     if (pointer) {
-      const target = pointer.leaving ? 0 : 1;
-      pointer.strength += (target - pointer.strength) * (1 - Math.exp(-dt / 90));
+      pointer.strength += (lensTarget() - pointer.strength) * (1 - Math.exp(-dt / 90));
       if (pointer.leaving && pointer.strength < 0.01) pointer = null;
     }
   }
@@ -421,12 +422,18 @@ export function createSubstrate(atlas, params) {
       pointer.row = row;
       pointer.leaving = false;
     },
+    // over the document's text the lens lets go, so the words are left alone
+    hush(on) {
+      hushed = on;
+    },
     // the document's ink passing through leaves a trail that cools
     trailTo(i, amount) {
       if (amount > trail[i]) trail[i] = amount;
     },
     step,
     sample,
+    // the characters a cell may hold, as atlas slots
+    pool: () => pool,
     contentGate,
     // hero: the name's { row, col, length } on the grid, or null; hint:
     // the line that types itself after the ring, { row, col, rows, width }
@@ -456,7 +463,7 @@ export function createSubstrate(atlas, params) {
     },
     // something is changing that needs every frame
     busy: () => ripples.length > 0 || reveal !== null ||
-      (pointer !== null && (pointer.leaving || pointer.strength < 0.99)),
+      (pointer !== null && (pointer.leaving || Math.abs(lensTarget() - pointer.strength) > 0.01)),
     // characters keep turning over on their own, so the page never fully idles
     restless: () => glyphMode() && P.ambientRate > 0,
     stats() {

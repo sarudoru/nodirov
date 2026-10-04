@@ -29,6 +29,7 @@ export function createInbox(form, { invalidate = () => {}, onSend, onType } = {}
   let notice = new Map();
   let lastValue = "";
   let composing = false;
+  let sending = false;
 
   const key = (r, c) => r * region.cols + c;
   const inside = (p) =>
@@ -113,6 +114,7 @@ export function createInbox(form, { invalidate = () => {}, onSend, onType } = {}
 
   textarea.addEventListener("input", () => {
     const before = lastValue;
+    setNotice("");
     layoutText();
     // a keystroke the full box refused makes no sound
     if (textarea.value !== before) onType?.();
@@ -140,19 +142,26 @@ export function createInbox(form, { invalidate = () => {}, onSend, onType } = {}
       form.requestSubmit();
     }
   });
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (sending) return;
     const text = textarea.value.trim();
     if (!text) {
       textarea.focus();
       return;
     }
-    const result = onSend?.(text);
+    sending = true;
+    if (status) status.textContent = "Sending.";
+    const result = await onSend?.(text);
+    sending = false;
     if (result === "sent") {
       textarea.value = "";
       textarea.blur();
       layoutText();
       setNotice("sent. thank you.");
+    } else if (result === "failed") {
+      // the text stays in the box, under the notice, for another try
+      setNotice("not sent. try again.");
     } else if (status) {
       status.textContent = "Your mail app should open with the message.";
     }
@@ -178,10 +187,10 @@ export function createInbox(form, { invalidate = () => {}, onSend, onType } = {}
       const c = col - region.col;
       if (r < 0 || r >= region.rows || c < 0 || c >= region.cols) return null;
       const k = key(r, c);
-      const typed = cells.get(k);
-      if (typed) return { ch: typed, accent: selected.has(k) };
       const note = notice.get(k);
       if (note) return { ch: note, accent: true };
+      const typed = cells.get(k);
+      if (typed) return { ch: typed, accent: selected.has(k) };
       return null;
     },
     // where the caret is, in world cells, while the box has focus

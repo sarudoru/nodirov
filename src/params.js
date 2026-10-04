@@ -15,7 +15,7 @@ export const SCHEMA = [
   // ---- the lattice: what a cell holds when the document is not using it ----
   { key: "lattice", group: "Lattice", label: "resting cells", type: "select", def: "glyphs",
     options: [["glyphs", "restless characters"], ["dots", "a grid of dots"]] },
-  { key: "glyphInk", group: "Lattice", label: "character ink", type: "range", min: 0.02, max: 0.5, step: 0.005, def: 0.08 },
+  { key: "glyphInk", group: "Lattice", label: "character ink", type: "range", min: 0.02, max: 0.5, step: 0.005, def: 0.065 },
   { key: "ambientRate", group: "Lattice", label: "restlessness", type: "range", min: 0, max: 0.3, step: 0.002, def: 0.018, unit: "/cell/s",
     help: "how often a resting character turns into another" },
   { key: "ambientMs", group: "Lattice", label: "resting turn", type: "range", min: 60, max: 1200, step: 10, def: 360, unit: "ms" },
@@ -40,16 +40,21 @@ export const SCHEMA = [
 
   // ---- scrolling: the scroll position turns every cell's flap ----
   { key: "scroll", group: "Scroll", label: "while scrolling", type: "select", def: "flap",
-    options: [["flap", "the text turns with the scroll"], ["settle", "dots while moving, text settles at rest"]] },
-  { key: "dotsAfter", group: "Scroll", label: "dots after", type: "range", min: 0, max: 12, step: 0.5, def: 2, unit: "rows",
+    options: [["flap", "the text turns with the scroll"], ["settle", "changing characters while moving, text settles at rest"]] },
+  { key: "dotsAfter", group: "Scroll", label: "text leaves after", type: "range", min: 0, max: 12, step: 0.5, def: 2, unit: "rows",
     help: "settle: a scroll shorter than this keeps the text" },
+  { key: "moving", group: "Scroll", label: "a moving letter is", type: "select", def: "glyphs",
+    options: [["glyphs", "a character that keeps changing"], ["dots", "a dot"]] },
+  { key: "scrambleMs", group: "Scroll", label: "character change", type: "range", min: 20, max: 400, step: 10, def: 90, unit: "ms",
+    help: "settle: how often a moving character turns into another" },
   { key: "dotSize", group: "Scroll", label: "letter dot", type: "range", min: 0, max: 6, step: 1, def: 4,
-    help: "settle: the size of the dot a letter becomes" },
-  { key: "dotInk", group: "Scroll", label: "letter dot ink", type: "range", min: 0.1, max: 1, step: 0.02, def: 0.7 },
-  { key: "dotMs", group: "Scroll", label: "dot change", type: "range", min: 0, max: 300, step: 10, def: 60, unit: "ms",
-    help: "settle: how quickly a dot comes and goes as the page moves" },
-  { key: "restWait", group: "Scroll", label: "rest before settling", type: "range", min: 0, max: 800, step: 10, def: 120, unit: "ms" },
-  { key: "resolveMs", group: "Scroll", label: "settle time", type: "range", min: 200, max: 3000, step: 50, def: 1200, unit: "ms",
+    help: "settle, dots: the size of the dot a letter becomes" },
+  { key: "dotInk", group: "Scroll", label: "moving ink", type: "range", min: 0.1, max: 1, step: 0.02, def: 0.7,
+    help: "settle: the ink of a moving letter, as a share of its own" },
+  { key: "dotMs", group: "Scroll", label: "row change", type: "range", min: 0, max: 300, step: 10, def: 60, unit: "ms",
+    help: "settle: how quickly a cell takes the next row's mark as the page moves" },
+  { key: "restWait", group: "Scroll", label: "rest before settling", type: "range", min: 0, max: 800, step: 10, def: 50, unit: "ms" },
+  { key: "resolveMs", group: "Scroll", label: "settle time", type: "range", min: 100, max: 3000, step: 50, def: 450, unit: "ms",
     help: "settle: how long the whole screen takes to turn back into text, top to bottom" },
   { key: "resolveFlips", group: "Scroll", label: "letters passed", type: "range", min: 0, max: 12, step: 1, def: 0,
     help: "settle: at most this many letters before its own, in alphabet order; 0 turns the dot straight into its letter" },
@@ -88,14 +93,16 @@ export const SCHEMA = [
   // ---- touch: the cursor warms the lattice ----
   { key: "lens", group: "Touch", label: "lens", type: "range", min: 0, max: 3, step: 0.05, def: 1.35,
     help: "how much the marks swell around the pointer" },
-  { key: "lensRadius", group: "Touch", label: "lens radius", type: "range", min: 1, max: 16, step: 0.5, def: 7, unit: "cells" },
-  { key: "warmRadius", group: "Touch", label: "wake radius", type: "range", min: 1, max: 12, step: 0.5, def: 3.5, unit: "cells" },
+  { key: "lensRadius", group: "Touch", label: "lens radius", type: "range", min: 1, max: 16, step: 0.5, def: 4, unit: "cells" },
+  { key: "warmRadius", group: "Touch", label: "wake radius", type: "range", min: 1, max: 12, step: 0.5, def: 2.5, unit: "cells" },
   { key: "warmGain", group: "Touch", label: "wake strength", type: "range", min: 0, max: 3, step: 0.02, def: 1.2 },
   { key: "coolMs", group: "Touch", label: "cooling", type: "range", min: 60, max: 3000, step: 20, def: 520, unit: "ms" },
   { key: "rippleSpeed", group: "Touch", label: "ripple speed", type: "range", min: 5, max: 200, step: 1, def: 48, unit: "cols/s" },
   { key: "rippleWidth", group: "Touch", label: "ripple width", type: "range", min: 0.5, max: 8, step: 0.25, def: 3, unit: "cols" },
   { key: "rippleEnergy", group: "Touch", label: "ripple energy", type: "range", min: 0, max: 3, step: 0.05, def: 1.1 },
   { key: "rippleLife", group: "Touch", label: "ripple life", type: "range", min: 0.2, max: 4, step: 0.1, def: 1.4, unit: "s" },
+  { key: "cousinMs", group: "Touch", label: "hovered word", type: "range", min: 0, max: 1500, step: 10, def: 320, unit: "ms",
+    help: "how often a hovered word's letters turn into their cousins (the same letter as other languages write it); 0 leaves the word alone" },
   { key: "cursorEmbed", group: "Touch", label: "embedded cursor", type: "bool", def: true,
     help: "hide the pointer; the cell under it becomes the cursor" },
   { key: "cursorGlyph", group: "Touch", label: "cursor glyph", type: "select", def: "+",
@@ -114,6 +121,11 @@ export const SCHEMA = [
   { key: "paper", group: "Ink", label: "paper", type: "color", def: "#fdfdfb" },
   { key: "ink", group: "Ink", label: "ink", type: "color", def: "#1a1a1a" },
   { key: "accent", group: "Ink", label: "accent", type: "color", def: "#c8401f" },
+  { key: "theme", group: "Ink", label: "theme", type: "select", def: "auto",
+    options: [["auto", "the visitor's choice, else the system's"], ["light", "light"], ["dark", "dark"]] },
+  { key: "paperDark", group: "Ink", label: "dark paper", type: "color", def: "#131312" },
+  { key: "inkDark", group: "Ink", label: "dark ink", type: "color", def: "#e9e7e1" },
+  { key: "accentDark", group: "Ink", label: "dark accent", type: "color", def: "#ec6a45" },
 ];
 
 export const FONT = { family: "Geist Mono" };
@@ -124,6 +136,12 @@ export function defaults() {
   const out = {};
   for (const entry of SCHEMA) out[entry.key] = entry.def;
   return out;
+}
+
+// The colours in use: the dark set stands in for the light one.
+export function withTheme(params, dark) {
+  if (!dark) return params;
+  return { ...params, paper: params.paperDark, ink: params.inkDark, accent: params.accentDark };
 }
 
 export function fromQuery(search = window.location.search) {

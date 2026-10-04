@@ -1,8 +1,8 @@
 // The tick: one short, deep sound each time a row of flaps turns over, the
 // way a picker wheel clicks into its detents. Synthesized once into a
-// buffer, so nothing is downloaded and every tick is a cheap playback. Off
-// until the visitor asks for it: browsers only let a page make sound after
-// a click.
+// buffer, so nothing is downloaded and every tick is a cheap playback. On
+// unless the visitor turns it off, though browsers only let a page make
+// sound after a click, a tap, or a key: until the first one, it is silent.
 
 // A thock: a low body falling from 150 to 70 Hz, a warm resonance like a
 // wooden case, a short knock, and a few milliseconds of filtered noise for
@@ -54,12 +54,24 @@ async function renderThock(sampleRate) {
   return ctx.startRendering();
 }
 
-export function createTicker() {
+export function createTicker(on = false) {
   let context = null;
   let thock = null;
-  let enabled = false;
+  let rendering = null;
+  let enabled = on;
   let last = 0;
   let lastLand = 0;
+
+  // Start the audio context and render the thock. Only works from inside a
+  // click, a tap, or a key press.
+  function wake() {
+    if (!context) context = new (window.AudioContext || window.webkitAudioContext)();
+    if (context.state === "suspended") context.resume();
+    rendering ??= renderThock(context.sampleRate).then((buffer) => {
+      thock = buffer;
+    });
+    return rendering;
+  }
 
   function play(strength, pitch = 1) {
     if (!context || !thock) return;
@@ -75,18 +87,17 @@ export function createTicker() {
 
   return {
     enabled: () => enabled,
-    // must be called from a click: the first one unlocks the audio context
+    set(next) {
+      enabled = next;
+    },
+    // call from every click, tap, and key: the first one lets the sound start
+    unlock() {
+      if (enabled) wake();
+    },
+    // must be called from a click; turning the sound on answers with a thock
     toggle() {
       enabled = !enabled;
-      if (enabled) {
-        if (!context) context = new (window.AudioContext || window.webkitAudioContext)();
-        if (context.state === "suspended") context.resume();
-        if (thock) play(0.8);
-        else renderThock(context.sampleRate).then((buffer) => {
-          thock = buffer;
-          play(0.8);
-        });
-      }
+      if (enabled) wake().then(() => play(0.8));
       return enabled;
     },
     // rows: how many rows turned since the last call; fast scrolling ticks

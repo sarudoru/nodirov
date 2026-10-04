@@ -176,9 +176,23 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
     await page.goto(base + "/#%E0%A4%A");
     await ready(page);
 
-    // The sound switch is a real button with a real state.
+    // The sound switch is a real button with a real state: on until the
+    // visitor turns it off, and the choice is kept.
+    assert.equal(await page.locator("#sound").getAttribute("aria-pressed"), "true");
+    await page.locator("#sound").click();
+    assert.equal(await page.locator("#sound").getAttribute("aria-pressed"), "false");
+    assert.equal(await page.evaluate(() => localStorage.getItem("glyph-sound")), "off");
     await page.locator("#sound").click();
     assert.equal(await page.locator("#sound").getAttribute("aria-pressed"), "true");
+
+    // The theme switch turns the page dark and back, and the choice is kept.
+    const themeOf = () => page.evaluate(() => document.documentElement.dataset.theme);
+    assert.equal(await themeOf(), "light");
+    await page.locator("#theme").click();
+    assert.equal(await themeOf(), "dark");
+    assert.equal(await page.evaluate(() => localStorage.getItem("glyph-theme")), "dark");
+    await page.locator("#theme").click();
+    assert.equal(await themeOf(), "light");
 
     for (const width of [320, 390, 768, 1440]) {
       await page.setViewportSize({ width, height: 844 });
@@ -198,7 +212,8 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
     }
 
     // The settle scroll: a nudge keeps the text; a real scroll turns the
-    // letters into dots, and once the page rests they settle back into text.
+    // letters into fainter characters that keep changing, and once the page
+    // rests they settle back into text.
     const settle = await browser.newPage({ viewport: { width: 1440, height: 900 } });
     watch(settle);
     await settle.addInitScript(() => sessionStorage.setItem("glyph-seen", "1"));
@@ -213,8 +228,10 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
         for (let c = 0; c < v.cols; c++) {
           const q = __glyph.probe(r, c);
           if (q.lattice) continue;
-          if (/[\ue010-\ue016]/.test(q.x) && q.phase === 0) dots++;
-          if (/[A-Za-z]/.test(q.x) && q.inkX > 0.5 && q.phase === 0) letters++;
+          if (q.phase !== 0 || q.x === " ") continue;
+          // body text rests at full ink and moves at the moving ink (0.7)
+          if (q.inkX > 0.9) letters++;
+          else if (q.inkX > 0.6 && q.inkX < 0.8) dots++;
         }
       }
       return { dots, letters, state: __glyph.stats().settle };
@@ -228,11 +245,42 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
     await settle.waitForTimeout(450);
     const moving = await screen(settle);
     assert.equal(moving.state, "dots");
-    assert.ok(moving.dots > 50 && moving.letters === 0, `a real scroll shows dots only (${moving.dots} dots, ${moving.letters} letters)`);
+    assert.ok(moving.dots > 50 && moving.letters === 0, `a real scroll shows moving marks only (${moving.dots} marks, ${moving.letters} letters)`);
     await settle.waitForTimeout(700 + 1200 + 400);
     const rested = await screen(settle);
     assert.equal(rested.state, "text");
-    assert.ok(rested.letters > 50 && rested.dots === 0, `at rest the text has settled (${rested.letters} letters, ${rested.dots} dots)`);
+    assert.ok(rested.letters > 50 && rested.dots === 0, `at rest the text has settled (${rested.letters} letters, ${rested.dots} marks)`);
+
+    // A hovered word turns through its letters' cousins, and turns back
+    // when the pointer leaves.
+    const nameRow = () => settle.evaluate(() => {
+      const v = __glyph.view();
+      let text = "";
+      for (let r = 0; r < v.rows - 3; r++) {
+        for (let c = 0; c < v.cols; c++) {
+          const q = __glyph.probe(r, c);
+          if (!q.lattice && q.inkX > 0.9 && q.phase === 0) text += q.x;
+        }
+      }
+      return text;
+    });
+    await scrollToRow(settle, 0);
+    await settle.waitForTimeout(2500);
+    const unhovered = await nameRow();
+    await settle.locator("h1 span").first().hover();
+    await settle.waitForFunction(() => {
+      const v = __glyph.view();
+      for (let r = 0; r < v.rows - 3; r++) {
+        for (let c = 0; c < v.cols; c++) {
+          const q = __glyph.probe(r, c);
+          if (!q.lattice && /[\u00c0-\u024f]/.test(q.x)) return true;
+        }
+      }
+      return false;
+    });
+    await settle.mouse.move(2, 2);
+    await settle.waitForTimeout(600);
+    assert.equal(await nameRow(), unhovered, "the word is itself again once the pointer leaves");
     await settle.close();
 
     // Reduced motion: no reveal, no flaps; the document is simply there.
@@ -280,7 +328,7 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
     await labFrame.waitForFunction(() => __glyph.get().restAlpha === 0.3);
 
     assert.deepEqual(errors, []);
-    console.log("PASS: boot, keyboard order, selection, scroll flaps, message box, sound, layouts, settle scroll, reduced motion, no-JS, lab.");
+    console.log("PASS: boot, keyboard order, selection, scroll flaps, message box, sound, theme, layouts, settle scroll, hovered word, reduced motion, no-JS, lab.");
   } finally {
     await browser.close();
   }

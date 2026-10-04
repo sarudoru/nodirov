@@ -6,7 +6,8 @@
     <title>Sardor Nodirov / AI Systems Engineer</title>
     <meta name="description" content="Sardor Nodirov, AI systems engineer. Real-time AI systems at the intersection of language, motion, and expression. Founder at Lapwing.">
     <meta name="author" content="Sardor Nodirov">
-    <meta name="theme-color" content="#fdfdfb">
+    <meta name="theme-color" content="#fdfdfb" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#131312" media="(prefers-color-scheme: dark)">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Sardor Nodirov">
     <meta property="og:title" content="Sardor Nodirov / AI Systems Engineer">
@@ -27,7 +28,14 @@
     <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon-180.png">
     <link rel="preload" href="assets/fonts/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="style.css">
-    <script>document.documentElement.classList.add("js");</script>
+    <script>
+      document.documentElement.classList.add("js");
+      // a theme chosen on an earlier visit, before the first paint
+      try {
+        const theme = localStorage.getItem("glyph-theme");
+        if (theme) document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -110,7 +118,8 @@
       </main>
     </div>
 
-    <button id="sound" type="button" aria-pressed="false">sound off</button>
+    <button id="sound" type="button" aria-pressed="true">sound on</button>
+    <button id="theme" type="button" aria-label="Dark theme" aria-pressed="false">light</button>
 
     <script type="module" src="src/main.js"></script>
   </body>

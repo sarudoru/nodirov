@@ -20,13 +20,16 @@
 // clock, one cell at a time.
 //
 // The other scroll, "settle": a real scroll turns the document's letters
-// into dots, and while the page moves only dots change, each in its cell.
-// When the page rests, the text settles back in from the top, each cell
-// passing through the letters before its own.
+// into characters that keep changing (or into dots), each in its cell, and
+// while the page moves only those change. When the page rests, the text
+// settles back in from the top.
+//
+// A hovered word turns through its letters' cousins while the page rests.
 //
 // Law: nothing moves; cells change.
 
 import { createAtlas, TEXT_DOT } from "./atlas.js";
+import { cousinsFor } from "./cousins.js";
 import { createRenderer, TURN } from "./renderer.js";
 import { createSubstrate } from "./substrate.js";
 
@@ -108,6 +111,11 @@ export function createField(canvasElement, params) {
   let dotGlyph = 0;
   let searchCache = new Map();
 
+  // the word under the pointer, in world cells, and each letter's cousins
+  const hover = { row: -1, from: 0, to: -1 };
+  let cousinCache = new Map();
+  let frameNow = 0;
+
   // frame buffers handed to the renderer
   let glyphs = new Uint16Array(0);
   let inks = new Uint8Array(0);
@@ -125,7 +133,8 @@ export function createField(canvasElement, params) {
   let steadyFrame = false;
 
   // view overlays
-  const status = { left: "", leftCol: 2, leftInk: 0.5, right: "", rightInk: 0.5 };
+  // `upper` sits on the row above `left`
+  const status = { left: "", leftCol: 2, leftInk: 0.5, upper: "", upperInk: 0.5, right: "", rightInk: 0.5 };
   // the right label turns over letter by letter when it changes
   let rightWas = "";
   let rightAt = -1e9;
@@ -211,7 +220,7 @@ export function createField(canvasElement, params) {
     const w = worldRow * cols + col;
     const g = worldGlyph[w];
     if (!g) return face;
-    face.glyph = g;
+    face.glyph = worldRow === hover.row && col >= hover.from && col <= hover.to ? cousinOf(g, worldRow, col) : g;
     face.ink = inkOf(worldKind[w]);
     const link = worldLink[w];
     if (link >= 0 && worldKind[w] === K_LINK) {
@@ -220,6 +229,46 @@ export function createField(canvasElement, params) {
       face.under = face.accent ? 0.85 : 0.3;
     }
     return face;
+  }
+
+  // The word under the pointer, while the page rests on a row.
+  function findHover(k, resting) {
+    hover.row = -1;
+    if (!resting || cursorCell < 0 || P.cousinMs <= 0) return;
+    const row = k + Math.floor(cursorCell / cols);
+    if (row >= worldRows) return;
+    const w = row * cols;
+    const lettered = (c) => c >= 0 && c < cols && worldGlyph[w + c] !== 0 && worldGlyph[w + c] !== blank;
+    const col = cursorCell % cols;
+    if (!lettered(col)) return;
+    hover.row = row;
+    hover.from = hover.to = col;
+    while (lettered(hover.from - 1)) hover.from--;
+    while (lettered(hover.to + 1)) hover.to++;
+  }
+
+  // Whether a screen cell lies on a line of the document, or right beside
+  // one. There the pointer is reading, and the lattice stays out of it.
+  function overText(i, k) {
+    const row = k + Math.floor(i / cols);
+    if (i < 0 || row >= worldRows) return false;
+    const c = i % cols;
+    for (let q = Math.max(0, c - 2); q <= Math.min(cols - 1, c + 2); q++) {
+      if (worldKind[row * cols + q]) return true;
+    }
+    return false;
+  }
+
+  // The cousin a hovered letter shows now. The whole word changes on one
+  // beat; each letter picks for itself, and sometimes picks its own.
+  function cousinOf(glyph, row, col) {
+    let family = cousinCache.get(glyph);
+    if (family === undefined) {
+      family = cousinsFor(atlas.char(glyph))?.map((ch) => atlas.ensure(ch)) ?? null;
+      cousinCache.set(glyph, family);
+    }
+    if (!family) return glyph;
+    return family[(hash(row, col, Math.floor(frameNow / P.cousinMs)) * family.length) | 0];
   }
 
   // During first contact a document cell may not be written yet.
@@ -451,12 +500,21 @@ export function createField(canvasElement, params) {
     }
   }
 
-  // The document's face as a dot: a letter becomes a dot in its ink, a
-  // space stays blank paper, so the words keep their shapes.
-  function dotFace(worldRow, c, face, gate) {
+  // What a letter is while the page moves: a character of its own that
+  // turns into another every so often, or the dot.
+  function movingGlyph(worldRow, c, at) {
+    if (P.moving === "dots") return dotGlyph;
+    const pool = substrate.pool();
+    const beat = Math.floor(at / P.scrambleMs + hash(worldRow, c, 3));
+    return pool[(hash(worldRow, c, beat) * pool.length) | 0];
+  }
+
+  // The document's face as the page moves: a letter becomes its moving mark
+  // in its ink, a space stays blank paper, so the words keep their shapes.
+  function dotFace(worldRow, c, face, gate, at = frameNow) {
     gated(docAt(worldRow, c, face), gate);
     if (face.glyph && face.glyph !== blank) {
-      face.glyph = dotGlyph;
+      face.glyph = movingGlyph(worldRow, c, at);
       face.ink *= P.dotInk;
     }
     face.accent = false;
@@ -465,12 +523,12 @@ export function createField(canvasElement, params) {
   }
 
   // What a settling screen showed at a moment: the letter if the cell had
-  // landed, else its dot.
+  // landed, else its moving mark.
   function settledFace(r, c, at, face, gate) {
     gated(docAt(resolveRow + r, c, face), gate);
     if (!face.glyph || face.glyph === blank) return face;
     const landed = at - resolveAt - resolveStart(r, c) >= (searchCount(face.glyph, r, c) + 1) * P.searchMs;
-    return landed ? face : dotFace(resolveRow + r, c, face, gate);
+    return landed ? face : dotFace(resolveRow + r, c, face, gate, at);
   }
 
   function settleCell(o, i, r, c, now, sub, gate) {
@@ -478,9 +536,10 @@ export function createField(canvasElement, params) {
       resolveCell(o, i, r, c, now, sub, gate);
       return;
     }
-    const to = dotFace(dotRow + r, c, faceB, gate);
-    // the text turns into dots as a wave across the words and down the rows
+    // the text leaves as a wave across the words and down the rows; a cell
+    // mid-turn turns to the mark it will hold when the turn ends
     const lt = now - leave.at - cascadeOf(r, c, leave);
+    const to = dotFace(dotRow + r, c, faceB, gate, lt < P.flipMs ? now - lt + P.flipMs : now);
     if (lt < P.flipMs) {
       const from = leave.settled
         ? settledFace(r, c, leave.at, faceA, gate)
@@ -497,7 +556,7 @@ export function createField(canvasElement, params) {
       turn(o, from, to, smooth(lt / P.flipMs), sub);
       return;
     }
-    // the page moved a row: dots come and go in their cells
+    // the page moved a row: each cell takes the next row's mark
     const ft = now - dotAt;
     if (ft < P.dotMs) {
       const from = dotFace(dotPrev + r, c, faceA, gate);
@@ -514,7 +573,8 @@ export function createField(canvasElement, params) {
     lattice(o, sub);
   }
 
-  // A cell settling: its dot, then the letters before its own, then its own.
+  // A cell settling: its moving mark, then the letters before its own, then
+  // its own.
   function resolveCell(o, i, r, c, now, sub, gate) {
     const face = gated(docAt(resolveRow + r, c, faceA), gate);
     if (!face.glyph) {
@@ -528,7 +588,7 @@ export function createField(canvasElement, params) {
     }
     const dotInk = face.ink * P.dotInk;
     if (t < 0) {
-      put(o, dotGlyph, dotInk, 0, 0, 0, 0);
+      put(o, movingGlyph(resolveRow + r, c, now), dotInk, 0, 0, 0, 0);
       return;
     }
     const k = searchCount(face.glyph, r, c);
@@ -539,11 +599,13 @@ export function createField(canvasElement, params) {
       return;
     }
     const seq = k ? searchOf(face.glyph) : null;
-    const glyphAt = (q) => (q === 0 ? dotGlyph : q === k + 1 ? face.glyph : seq[SEARCH_MAX - k + q - 1]);
+    // the mark it held when its turn began
+    const mark = movingGlyph(resolveRow + r, c, now - t);
+    const glyphAt = (q) => (q === 0 ? mark : q === k + 1 ? face.glyph : seq[SEARCH_MAX - k + q - 1]);
     const inkAt = (q) => (q === 0 ? dotInk : q === k + 1 ? face.ink : face.ink * P.searchInk);
     const last = j === k;
     put(o, glyphAt(j), inkAt(j), glyphAt(j + 1), inkAt(j + 1), smooth((t - j * f) / f),
-      (last && face.accent ? F_ACCENT_Y : 0) | (j > 0 ? F_BODY_X : 0) | F_BODY_Y | turnBits(P.turn, i),
+      (last && face.accent ? F_ACCENT_Y : 0) | (inked(glyphAt(j)) ? F_BODY_X : 0) | F_BODY_Y | turnBits(P.turn, i),
       0, last ? face.under : 0);
   }
 
@@ -561,9 +623,11 @@ export function createField(canvasElement, params) {
 
   // Paint a cell turning from face X to face Y; an empty face is whatever
   // the lattice holds. Only a flap with a letter on it shows its card.
+  const inked = (glyph) => glyph !== 0 && glyph !== blank && glyph !== dotGlyph;
+
   function turn(o, x, y, phase, sub) {
-    const inkedX = x.glyph && x.glyph !== blank && x.glyph !== dotGlyph;
-    const inkedY = y.glyph && y.glyph !== blank && y.glyph !== dotGlyph;
+    const inkedX = inked(x.glyph);
+    const inkedY = inked(y.glyph);
     put(o,
       x.glyph || sub.glyph, x.glyph ? x.ink : sub.ink,
       y.glyph || sub.glyph, y.glyph ? y.ink : sub.ink,
@@ -584,10 +648,13 @@ export function createField(canvasElement, params) {
     const k = Math.floor(view);
     const fraction = stepping ? 0 : view - k;
     const revealing = substrate.revealing();
+    frameNow = now;
     dotGlyph = atlas.ensure(TEXT_DOT[Math.max(0, Math.min(TEXT_DOT.length - 1, Math.round(P.dotSize)))]);
     // clock flaps only compare a resting page with itself
     steadyFrame = !reducedMotion && !settling && !stepping && fraction === 0 && k === restRow && !revealing;
     restRow = !settling && !stepping && fraction === 0 ? k : -1;
+    findHover(k, steadyFrame);
+    substrate.hush(overText(cursorCell, k));
     if (!steadyFrame) flapAt.fill(-1e9);
     // the caret, found once per frame: a line at the left of one cell,
     // blinking, or steady when motion is reduced
@@ -668,11 +735,11 @@ export function createField(canvasElement, params) {
 
     // the status row, anchored to the screen rather than the document
     const r = rows - 2;
-    const label = (text, start, ink) => {
+    const label = (text, start, ink, row = r) => {
       for (let q = 0; q < text.length; q++) {
         const c = start + q;
-        if (r < 0 || c < 0 || c >= cols) continue;
-        const i = r * cols + c;
+        if (row < 0 || c < 0 || c >= cols) continue;
+        const i = row * cols + c;
         const gate = revealing ? substrate.contentGate(i, now) : 1;
         if (gate <= 0) continue;
         if (text[q] === " ") put(i * 4, blank, 1, 0, 0, 0, 0);
@@ -680,6 +747,7 @@ export function createField(canvasElement, params) {
       }
     };
     if (status.left) label(status.left, status.leftCol, status.leftInk);
+    if (status.upper) label(status.upper, status.leftCol, status.upperInk, r - 1);
     if (status.right || rightWas) {
       const end = cols - 2;
       const span = Math.max(status.right.length, rightWas.length);
@@ -762,9 +830,12 @@ export function createField(canvasElement, params) {
     const idle = now > activeUntil && now > flapsUntil && !steps.length && !substrate.busy();
     // Restless characters keep turning on their own; thirty frames a second
     // keeps those turns smooth. A still lattice only needs the weather's ten.
-    const pace = substrate.restless() ? 33 : 100;
+    // A hovered word changes on its own beat too.
+    const pace = substrate.restless() || hover.row >= 0 ? 33 : 100;
     if (!idle || now - lastFrame >= pace - 5) frame(now);
-    if (!running) return;
+    // a frame that asked for another (a row turning renames the section)
+    // already has it; a second request here would start a second loop
+    if (!running || rafId) return;
     if (!idle) rafId = requestAnimationFrame(tick);
     else if (!reducedMotion) {
       idleTimer = setTimeout(() => {
@@ -827,6 +898,7 @@ export function createField(canvasElement, params) {
       atlas = createAtlas({ family: m.family, size: m.fontSize, dpr: m.dpr, cellWd: m.cellWd, cellHd: m.cellHd });
       cursorGlyph = atlas.ensure(P.cursorGlyph);
       searchCache = new Map();
+      cousinCache = new Map();
       substrate = createSubstrate(atlas, P);
     },
 
@@ -924,6 +996,8 @@ export function createField(canvasElement, params) {
     // The pointer's path warms the cells it crosses.
     touch(x, y, px, py, dt) {
       if (reducedMotion) return;
+      const at = pointerCell(x, y);
+      if (at.inside && overText(at.row * cols + at.col, Math.floor(shown))) return;
       const dpr = metrics.dpr;
       const col = (x * dpr - originX) / metrics.cellWd;
       const row = (y * dpr) / metrics.cellHd;

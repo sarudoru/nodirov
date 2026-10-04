@@ -14,6 +14,23 @@
   --accent: #c8401f;
 }
 
+/* The dark theme: the system's, unless the visitor chose otherwise. The
+   same colours live in src/params.js, which sets them once the page runs. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #131312;
+    --ink: #e9e7e1;
+    --accent: #ec6a45;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #131312;
+  --ink: #e9e7e1;
+  --accent: #ec6a45;
+}
+
 * { box-sizing: border-box; }
 
 html, body {
@@ -193,9 +210,10 @@ html:not(.js) ::selection { color: inherit; }
 html.embed-cursor #scroller,
 html.embed-cursor #scroller * { cursor: none !important; }
 
-/* The sound switch: fixed to the screen on the status row. The field draws
-   its label; the button is only the hit target and the focus. */
-#sound {
+/* The sound and theme switches: fixed to the screen on the status rows. The
+   field draws their labels; the buttons are only the hit target and the
+   focus. */
+#sound, #theme {
   position: fixed;
   z-index: 2;
   margin: 0;
@@ -208,14 +226,14 @@ html.embed-cursor #scroller * { cursor: none !important; }
   white-space: pre;
   cursor: pointer;
 }
-#sound:focus { outline: none; }
-#sound:focus-visible { outline: 1px dotted var(--accent); outline-offset: 3px; }
-html:not(.js) #sound { display: none; }
+:is(#sound, #theme):focus { outline: none; }
+:is(#sound, #theme):focus-visible { outline: 1px dotted var(--accent); outline-offset: 3px; }
+html:not(.js) :is(#sound, #theme) { display: none; }
 
 /* Forced colours (Windows High Contrast): the canvas cannot follow the
    system palette, so the real document is shown instead. */
 @media (forced-colors: active) {
-  #field, #sound { display: none; }
+  #field, #sound, #theme { display: none; }
   html.js #article.ready,
   html.js #article.ready * { color: CanvasText; }
   html.js #article.ready a,
