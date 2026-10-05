@@ -330,9 +330,8 @@ export function typeset(blocks, article, ctx) {
     }
   }
 
-  // the document ends a little before the screen does, so the last line can
-  // rise to the middle rather than pin to the bottom edge
-  const worldRows = row + Math.round(viewRows * 0.45);
+  // the last line rests just above the status row, not on the screen's edge
+  const worldRows = row + 4;
 
   // Native controls need a real box for focus, accessibility, and hit testing.
   // Only their text spans receive pointer events, including wrapped labels.

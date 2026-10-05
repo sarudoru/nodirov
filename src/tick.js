@@ -87,9 +87,6 @@ export function createTicker(on = false) {
 
   return {
     enabled: () => enabled,
-    set(next) {
-      enabled = next;
-    },
     // call from every click, tap, and key: the first one lets the sound start
     unlock() {
       if (enabled) wake();

@@ -61,15 +61,32 @@ tests/browser.cjs   browser checks
    turning cell is drawn in its style: a flap folding over its hinge, a roll
    up through the cell, a fold on its middle, and so on.
 
+By default every change of character anywhere on the page is a split-flap
+turn; `turn`, `clockTurn`, and `ambientTurn` can audition the other styles.
+
 ### The settle scroll
 
 `?scroll=settle` swaps the flaps for another scroll. A scroll longer than a
-couple of rows turns every letter into a character that keeps changing in
-its cell (or, with `moving=dots`, into a dot), so while the page moves only
-those change. When the page rests, the text settles back in from the top,
-each cell turning into its letter at its own moment. The workbench's Scroll
-group tunes it (`dotsAfter`, `scrambleMs`, `restWait`, `resolveMs`,
-`resolveFlips` for letters passed on the way, and the moving ink).
+couple of rows turns every letter into a character that flaps over to
+another on its cell's own beat (or, with `moving=dots`, into a dot), so
+while the page moves only those change. When the page rests, the characters hold still and each
+cell's flap turns over to its letter, slowly enough to watch, the way a
+departure board does; each cell at its own moment, many early, a few late.
+The workbench's Scroll group tunes it (`dotsAfter`, `scrambleMs`,
+`restWait`, `searchMs` for one flap, `resolveMs` for the whole screen,
+`resolveGrain` for how much each cell keeps its own time, `resolveFlips`
+for letters passed on the way, and the moving ink).
+
+### The wake, and a finger
+
+A cell the document has just left stays warm for a moment: its resting
+character draws darker and is likelier to turn over (`wakeInk`, `wakeRate`,
+`wakeMs`), so the text and the field read as one surface.
+
+On a touch screen the page follows the finger itself rather than the
+browser's scroll, and carries on only briefly once the finger lifts
+(`glideMs`: the distance is that long at the finger's speed), landing on a
+whole row.
 
 ### The hovered word
 

@@ -177,7 +177,7 @@ const themeButton = document.getElementById("theme");
 
 // The right of the status row names the section the board is showing.
 function updateHud() {
-  if (soundButton.hidden) return;
+  if (themeButton.hidden) return;
   field.setStatus({ right: currentSection().label, rightInk: P.faintAlpha });
 }
 
@@ -185,23 +185,14 @@ function updateHud() {
 // screen: sound, and the theme. The buttons are real and transparent; the
 // field draws their labels.
 function placeSwitches() {
-  // the status row lives in the margins; a screen too narrow for that keeps
-  // the document clear and goes without it
-  const col = 2;
-  const room = layoutResult.left - col - 2 >= "sound off".length;
-  soundButton.hidden = themeButton.hidden = !room;
-  // a screen with no switch to turn the sound off stays silent
-  ticker.set(soundOn && room);
-  soundButton.setAttribute("aria-pressed", String(ticker.enabled()));
-  const sound = ticker.enabled() ? "sound on" : "sound off";
+  soundButton.setAttribute("aria-pressed", String(soundOn));
+  const sound = soundOn ? "sound on" : "sound off";
   const theme = dark ? "dark" : "light";
-  if (!room) {
-    field.setStatus({ left: "", upper: "", right: "" });
-    return;
-  }
   const row = field.rows() - 2;
-  const place = (button, text, at) => {
-    button.textContent = text;
+  const ink = (button) => (hoveredSwitch === button ? P.textAlpha : P.faintAlpha);
+  const place = (button, text, at, col) => {
+    // rewriting the same text between a press and its release loses the click
+    if (button.textContent !== text) button.textContent = text;
     Object.assign(button.style, {
       left: field.xOffset() + col * metrics.cellW + "px",
       top: at * metrics.cellH + "px",
@@ -213,9 +204,22 @@ function placeSwitches() {
       paddingLeft: metrics.pad + "px",
     });
   };
-  place(soundButton, sound, row);
-  place(themeButton, theme, row - 1);
-  const ink = (button) => (hoveredSwitch === button ? P.textAlpha : P.faintAlpha);
+  // the status row lives in the margins. A screen too narrow for that keeps
+  // only the sound switch, in the bottom right corner, over the document and
+  // a row up from the edge, where a thumb reaches it; a blank cell either
+  // side keeps its label clear of the text passing under
+  const col = 2;
+  const room = layoutResult.left - col - 2 >= "sound off".length;
+  themeButton.hidden = !room;
+  if (!room) {
+    // room for the longer label, so the words stay put when it changes
+    const at = field.cols() - "sound off".length - 1;
+    place(soundButton, sound, row - 1, at);
+    field.setStatus({ left: "", upper: ` ${sound} `, leftCol: at - 1, upperInk: ink(soundButton), right: "" });
+    return;
+  }
+  place(soundButton, sound, row, col);
+  place(themeButton, theme, row - 1, col);
   field.setStatus({
     left: sound, leftCol: col, leftInk: ink(soundButton),
     upper: theme, upperInk: ink(themeButton),
@@ -274,6 +278,9 @@ function settleTo(target, duration) {
     syncFromScroll();
     return;
   }
+  // a scroll event still on its way from before this began is not the
+  // reader taking the page back
+  anim.lastWrite = start;
   const t0 = performance.now();
   const step = (now) => {
     const p = Math.min(1, (now - t0) / duration);
@@ -316,6 +323,64 @@ function onScrollSettled() {
 }
 
 let touching = false;
+
+// A finger moves the page directly, and once it lifts the page carries on
+// only a little: the browser's own momentum takes a page of cells many rows
+// past where the finger left it.
+const drag = { id: null, y: 0, top: 0, moved: false, samples: [] };
+
+function onTouchStart(event) {
+  touching = true;
+  drag.moved = false;
+  // two fingers are a pinch, not a scroll
+  if (event.touches.length !== 1) {
+    drag.id = null;
+    return;
+  }
+  window.cancelAnimationFrame(anim.raf);
+  anim.target = null;
+  const touch = event.touches[0];
+  Object.assign(drag, { id: touch.identifier, y: touch.clientY, top: scroller.scrollTop, samples: [] });
+}
+
+function onTouchMove(event) {
+  const touch = event.touches.length === 1 && event.touches[0].identifier === drag.id ? event.touches[0] : null;
+  if (!touch) return;
+  if (!drag.moved) {
+    // a tap may wander a few pixels
+    if (Math.abs(drag.y - touch.clientY) < 6) return;
+    drag.moved = true;
+    drag.y = touch.clientY;
+    field.pointerLeft();
+  }
+  if (event.cancelable) event.preventDefault();
+  scroller.scrollTop = drag.top + drag.y - touch.clientY;
+  syncFromScroll();
+  drag.samples.push({ t: event.timeStamp, y: touch.clientY });
+  while (event.timeStamp - drag.samples[0].t > 100) drag.samples.shift();
+}
+
+function onTouchEnd(event) {
+  if (event.touches.length) return;
+  touching = false;
+  if (drag.id !== null && drag.moved) {
+    // the finger's speed as it left, in px per ms; a finger that stopped
+    // before lifting leaves the page where it is
+    const first = drag.samples[0];
+    const last = drag.samples[drag.samples.length - 1];
+    const moving = last && last.t > first.t && event.timeStamp - last.t < 60;
+    const speed = moving ? (first.y - last.y) / (last.t - first.t) : 0;
+    const max = scroller.scrollHeight - scroller.clientHeight;
+    const rest = Math.round((scroller.scrollTop + speed * P.glideMs) / metrics.cellH) * metrics.cellH;
+    // an ease-out that starts at the finger's speed takes three times as
+    // long as that speed would need to cover the distance
+    settleTo(Math.max(0, Math.min(max, rest)), speed ? 3 * P.glideMs : field.settling() ? 0 : P.settleMs);
+  }
+  drag.id = null;
+  drag.moved = false;
+  window.clearTimeout(scrollEndTimer);
+  scrollEndTimer = window.setTimeout(onScrollSettled, 140);
+}
 let lastSize = { w: 0, dpr: 0 };
 
 function onResize() {
@@ -363,6 +428,8 @@ function onKey(event) {
 }
 
 function onPointerMove(event) {
+  // a finger that is moving the page is not pressing on the lattice
+  if (event.pointerType === "touch" && drag.moved) return;
   const now = performance.now();
   const dt = Math.min(120, now - lastPointer.t);
   const px = lastPointer.t === 0 ? event.clientX : lastPointer.x;
@@ -373,7 +440,7 @@ function onPointerMove(event) {
 }
 
 // A finger on a phone presses the lattice while it rests there; once it
-// starts to scroll, the browser takes the gesture and the lens lets go.
+// starts to move the page, the lens lets go.
 function onPointerDown(event) {
   if (event.pointerType !== "touch") return;
   lastPointer = { x: event.clientX, y: event.clientY, t: performance.now() };
@@ -468,12 +535,10 @@ async function boot() {
   window.addEventListener("pointerdown", onPointerDown, { passive: true });
   window.addEventListener("pointerup", onPointerUp, { passive: true });
   window.addEventListener("pointercancel", onPointerUp, { passive: true });
-  scroller.addEventListener("touchstart", () => { touching = true; }, { passive: true });
-  scroller.addEventListener("touchend", () => {
-    touching = false;
-    window.clearTimeout(scrollEndTimer);
-    scrollEndTimer = window.setTimeout(onScrollSettled, 140);
-  }, { passive: true });
+  scroller.addEventListener("touchstart", onTouchStart, { passive: true });
+  scroller.addEventListener("touchmove", onTouchMove, { passive: false });
+  scroller.addEventListener("touchend", onTouchEnd, { passive: true });
+  scroller.addEventListener("touchcancel", onTouchEnd, { passive: true });
   document.documentElement.addEventListener("mouseleave", () => field.pointerLeft());
   window.addEventListener("blur", () => field.pointerLeft());
   scroller.addEventListener("click", onClick);
@@ -486,7 +551,7 @@ async function boot() {
     placeSwitches();
   });
   // browsers hold a page's sound until the visitor's first click, tap, or key
-  for (const type of ["pointerdown", "pointerup", "keydown"]) {
+  for (const type of ["pointerdown", "pointerup", "touchend", "keydown"]) {
     window.addEventListener(type, () => ticker.unlock(), { capture: true, passive: true });
   }
   themeButton.setAttribute("aria-pressed", String(dark));

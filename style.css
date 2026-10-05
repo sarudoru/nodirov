@@ -63,6 +63,8 @@ body {
   overflow-x: hidden;
   outline: none;
   scrollbar-width: none;
+  /* a finger moves the page through src/main.js, which keeps the glide short */
+  touch-action: pinch-zoom;
 }
 
 #scroller::-webkit-scrollbar { display: none; }
@@ -226,6 +228,8 @@ html.embed-cursor #scroller * { cursor: none !important; }
   white-space: pre;
   cursor: pointer;
 }
+/* a row of cells is a small target for a finger: the hit area reaches past it */
+:is(#sound, #theme)::before { content: ""; position: absolute; inset: -10px -8px; }
 :is(#sound, #theme):focus { outline: none; }
 :is(#sound, #theme):focus-visible { outline: 1px dotted var(--accent); outline-offset: 3px; }
 html:not(.js) :is(#sound, #theme) { display: none; }

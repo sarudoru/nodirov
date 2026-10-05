@@ -33,9 +33,11 @@ Changes that happen while the page rests (a typed letter, a hovered link)
 turn on a clock instead, one short turn per cell. No pixel ever leaves its
 cell.
 
-A turn has a style, chosen per cell: split-flap, roll up (the old character
-slides up and out as the new one slides up in), drum, fold, slide, or fade.
-The document's text flaps; the resting characters mix flap, roll, and fold.
+Every change is the same turn: a split-flap, the card of a departure board
+falling over its hinge. The document's text, the resting characters, a
+moving cell running through its characters, a label on the status row: all
+of them flap. The other turns the renderer can draw (roll up, drum, fold,
+slide, fade) stay in the workbench as options, not as defaults.
 
 ## III. What a cell can hold
 

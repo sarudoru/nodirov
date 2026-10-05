@@ -209,6 +209,11 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
         }).map((span) => span.textContent),
       );
       assert.deepEqual(overflow, [], `Text overflow at ${width}px`);
+      // the sound switch is on every screen, inside it; the theme switch
+      // needs a margin to live in
+      const sound = await page.locator("#sound").boundingBox();
+      assert.ok(sound && sound.x >= 0 && sound.x + sound.width <= width && sound.y + sound.height <= 844, `sound switch at ${width}px`);
+      assert.equal(await page.locator("#theme").isHidden(), width < 1440, `theme switch at ${width}px`);
     }
 
     // The settle scroll: a nudge keeps the text; a real scroll turns the

@@ -354,7 +354,7 @@ export function createSubstrate(atlas, params) {
       // the next one starts.
       const age = now - changedAt[i];
       if (restGlyph[i] && age > P.ambientMs) {
-        const rate = P.ambientRate * (1 + weather[i] * P.weatherRate) + e * P.heatRate;
+        const rate = P.ambientRate * (1 + weather[i] * P.weatherRate) + e * P.heatRate + trail[i] * P.wakeRate;
         if (rnd() < rate * frameDt * 0.001) {
           let next = pool[(rnd() * pool.length) | 0];
           if (next === shown[i]) next = pool[(rnd() * pool.length) | 0];
