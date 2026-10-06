@@ -6,7 +6,7 @@
 // replays, referrer and UTM parameters, device and browser, and the
 // visitor's country, region, and city from their IP (GeoIP runs on the
 // PostHog side). What the page adds: which sections were read, when the
-// motion toggle is used, and the messages people send.
+// sound switch is used, and the messages people send.
 
 export const POSTHOG = {
   key: "",
@@ -22,8 +22,6 @@ let pending = [];
 function run(call) {
   if (ph) call(ph);
   else if (configured) pending.push(call);
-  else return false;
-  return true;
 }
 
 export function startAnalytics(config = POSTHOG, traits = {}) {
@@ -65,10 +63,9 @@ export function startAnalytics(config = POSTHOG, traits = {}) {
   document.head.appendChild(script);
 }
 
-// true when analytics is configured: the event goes out now, or as soon as
-// the script is up
+// the event goes out now, or as soon as the script is up
 export function track(event, properties = {}) {
-  return run((p) => p.capture(event, properties));
+  run((p) => p.capture(event, properties));
 }
 
 // A visitor who leaves an address becomes a person we can answer.

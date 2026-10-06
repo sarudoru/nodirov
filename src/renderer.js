@@ -1,0 +1,456 @@
+// The renderer paints the whole grid in one pass on the GPU.
+//
+// Every cell is a small flap mechanism with two faces: the glyph it shows
+// (X) and the glyph it is turning to (Y), a phase between them, and how the
+// turn looks. The fragment shader finds which cell a device pixel belongs to
+// and reads that pixel out of the atlas, so a resting glyph is copied one to
+// one and stays exactly as sharp as browser text.
+//
+// Turns, chosen per cell:
+//   flap   split-flap: the upper half folds down over its hinge; the new
+//          face's upper half is behind it, its lower half on the flap's back
+//   roll   the old face slides up out of the cell as the new one slides up
+//          in from below, both clipped to the cell
+//   drum   the same on a small wheel: faces bow as they roll over its edge
+//   fold   a card turning on its middle: the old face folds shut, the new
+//          one opens
+//   slide  the old face slides out to the left as the new one comes in
+//   fade   a plain cross-fade
+//
+// Without WebGL2 the same state is painted with Canvas 2D (turns become
+// cross-fades there).
+
+export const TURN = { flap: 0, roll: 1, drum: 2, fold: 3, slide: 4, fade: 5 };
+
+const VERT = `#version 300 es
+void main() {
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const FRAG = `#version 300 es
+precision highp float;
+precision highp int;
+precision highp usampler2D;
+uniform usampler2D uGlyph;   // x: face X, y: face Y, z: flags
+uniform sampler2D uInk;      // x: ink X, y: ink Y, z: phase, w: underlines (X high, Y low nibble)
+uniform sampler2D uAtlas;
+uniform ivec2 uCell;
+uniform ivec2 uGrid;
+uniform ivec2 uOrigin;
+uniform int uHeight;
+uniform int uPerRow;
+uniform int uDpr;
+uniform int uUnderY;
+uniform float uShade;
+uniform float uBody;
+uniform vec3 uPaper;
+uniform vec3 uInkColor;
+uniform vec3 uAccent;
+out vec4 outColor;
+
+const float PI = 3.14159265;
+
+ivec2 slotOf(uint glyph) {
+  int g = int(glyph);
+  return ivec2(g % uPerRow, g / uPerRow) * uCell;
+}
+
+// A face's ink at a (possibly fractional, possibly foreshortened) position
+// inside its cell: the glyph, bilinearly filtered, and its underline, which
+// belongs to the face and turns with it.
+float face(uint glyph, float under, float x, float y) {
+  float ink = 0.0;
+  if (glyph != 0u) {
+    float fx = x - 0.5;
+    float fy = y - 0.5;
+    int x0 = int(floor(fx));
+    int y0 = int(floor(fy));
+    float tx = fx - float(x0);
+    float ty = fy - float(y0);
+    ivec2 slot = slotOf(glyph);
+    float s00 = 0.0, s10 = 0.0, s01 = 0.0, s11 = 0.0;
+    bool xa = x0 >= 0 && x0 < uCell.x, xb = x0 + 1 >= 0 && x0 + 1 < uCell.x;
+    bool ya = y0 >= 0 && y0 < uCell.y, yb = y0 + 1 >= 0 && y0 + 1 < uCell.y;
+    if (xa && ya) s00 = texelFetch(uAtlas, slot + ivec2(x0, y0), 0).r;
+    if (xb && ya) s10 = texelFetch(uAtlas, slot + ivec2(x0 + 1, y0), 0).r;
+    if (xa && yb) s01 = texelFetch(uAtlas, slot + ivec2(x0, y0 + 1), 0).r;
+    if (xb && yb) s11 = texelFetch(uAtlas, slot + ivec2(x0 + 1, y0 + 1), 0).r;
+    ink = mix(mix(s00, s10, tx), mix(s01, s11, tx), ty);
+  }
+  if (under > 0.0) {
+    float u0 = float(uUnderY);
+    float line = clamp(min(y - u0, u0 + float(uDpr) - y) + 0.5, 0.0, 1.0);
+    ink = max(ink, line * under);
+  }
+  return ink;
+}
+
+// The same, one to one: a resting face is a straight copy of its slot.
+float faceExact(uint glyph, float under, ivec2 inner) {
+  float ink = glyph != 0u ? texelFetch(uAtlas, slotOf(glyph) + inner, 0).r : 0.0;
+  if (under > 0.0 && inner.y >= uUnderY && inner.y < uUnderY + uDpr) ink = max(ink, under);
+  return ink;
+}
+
+void main() {
+  ivec2 px = ivec2(gl_FragCoord.xy);
+  px.y = uHeight - 1 - px.y;
+  ivec2 local = px - uOrigin;
+  vec3 color = uPaper;
+  if (local.x >= 0 && local.y >= 0) {
+    ivec2 cell = local / uCell;
+    if (cell.x < uGrid.x && cell.y < uGrid.y) {
+      ivec2 inner = local - cell * uCell;
+      uvec4 g = texelFetch(uGlyph, cell, 0);
+      vec4 a = texelFetch(uInk, cell, 0);
+      uint X = g.x;
+      uint Y = g.y;
+      float phase = a.z;
+      uint lines = uint(a.w * 255.0 + 0.5);
+      float underX = float(lines >> 4u) / 15.0;
+      float underY = float(lines & 15u) / 15.0;
+      uint turn = (g.z >> 6u) & 7u;
+      vec3 colorX = (g.z & 1u) != 0u ? uAccent : uInkColor;
+      vec3 colorY = (g.z & 8u) != 0u ? uAccent : uInkColor;
+      float cx = 0.0;
+      float cy = 0.0;
+
+      if (phase <= 0.0 || (Y == X && a.x == a.y && underX == underY && colorX == colorY)) {
+        cx = faceExact(X, underX, inner) * a.x;
+      } else if (phase >= 1.0) {
+        cy = faceExact(Y, underY, inner) * a.y;
+      } else if (turn == 5u) {
+        cx = faceExact(X, underX, inner) * a.x * (1.0 - phase);
+        cy = faceExact(Y, underY, inner) * a.y * phase;
+      } else if (turn == 0u) {
+        float H = float(uCell.y);
+        float mid = floor(H * 0.5);
+        float y = float(inner.y) + 0.5;
+        float x = float(inner.x) + 0.5;
+        float c = cos(phase * PI);
+        float sn = sin(phase * PI);
+        // the fold dims as it turns edge-on
+        float lit = mix(1.0, abs(c), uShade);
+        // the flap's free edge swings toward the viewer, so it reads a
+        // little wider than its hinge
+        float cxm = float(uCell.x) * 0.5;
+        bool onFlap = false;
+        if (y < mid) {
+          float h = c * mid;
+          if (phase < 0.5 && y >= mid - h) {
+            onFlap = true;
+            float src = mid - (mid - y) / max(c, 0.001);
+            float grow = 1.0 + 0.16 * sn * (mid - src) / mid;
+            cx = face(X, underX, cxm + (x - cxm) / grow, src) * a.x * lit;
+          } else {
+            cy = faceExact(Y, underY, inner) * a.y;
+          }
+        } else {
+          float h = -c * mid;
+          if (phase > 0.5 && y < mid + h) {
+            onFlap = true;
+            float src = mid + (y - mid) / max(-c, 0.001);
+            float grow = 1.0 + 0.16 * sn * (src - mid) / mid;
+            cy = face(Y, underY, cxm + (x - cxm) / grow, src) * a.y * lit;
+          } else {
+            cx = faceExact(X, underX, inner) * a.x;
+          }
+        }
+        // The moving flap is a card: a faint body, a hairline of paper where
+        // it meets its neighbour, and a darker free edge. It shows only while
+        // it carries a letter: the old face on the way down, the new face's
+        // lower half after.
+        bool body = phase < 0.5 ? (g.z & 16u) != 0u : (g.z & 32u) != 0u;
+        if (body && onFlap) {
+          bool free = abs(y - (mid - c * mid)) < float(uDpr);
+          if (inner.x < uDpr) {
+            color = uPaper;
+            cx = 0.0;
+            cy = 0.0;
+          } else {
+            color = mix(color, uInkColor, uBody * sn * (free ? 3.5 : 1.0));
+          }
+        }
+        if (body && inner.y == int(mid) - 1) color = mix(color, uInkColor, uBody * 1.6 * sn);
+      } else if (turn == 1u) {
+        // roll: both faces travel up by the same amount, clipped to the cell
+        float H = float(uCell.y);
+        float y = float(inner.y) + 0.5 + phase * H;
+        float x = float(inner.x) + 0.5;
+        if (y < H) cx = face(X, underX, x, y) * a.x;
+        else cy = face(Y, underY, x, y - H) * a.y;
+      } else if (turn == 3u) {
+        // fold: the card turns on its middle, so each face is squashed
+        // toward the centre line and dims as it goes edge-on
+        float H = float(uCell.y);
+        float mid = H * 0.5;
+        float c = cos(phase * PI);
+        float y = float(inner.y) + 0.5;
+        float x = float(inner.x) + 0.5;
+        float src = mid + (y - mid) / max(abs(c), 0.001);
+        float lit = mix(1.0, abs(c), uShade);
+        if (phase < 0.5) cx = face(X, underX, x, src) * a.x * lit;
+        else cy = face(Y, underY, x, src) * a.y * lit;
+      } else if (turn == 4u) {
+        // slide: the faces travel left together, clipped to the cell
+        float W = float(uCell.x);
+        float x = float(inner.x) + 0.5 + phase * W;
+        float y = float(inner.y) + 0.5;
+        if (x < W) cx = face(X, underX, x, y) * a.x;
+        else cy = face(Y, underY, x - W, y) * a.y;
+      } else {
+        // drum: the strip rolls up through the window; faces bow at the edges
+        float H = float(uCell.y);
+        float yn = (float(inner.y) + 0.5) / H - 0.5;
+        float bow = sin(phase * PI);
+        float d = yn;
+        for (int k = 0; k < 3; k++) {
+          float f = mix(d, 0.5 * sin(d * PI), bow) - yn;
+          float df = mix(1.0, 0.5 * PI * cos(d * PI), bow);
+          d -= f / max(df, 0.2);
+        }
+        float s = d + phase;
+        float lit = mix(1.0, cos(d * PI), uShade * bow);
+        float x = float(inner.x) + 0.5;
+        if (s < 0.5) cx = face(X, underX, x, (s + 0.5) * H) * a.x * lit;
+        else cy = face(Y, underY, x, (s - 0.5) * H) * a.y * lit;
+      }
+
+      color = mix(color, colorX, clamp(cx, 0.0, 1.0));
+      color = mix(color, colorY, clamp(cy, 0.0, 1.0));
+      if ((g.z & 2u) != 0u && inner.x < 2 * uDpr &&
+          inner.y >= 2 * uDpr && inner.y < uCell.y - 2 * uDpr) {
+        color = uInkColor;
+      }
+    }
+  }
+  outColor = vec4(color, 1.0);
+}`;
+
+function hexToRgb(hex) {
+  const v = parseInt(hex.replace("#", ""), 16);
+  return [((v >> 16) & 255) / 255, ((v >> 8) & 255) / 255, (v & 255) / 255];
+}
+
+function createGL(canvas) {
+  const gl = canvas.getContext("webgl2", {
+    alpha: false,
+    antialias: false,
+    depth: false,
+    stencil: false,
+    premultipliedAlpha: false,
+    powerPreference: "high-performance",
+  });
+  if (!gl) return null;
+
+  function shader(type, source) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, source);
+    gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    return s;
+  }
+
+  const u = {};
+  let cols = 0;
+  let rows = 0;
+  // the last settings, replayed when a lost context comes back
+  let grid = null;
+  let look = null;
+  let sheet = null;
+  let lost = false;
+
+  // Everything the context owns. Runs at start and again after a context
+  // loss, because a restored context remembers nothing.
+  function build() {
+    const program = gl.createProgram();
+    gl.attachShader(program, shader(gl.VERTEX_SHADER, VERT));
+    gl.attachShader(program, shader(gl.FRAGMENT_SHADER, FRAG));
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
+    gl.useProgram(program);
+    for (const name of ["uGlyph", "uInk", "uAtlas", "uCell", "uGrid", "uOrigin", "uHeight", "uPerRow",
+      "uDpr", "uUnderY", "uShade", "uBody", "uPaper", "uInkColor", "uAccent"]) {
+      u[name] = gl.getUniformLocation(program, name);
+    }
+    gl.bindVertexArray(gl.createVertexArray());
+    for (let unit = 0; unit < 3; unit++) {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    }
+    gl.uniform1i(u.uGlyph, 0);
+    gl.uniform1i(u.uInk, 1);
+    gl.uniform1i(u.uAtlas, 2);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+  }
+
+  function configure(next) {
+    grid = next;
+    if (lost) return;
+    const { cols: c, rows: r, cellWd, cellHd, originX, perRow, dpr, underY } = next;
+    cols = c;
+    rows = r;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16UI, cols, rows, 0, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, null);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, cols, rows, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.uniform2i(u.uCell, cellWd, cellHd);
+    gl.uniform2i(u.uGrid, cols, rows);
+    gl.uniform2i(u.uOrigin, originX, 0);
+    gl.uniform1i(u.uPerRow, perRow);
+    gl.uniform1i(u.uDpr, Math.max(1, Math.round(dpr)));
+    gl.uniform1i(u.uUnderY, underY);
+  }
+
+  function style(next) {
+    look = next;
+    if (lost) return;
+    gl.uniform3fv(u.uPaper, hexToRgb(next.paper));
+    gl.uniform3fv(u.uInkColor, hexToRgb(next.ink));
+    gl.uniform3fv(u.uAccent, hexToRgb(next.accent));
+    gl.uniform1f(u.uShade, next.shade);
+    gl.uniform1f(u.uBody, next.body);
+  }
+
+  function upload(canvasOfAtlas) {
+    gl.activeTexture(gl.TEXTURE2);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, gl.RED, gl.UNSIGNED_BYTE, canvasOfAtlas);
+  }
+
+  build();
+
+  const listeners = { lost: () => {}, restored: () => {} };
+  canvas.addEventListener("webglcontextlost", (event) => {
+    // without this the browser will not give the context back
+    event.preventDefault();
+    lost = true;
+    listeners.lost();
+  });
+  canvas.addEventListener("webglcontextrestored", () => {
+    lost = false;
+    build();
+    if (grid) configure(grid);
+    if (look) style(look);
+    if (sheet) upload(sheet.canvas);
+    listeners.restored();
+  });
+
+  return {
+    kind: "webgl2",
+    configure,
+    style,
+    atlas(atlas) {
+      sheet = atlas;
+      const state = atlas.takeDirty();
+      if (lost || !state) return;
+      upload(atlas.canvas);
+    },
+    draw(glyphs, inks) {
+      if (lost) return;
+      gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+      gl.uniform1i(u.uHeight, gl.drawingBufferHeight);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, cols, rows, gl.RGBA_INTEGER, gl.UNSIGNED_SHORT, glyphs);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, cols, rows, gl.RGBA, gl.UNSIGNED_BYTE, inks);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    },
+    onContext(lostFn, restoredFn) {
+      listeners.lost = lostFn;
+      listeners.restored = restoredFn;
+    },
+  };
+}
+
+// The same state with Canvas 2D: tinted copies of the atlas, one drawImage
+// per visible face. Turns are cross-fades here.
+function create2D(canvas) {
+  const context = canvas.getContext("2d", { alpha: false });
+  let grid = null;
+  let look = { paper: "#fff", ink: "#000", accent: "#f00" };
+  let tints = null;
+
+  function tint(source, hex) {
+    const out = document.createElement("canvas");
+    out.width = source.width;
+    out.height = source.height;
+    const img = source.getContext("2d").getImageData(0, 0, source.width, source.height);
+    const [r, g, b] = hexToRgb(hex).map((v) => Math.round(v * 255));
+    for (let k = 0; k < img.data.length; k += 4) {
+      img.data[k + 3] = img.data[k];
+      img.data[k] = r;
+      img.data[k + 1] = g;
+      img.data[k + 2] = b;
+    }
+    out.getContext("2d").putImageData(img, 0, 0);
+    return out;
+  }
+
+  return {
+    kind: "2d",
+    configure(next) { grid = next; },
+    style(next) {
+      look = next;
+      tints = null;
+    },
+    atlas(atlas) {
+      if (atlas.takeDirty() || !tints) tints = { ink: tint(atlas.canvas, look.ink), accent: tint(atlas.canvas, look.accent) };
+    },
+    onContext() {},
+    draw(glyphs, inks) {
+      const { cols, rows, cellWd, cellHd, originX, perRow, dpr, underY } = grid;
+      context.globalAlpha = 1;
+      context.fillStyle = look.paper;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      const blit = (sheet, glyph, x, y, alpha) => {
+        if (!glyph || alpha <= 0.004) return;
+        context.globalAlpha = Math.min(1, alpha);
+        context.drawImage(sheet, (glyph % perRow) * cellWd, Math.floor(glyph / perRow) * cellHd,
+          cellWd, cellHd, x, y, cellWd, cellHd);
+      };
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const o = (r * cols + c) * 4;
+          const x = originX + c * cellWd;
+          const y = r * cellHd;
+          const phase = inks[o + 2] / 255;
+          const flags = glyphs[o + 2];
+          blit(flags & 1 ? tints.accent : tints.ink, glyphs[o], x, y, (inks[o] / 255) * (1 - phase));
+          blit(flags & 8 ? tints.accent : tints.ink, glyphs[o + 1], x, y, (inks[o + 1] / 255) * phase);
+          const under = ((phase < 0.5 ? inks[o + 3] >> 4 : inks[o + 3] & 15)) / 15;
+          if (under > 0.004) {
+            context.globalAlpha = under;
+            context.fillStyle = flags & (phase < 0.5 ? 1 : 8) ? look.accent : look.ink;
+            context.fillRect(x, y + underY, cellWd, Math.max(1, Math.round(dpr)));
+          }
+          if (flags & 2) {
+            context.globalAlpha = 1;
+            context.fillStyle = look.ink;
+            context.fillRect(x, y + 2 * dpr, 2 * dpr, cellHd - 4 * dpr);
+          }
+        }
+      }
+    },
+  };
+}
+
+export function createRenderer(canvas) {
+  if (!new URLSearchParams(location.search).has("canvas2d")) {
+    try {
+      const gl = createGL(canvas);
+      if (gl) return { ...gl, canvas };
+    } catch (error) {
+      console.warn("WebGL2 renderer unavailable, painting with Canvas 2D.", error);
+      // a canvas that has handed out a WebGL context cannot give a 2D one
+      const fresh = canvas.cloneNode(false);
+      canvas.replaceWith(fresh);
+      canvas = fresh;
+    }
+  }
+  return { ...create2D(canvas), canvas };
+}

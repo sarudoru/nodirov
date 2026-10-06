@@ -6,26 +6,39 @@
     <title>Sardor Nodirov / AI Systems Engineer</title>
     <meta name="description" content="Sardor Nodirov, AI systems engineer. Real-time AI systems at the intersection of language, motion, and expression. Founder at Lapwing.">
     <meta name="author" content="Sardor Nodirov">
-    <meta name="theme-color" content="#fdfdfb">
+    <meta name="theme-color" content="#fdfdfb" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#131312" media="(prefers-color-scheme: dark)">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Sardor Nodirov">
     <meta property="og:title" content="Sardor Nodirov / AI Systems Engineer">
-    <meta property="og:description" content="Real-time AI systems at the intersection of language, motion, and expression. A website made of characters.">
+    <meta property="og:description" content="Real-time AI systems at the intersection of language, motion, and expression. Nothing on the page moves; its characters change.">
     <meta property="og:url" content="https://nodirov.com/">
-    <meta property="og:image" content="https://nodirov.com/assets/bitmap-sardor.png">
+    <meta property="og:image" content="https://nodirov.com/assets/og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Sardor Nodirov, AI systems engineer, set in a grid of characters on a field of dots">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:site" content="@nodirov_com">
     <meta name="twitter:title" content="Sardor Nodirov / AI Systems Engineer">
-    <meta name="twitter:description" content="Real-time AI systems at the intersection of language, motion, and expression. A website made of characters.">
-    <meta name="twitter:image" content="https://nodirov.com/assets/bitmap-sardor.png">
+    <meta name="twitter:description" content="Real-time AI systems at the intersection of language, motion, and expression. Nothing on the page moves; its characters change.">
+    <meta name="twitter:image" content="https://nodirov.com/assets/og.png">
     <link rel="canonical" href="https://nodirov.com/">
     <link rel="icon" href="assets/favicon.ico" sizes="any">
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png">
     <link rel="apple-touch-icon" sizes="180x180" href="assets/favicon-180.png">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preload" href="assets/fonts/GeistMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="style.css">
-    <script>document.documentElement.classList.add("js");</script>
+    <script>
+      document.documentElement.classList.add("js");
+      setTimeout(() => {
+        if (!document.querySelector("#article.ready")) document.documentElement.classList.remove("js");
+      }, 6000);
+      // a theme chosen on an earlier visit, before the first paint
+      try {
+        const theme = localStorage.getItem("glyph-theme");
+        if (theme) document.documentElement.dataset.theme = theme;
+      } catch {}
+    </script>
     <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -51,68 +64,65 @@
   <body>
     <canvas id="field" aria-hidden="true"></canvas>
 
-    <div id="scroller" tabindex="-1" aria-label="Sardor Nodirov's website">
+    <div id="scroller" tabindex="-1">
       <main id="article">
         <header id="hero">
-          <nav aria-label="Main navigation">
-            <a href="#work">[ work ]</a> <a href="#education">[ education ]</a>
-            <a href="#message">[ message ]</a> <a href="#contact">[ contact ]</a>
-            <button type="button" data-sound aria-pressed="false">[ sound off ]</button>
-          </nav>
           <h1>Sardor Nodirov</h1>
-          <p class="tagline">ai systems engineer</p>
+          <p class="tagline">AI systems engineer</p>
           <p>Real-time AI systems at the intersection of language, motion, and
-          expression.</p>
-          <p>Currently building <a href="https://lapwing.live">Lapwing</a>,
-          real-time AI companions.</p>
+          expression. Currently building <a href="https://lapwing.live">Lapwing</a>.</p>
+          <p class="hint">Nothing on this page moves. Its characters change.</p>
         </header>
 
         <section id="work">
           <h2>Work</h2>
-          <ul>
-            <li><a href="https://lapwing.live">Lapwing</a> - founder · 2025 - now.
-            Real-time AI companions.</li>
-            <li>Ember AI - first engineering hire, full-stack AI · 2024</li>
-            <li>Davis Institute for AI - research assistant · 2023 ·
-            <a href="Sardor_Poster.pdf">poster</a></li>
+          <ul role="list">
+            <li><span>Aristotle, AI agent engineer</span> <time>2026 - now</time></li>
+            <li><span><a href="https://lapwing.live">Lapwing</a>, founder</span> <time>2025 - now</time>
+            <small>Real-time AI companions.</small></li>
+            <li><span>Ember AI, first engineering hire</span> <time>2024</time>
+            <small>Full-stack AI.</small></li>
+            <li><span>Davis Institute for AI, research assistant</span> <time>2023</time>
+            <small><a href="Sardor_Poster.pdf">Poster</a></small></li>
           </ul>
         </section>
 
         <section id="education">
           <h2>Education</h2>
-          <ul>
-            <li>Colby College - B.A. with honors, computer science: AI · 2026</li>
-            <li>University of Edinburgh - study abroad, NLP and embedded systems · 2025</li>
-            <li>Temple University Japan - study abroad, computer graphics · 2024</li>
+          <ul role="list">
+            <li><span>Colby College, B.A. with honors</span> <time>2026</time>
+            <small>Computer science: AI.</small></li>
+            <li><span>University of Edinburgh, study abroad</span> <time>2025</time>
+            <small>NLP and embedded systems.</small></li>
+            <li><span>Temple University Japan, study abroad</span> <time>2024</time>
+            <small>Computer graphics.</small></li>
           </ul>
         </section>
 
         <section id="message">
           <h2>Leave a message</h2>
-          <p>Type in the box. It reaches me. Leave an address if you want an
-          answer.</p>
-          <form data-inbox data-rows="6" data-label="message" novalidate>
+          <form data-inbox data-rows="5" novalidate>
             <label for="note" class="sr-only">Your message</label>
-            <textarea id="note" name="message" rows="6" maxlength="900"></textarea>
+            <textarea id="note" name="message" rows="5" maxlength="900"></textarea>
             <span class="sr-only" aria-live="polite"></span>
-            <p><button type="submit">[ send ]</button> or cmd + enter</p>
+            <p>[ <button type="submit">send</button> ] Leave an address if you want an answer.</p>
           </form>
         </section>
 
         <section id="contact">
           <h2>Contact</h2>
           <p>sardor (at) nodirov (dot) com</p>
-          <p><a href="https://linkedin.com/in/sardornodirov">linkedin</a> ·
-          <a href="https://x.com/nodirov_com">x</a> ·
-          <a href="https://github.com/sarudoru">github</a> ·
-          <a href="Sardor_Nodirov_Resume.pdf">résumé</a></p>
-        </section>
-
-        <section id="colophon">
-          <p class="tagline">Built with Glyph Engine. Open sourcing soon.</p>
+          <p class="actions"><a href="https://linkedin.com/in/sardornodirov">LinkedIn</a> ·
+          <a href="https://x.com/nodirov_com">X</a> ·
+          <a href="https://github.com/sarudoru">GitHub</a> ·
+          <a href="Sardor_Nodirov_Resume.pdf">Résumé</a></p>
+          <p class="colophon">Built with Glyph Engine. Open sourcing soon.</p>
         </section>
       </main>
     </div>
+
+    <button id="sound" type="button" aria-pressed="true">sound on</button>
+    <button id="theme" type="button" aria-label="Dark theme" aria-pressed="false">light</button>
 
     <script type="module" src="src/main.js"></script>
   </body>

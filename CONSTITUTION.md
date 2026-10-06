@@ -6,99 +6,106 @@ against these articles. If it violates one, it does not ship.
 ## I. The cell is the atom
 
 The viewport is a fixed grid of character cells (`columns × rows`, derived
-from font metrics). Everything visible — content, ornament, animation,
-inhabitants — is the state of cells. There are no other visual primitives.
-No images, no shapes, no pixels addressed directly. The single tolerated
-exception is the one-pixel link underline, a cell *decoration* that belongs
-to the cell it sits under.
+from the font's metrics and snapped to whole device pixels). Everything
+visible is the state of a cell. There are no other visual primitives: no
+images, no shapes, no pixels addressed directly. The light box-drawing
+strokes (and the dots of the optional dot lattice) are drawn as exact cell
+geometry so they join and scale cleanly, but they are still glyphs in the
+atlas, held by cells. The one tolerated decoration is the link underline,
+which belongs to the cell it sits under, and turns with it.
 
 ## II. Nothing moves; cells change
 
-The page never scrolls. The murmur is **still** — ambient glyphs belong to
-the screen, like grain in the glass of the aperture. The document pours
-through them: during navigation each committed glyph blends between the row
-it holds and the row arriving beneath, and the blend phase is tied
-**directly to scroll position**, never to a clock. Ink pours from row to
-row under the reader's finger, reverses when they reverse, and settles onto
-whole rows when they stop. Passing content displaces the murmur cell by
-cell; the murmur seeps back when it has gone. No pixel ever moves; no
-transition plays on its own schedule.
+The page never scrolls. The real document scrolls invisibly underneath, and
+each cell shows which character the scroll position puts in it. Between two
+rows, every cell the document touches is a split-flap whose angle is the
+scroll's fraction: half a row of scroll is every flap half turned, and
+scrolling back turns them back. Nothing about a scroll is on a timer; the
+reader's finger turns the flaps. A detent holds each row still for part of
+the scroll, the way a picker wheel clicks into place, and the page settles
+on whole rows.
 
-## III. Cells have four states
+Faster than a flap can be seen (a flick, a wheel notch, a key, a link), the
+board flips instead: it turns over to where the page now is, in a cascade
+across the words and down the rows.
 
-1. **Ambient** — uncommitted murmur, anchored to the screen. Lowercase and
-   digits at ~4.5% ink, running uniformly everywhere: content sits *in* the
-   murmur, never on a cleared panel above it. **It is never still.** Every
-   cell owns a slow opacity oscillation with its own period (4–11s) and
-   phase, so the entire surface breathes at once while no single cell draws
-   the eye; on top of that, cells cross-dissolve into new glyphs at ~22 per
-   second. A tide passes across the grid, a lantern follows the cursor, the
-   corners fall away in a whisper of vignette. A substrate that holds still
-   is a photograph, and a photograph is a failure.
-2. **Transitional** — matter forming or dissolving climbs an ink-density
-   ramp (`·` `:` `+` → glyph); typographic shimmer uses a glyph's own
-   cousins, unhurried. A click splashes outward through random glyphs —
-   the one permitted burst of chaos, because the reader caused it and it
-   dies within a second.
-3. **Committed** — content. Full ink, calm, and *settled*: committed text
-   never animates at rest. Reading is sacred.
-4. **Hole** — a committed cell whose glyph has been taken (e.g. by gravity).
-   Renders truly empty until restored.
+Changes that happen while the page rests (a typed letter, a hovered link)
+turn on a clock instead, one short turn per cell. No pixel ever leaves its
+cell.
+
+Every change is the same turn: a split-flap, the card of a departure board
+falling over its hinge. The document's text, the resting characters, a
+moving cell running through its characters, a label on the status row: all
+of them flap. The other turns the renderer can draw (roll up, drum, fold,
+slide, fade) stay in the workbench as options, not as defaults.
+
+## III. What a cell can hold
+
+1. **Resting.** A cell the document does not use holds a character of its
+   own, picked at random from every letter, figure, and mark the face
+   draws, in faint ink. The characters stay in their cells; now and then one
+   turns into another. A slow weather makes patches more restless in place,
+   and never drifts. When the document arrives, the resting character turns
+   into the letter the document needs, and back when it leaves.
+2. **Warm.** Touch warms cells. A warm cell draws darker and turns over
+   sooner, then cools. The document leaves warmth behind as it passes, so a
+   scrolled line leaves a brief darkening of the cells it held.
+3. **Turning.** A cell between two faces, mid-flap.
+4. **Committed.** Content: the document's character at full ink, calm.
+   Committed text never animates at rest. Reading is sacred.
 
 ## IV. The document is real
 
 The content is one semantic HTML document, readable without JavaScript,
 visible to crawlers, screen readers, and view-source. The field is a
-*renderer* of that document, never a replacement. Selection, find-in-page,
-links, focus, and history are the browser's native ones — the transparent
-text layer sits in a real scroll container, aligned cell-for-cell with the
-canvas. If a browser power must be sacrificed for a visual idea, the visual
-idea loses.
+renderer of that document, never a replacement. Selection, find-in-page,
+links, focus, and history are the browser's own: a transparent text layer
+sits in the real scroll container, aligned cell for cell with the grid. If a
+browser power must be sacrificed for a visual idea, the visual idea loses.
 
 ## V. Motion is meaning
 
-Animation communicates a state change or a discovered rule; it is never
-texture. The ambient murmur is the only permanent motion, and it must stay
-below conscious notice. Effects are triggered — by arrival, interaction, or
-explicit invitation — and they end. `prefers-reduced-motion` silences all
-of it without loss of content.
+Animation communicates a change of state or answers the reader; it is never
+texture. The lattice's weather is the only permanent motion, and it stays
+below conscious notice. Everything else is caused by the reader or by first
+contact, and it ends. `prefers-reduced-motion` silences all of it without
+loss of content: the grid shows whole rows, and nothing turns.
 
 ## VI. Inhabitants obey the physics
 
-The field has no mascots, no set-pieces, and no buttons that perform
-tricks. Whatever lives here must be a formation of cells obeying the same
-physics, and must earn its place by making the field more itself — not by
-being a demonstration. A personal site is not a toy chest: anything that
-reads as "look what this can do" is cut. (A cursor-chasing butterfly lived
-here briefly; it was removed for exactly this reason.)
+The field has no mascots, no set pieces, and no buttons that perform tricks.
+Whatever lives here must be a formation of cells obeying the same physics,
+and must earn its place by making the field more itself, not by being a
+demonstration. A personal site is not a toy chest.
 
 ## VII. One typeface, one ink
 
-IBM Plex Mono, regular, one size per breakpoint. Hierarchy comes from
-composition — banner letters built from their own character, wide-tracked
-headings, rules made of `─`, buttons boxed in `┌─┐│└┘` — never from weight,
-size, or color changes. Ink is near-black (`#1a1a1a`) on warm white
-(`#fdfdfb`); the accent appears only in the selection highlight. Every
-visual constant in this document is a *tuned default*, not a magic number:
-all of them live in `src/params.js` and are auditioned in `lab.html` on the
-live field. Taste decisions are made with eyes and sliders, never from
-specimen cards or argument.
+Geist Mono, regular, one size per breakpoint. Hierarchy comes from
+composition: position, space, faint secondary ink, and rules made of `─`.
+Never from weight, size, or colour changes, and never from small letter-spaced
+capital labels. Ink is near-black (`#1a1a1a`) on warm white (`#fdfdfb`); the
+dark theme turns the same page over, warm white ink on near-black. The
+one accent (`#c8401f`) marks what the reader is touching: a hovered link, a
+selection, a notice. Every visual constant is a tuned default, not a magic
+number: all of them live in `src/params.js` and are auditioned in `lab.html`
+on the live field. Taste is decided with eyes and sliders, not argument.
 
 ## VIII. Interaction rewards, never obstructs
 
-The cursor disturbs ambient cells only; committed text does not flinch under
-the pointer — unless invited. Hovering any word loops it through its
-typographic cousins, the same letters as other languages write them, for as
-long as the reader stays; it is still the same readable word. Links and
-button labels do the same, with their chrome lighting up. A click splashes
-outward through random glyphs and dies. One glyph per section is unstable
-until repaired. None of this may ever make reading harder, and every effect
-must be discoverable by accident.
+The pointer is a cell: the cell under it becomes the cursor mark, and the
+characters around it darken and turn over as if stirred. Over the document's
+text the stirring stops, so nothing competes with the words. Over a letter it
+colours that letter, and the word it belongs to turns through its letters'
+cousins, the same letters as other languages write them, for as long as the
+pointer stays; it is still the same readable word. A click sends a
+round ring of turning characters outward. A hovered link turns over to the accent, one
+letter after another. None of this may ever make reading harder, and every
+effect must be discoverable by accident.
 
 ## IX. The revelation is progressive
 
-First contact: a quiet field crystallizes into a name. Then: scrolling
-reveals the document is part of the field. Then: interaction reveals the
-field is disturbable. Then: the experiments reveal the law can bend. The
-site never explains all of itself at once, and it never needs to be
-understood to be read.
+First contact: the field of characters comes up, the name writes itself,
+a ring leaves the name and the document turns in behind it, and the one
+line that states the rule writes itself last. Then: scrolling shows the document is part of
+the field. Then: touch shows the field is disturbable. The site says its rule
+once, in one faint line, and never needs to be understood to be read.

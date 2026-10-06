@@ -1,49 +1,40 @@
 // The message box: a native textarea that lives inside the grid. The browser
 // keeps the typing, pasting, IME, and the caret; the field draws the result
-// as cells. Cells nobody has typed into hold faint resting glyphs, so the box
-// reads as a place where characters are waiting to be chosen.
+// as cells. Cells nobody has typed into are left to the substrate, so typing
+// is the same act the page performs on itself: a resting cell takes a
+// letter.
 //
 // The textarea is transparent and sits exactly over its cells. A hidden
 // mirror with the same metrics reports where the browser broke each line,
-// so the drawn text, the native caret, and click-to-place agree.
+// so the drawn text, the caret, and click-to-place agree.
 
-const REST_INK = 0.2;
-const BLINK_MS = 530;
 // a real character after the text, so a trailing newline still makes a line
 // box and the caret can be measured at the end of the text
-const END = " ";
+const END = " ";
 
-export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
+export function createInbox(form, { invalidate = () => {}, onSend, onType } = {}) {
   const textarea = form.querySelector("textarea");
   const status = form.querySelector("[aria-live]");
   const mirror = document.createElement("div");
-  mirror.className = "inbox-mirror";
+  mirror.className = "inbox-mirror ph-no-capture";
   mirror.setAttribute("aria-hidden", "true");
   form.appendChild(mirror);
 
   let region = null;
   let metrics = null;
   let xOffset = 0;
-  let glyphs = "";
   let cells = new Map();
   let caret = null;
   let selected = new Set();
   let notice = new Map();
   let lastValue = "";
   let composing = false;
+  let sending = false;
 
   const key = (r, c) => r * region.cols + c;
   const inside = (p) =>
     p.row >= 0 && p.row < region.rows && p.col >= 0 && p.col < region.cols;
   const focused = () => document.activeElement === textarea;
-  // a fixed resting glyph per cell; the box never churns on its own
-  const rest = (i) => {
-    let h = Math.imul(i + 1, 0x9e3779b1);
-    h ^= h >>> 15;
-    h = Math.imul(h, 0x85ebca77);
-    h ^= h >>> 13;
-    return glyphs[(h >>> 0) % glyphs.length] || " ";
-  };
 
   function styleBox(el) {
     const { cellW, cellH, fontSize, pad, spacing } = metrics;
@@ -52,10 +43,11 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
       top: region.worldRow * cellH + "px",
       width: region.cols * cellW + "px",
       height: region.rows * cellH + "px",
-      paddingLeft: pad.toFixed(2) + "px",
+      paddingLeft: pad + "px",
       fontSize: fontSize + "px",
       lineHeight: cellH + "px",
-      letterSpacing: spacing.toFixed(2) + "px",
+      // unrounded: at DPR 3 a rounded spacing adds up to a lost column
+      letterSpacing: spacing + "px",
     });
   }
 
@@ -120,7 +112,13 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
     [...text].forEach((ch, i) => notice.set(key(row, col + i), ch));
   }
 
-  textarea.addEventListener("input", layoutText);
+  textarea.addEventListener("input", () => {
+    const before = lastValue;
+    setNotice("");
+    layoutText();
+    // a keystroke the full box refused makes no sound
+    if (textarea.value !== before) onType?.();
+  });
   textarea.addEventListener("compositionstart", () => {
     composing = true;
   });
@@ -144,21 +142,26 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
       form.requestSubmit();
     }
   });
-  form.addEventListener("submit", (event) => {
+  form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (sending) return;
     const text = textarea.value.trim();
     if (!text) {
       textarea.focus();
       return;
     }
-    const result = onSend?.(text);
-    if (result === "sent") {
+    sending = true;
+    if (status) status.textContent = "Sending.";
+    const sent = await onSend?.(text);
+    sending = false;
+    if (sent) {
       textarea.value = "";
       textarea.blur();
       layoutText();
       setNotice("sent. thank you.");
-    } else if (status) {
-      status.textContent = "Your mail app should open with the message.";
+    } else {
+      // the text stays in the box, under the notice, for another try
+      setNotice("not sent. try again.");
     }
     invalidate();
   });
@@ -168,34 +171,30 @@ export function createInbox(form, { invalidate = () => {}, onSend } = {}) {
       metrics = next;
       xOffset = offset;
     },
-    setGlyphs(alphabet) {
-      glyphs = alphabet;
-    },
     place(worldRow, col, cols, rows) {
       region = { worldRow, col, cols, rows };
       styleBox(textarea);
       styleBox(mirror);
       layoutText();
     },
-    // What the field paints at a cell: a typed character, a notice, or a
-    // resting glyph. `cursor` asks for the line at the cell's left; it blinks
-    // only while the field is animating, otherwise it stays lit.
-    at(worldRow, col, now, blink = true) {
+    // What the document holds at a cell of the box: a typed character or a
+    // notice, or null to leave the cell to the substrate.
+    at(worldRow, col) {
       if (!region) return null;
       const r = worldRow - region.worldRow;
       const c = col - region.col;
       if (r < 0 || r >= region.rows || c < 0 || c >= region.cols) return null;
       const k = key(r, c);
-      const cursor =
-        focused() &&
-        caret?.row === r &&
-        caret.col === c &&
-        (!blink || Math.floor(now / BLINK_MS) % 2 === 0);
-      const typed = cells.get(k);
-      if (typed) return { ch: typed, ink: 1, accent: selected.has(k), cursor };
       const note = notice.get(k);
-      if (note) return { ch: note, ink: 1, accent: true, cursor: false };
-      return { ch: rest(k), ink: REST_INK, accent: false, cursor };
+      if (note) return { ch: note, accent: true };
+      const typed = cells.get(k);
+      if (typed) return { ch: typed, accent: selected.has(k) };
+      return null;
+    },
+    // where the caret is, in world cells, while the box has focus
+    caret() {
+      if (!region || !caret || !focused()) return null;
+      return { row: region.worldRow + caret.row, col: region.col + caret.col };
     },
     state: () => ({ typed: cells.size, caret, focused: focused() }),
   };

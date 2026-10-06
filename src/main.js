@@ -1,41 +1,65 @@
-// Boot and wiring. The browser keeps its native powers — scrolling, links,
-// selection, find-in-page — while the field renders every visible mark.
+// Boot and wiring. The browser keeps its native powers (scrolling, links,
+// selection, find-in-page) while the field renders every visible mark.
 
 import { createField } from "./field.js";
 import { createInbox } from "./inbox.js";
 import { createTicker } from "./tick.js";
 import { parseArticle, typeset } from "./typesetter.js";
-import { fromQuery, toQuery, defaults, needsRelayout, FONTS, SCHEMA } from "./params.js";
+import { fromQuery, toQuery, defaults, needsRelayout, withTheme, FONT, SCHEMA } from "./params.js";
 import { POSTHOG, startAnalytics, track, identify } from "./analytics.js";
+import { deliver } from "./messages.js";
 
-const canvas = document.getElementById("field");
 const scroller = document.getElementById("scroller");
 const article = document.getElementById("article");
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 let P = fromQuery();
-const field = createField(canvas, P);
 
-// Messages go to PostHog as events. Without analytics the mail client opens
-// with the text filled in; the box keeps the text then, since a mail handler
-// may be missing.
-function sendMessage(text) {
-  const contact = text.match(/[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)*\.[a-z]{2,}/i)?.[0];
+// The theme: what the address asks for, else the visitor's last choice, else
+// the system's. The switch on the status row overrides all three.
+const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+function storedTheme() {
+  try {
+    return localStorage.getItem("glyph-theme");
+  } catch {
+    return null; // private mode
+  }
+}
+function wantsDark() {
+  const choice = P.theme !== "auto" ? P.theme : storedTheme();
+  return choice ? choice === "dark" : darkQuery.matches;
+}
+let dark = wantsDark();
+const look = () => withTheme(P, dark);
+
+const field = createField(document.getElementById("field"), look());
+
+// The page sends a message itself, never through the visitor's mail client.
+// Analytics, when on, keeps a copy of a sent message as an event.
+async function sendMessage(text) {
+  const contact = text.match(/[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/i)?.[0];
+  try {
+    await deliver(text, contact);
+  } catch (error) {
+    console.warn("The message was not sent:", error.message);
+    return false;
+  }
   identify(contact);
-  if (track("message_sent", { message: text, contact })) return "sent";
-  window.open(
-    `mailto:sardor@nodirov.com?subject=${encodeURIComponent("From nodirov.com")}&body=${encodeURIComponent(text)}`,
-    "_self",
-  );
-  return "mail";
+  track("message_sent", { message: text, contact });
+  return true;
 }
 
-const ticker = createTicker();
+// Sound is on unless the visitor turned it off on an earlier visit.
+let soundOn = true;
+try {
+  soundOn = localStorage.getItem("glyph-sound") !== "off";
+} catch { /* private mode */ }
+const ticker = createTicker(soundOn);
 
 const inboxForm = article.querySelector("form[data-inbox]");
 const inbox = inboxForm
-  ? createInbox(inboxForm, { invalidate: () => field.requestDraw(), onSend: sendMessage })
+  ? createInbox(inboxForm, { invalidate: () => field.requestDraw(), onSend: sendMessage, onType: () => ticker.key() })
   : null;
 field.setInbox(inbox);
 
@@ -47,31 +71,33 @@ let scrollEndTimer = 0;
 let lastPointer = { x: 0, y: 0, t: 0 };
 
 function computeMetrics() {
-  const face = FONTS[P.font];
-  const grid = face.grid;
-  let fontSize = window.innerWidth < 720 ? Math.max(12, Math.round(P.size * 0.72)) : P.size;
-
-  // A pixel face has no fractional sizes: off-step, its advance lands between
-  // device pixels and every stem smears. Snap to the design step instead of
-  // letting the workbench hand it an unrenderable size.
-  if (grid) fontSize = Math.max(grid.minSize, Math.round(fontSize / grid.sizeStep) * grid.sizeStep);
-
+  const dpr = Math.min(3, window.devicePixelRatio || 1);
+  // phones get a smaller face; very wide screens a slightly larger one, so
+  // the column keeps its proportion to the field
+  const w = window.innerWidth;
+  const fontSize = w < 720
+    ? Math.max(12, Math.round(P.size * 0.8))
+    : Math.round(P.size * Math.min(1.2, Math.max(1, w / 1680)));
+  const font = `${fontSize}px "${FONT.family}", ui-monospace, Menlo, monospace`;
   const probe = document.createElement("canvas").getContext("2d");
-  const font = `${fontSize}px "${face.family}", Menlo, monospace`;
   probe.font = font;
-  if (probe.textRendering !== undefined) probe.textRendering = "geometricPrecision";
   const adv = probe.measureText("M").width;
-
-  const tracking = grid ? grid.tracking : P.tracking;
-  const leading = grid ? grid.leading : P.leading;
-  const cellW = Math.round(adv + fontSize * tracking);
+  // Cells are whole device pixels, so every cell starts on a pixel edge and
+  // the atlas copies glyphs one to one.
+  const cellWd = Math.round((adv + fontSize * P.tracking) * dpr);
+  const cellHd = Math.round(fontSize * P.leading * dpr);
+  const cellW = cellWd / dpr;
+  const cellH = cellHd / dpr;
   return {
+    family: FONT.family,
+    font,
     fontSize,
     adv,
-    font,
-    pixelFace: !!grid,
+    dpr,
+    cellWd,
+    cellHd,
     cellW,
-    cellH: Math.round(fontSize * leading),
+    cellH,
     // a glyph sits centred in its cell: this much on the left, and this much
     // added after every character
     pad: (cellW - adv) / 2,
@@ -81,9 +107,10 @@ function computeMetrics() {
 
 function layout() {
   metrics = computeMetrics();
+  lastSize = { w: window.innerWidth, dpr: metrics.dpr };
+  watchPixelRatio();
   field.setMetrics(metrics);
   field.resize(window.innerWidth, window.innerHeight);
-  field.collectPlanes(article);
   inbox?.setMetrics(metrics, field.xOffset());
   layoutResult = typeset(blocks, article, {
     cols: field.cols(),
@@ -95,78 +122,156 @@ function layout() {
     pad: metrics.pad,
     spacing: metrics.spacing,
     measure: P.measure,
-    placePlane: (el, r, c, cc, rr) => field.placePlane(el, r, c, cc, rr),
     placeInbox: (el, r, c, cc, rr) => inbox?.place(r, c, cc, rr),
   });
-  field.setWorld(layoutResult.lines, layoutResult.worldRows);
-  field.registerGlitches(layoutResult.glitches);
+  fitHeight();
+  field.setWorld(layoutResult.lines, layoutResult.worldRows, { left: layoutResult.left, width: layoutResult.contentW });
   bindLinks(layoutResult.links);
   article.classList.add("ready");
+  placeSwitches();
   updateHud();
+}
+
+// The document's height makes the furthest scroll a whole number of rows,
+// so the last screen rests on a row like every other.
+function fitHeight() {
+  const view = scroller.clientHeight || window.innerHeight;
+  const beyond = Math.max(0, Math.ceil((layoutResult.worldRows * metrics.cellH - view) / metrics.cellH));
+  article.style.height = view + beyond * metrics.cellH + "px";
+}
+
+// Moving the window to a screen with another pixel ratio fires no resize
+// in some browsers; listen for the ratio itself.
+let ratioQuery = null;
+function watchPixelRatio() {
+  ratioQuery?.removeEventListener("change", onResize);
+  ratioQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+  ratioQuery.addEventListener("change", onResize);
 }
 
 function currentSection() {
   const camera = field.camera();
-  let current = layoutResult.sections[0];
-  for (const section of layoutResult.sections) {
+  const sections = layoutResult.sections;
+  // at the end of the page the last section is the one in view, even if its
+  // heading never reaches the top
+  const last = Math.round((scroller.scrollHeight - scroller.clientHeight) / metrics.cellH);
+  if (camera >= last) return sections[sections.length - 1];
+  let current = sections[0];
+  for (const section of sections) {
     if (section.row <= camera + 3) current = section;
   }
   return current;
 }
 
+const soundButton = document.getElementById("sound");
+const themeButton = document.getElementById("theme");
+
+// The right of the status row names the section the board is showing.
 function updateHud() {
-  const camera = field.camera();
-  if (camera === 0) {
-    field.setHud("");
+  if (themeButton.hidden) return;
+  field.setStatus({ right: currentSection().label, rightInk: P.faintAlpha });
+}
+
+// The switches live on the status row and the row above it, fixed to the
+// screen: sound, and the theme. The buttons are real and transparent; the
+// field draws their labels.
+function placeSwitches() {
+  soundButton.setAttribute("aria-pressed", String(soundOn));
+  const sound = soundOn ? "sound on" : "sound off";
+  const theme = dark ? "dark" : "light";
+  const row = field.rows() - 2;
+  const ink = (button) => (hoveredSwitch === button ? P.textAlpha : P.faintAlpha);
+  const place = (button, text, at, col) => {
+    // rewriting the same text between a press and its release loses the click
+    if (button.textContent !== text) button.textContent = text;
+    Object.assign(button.style, {
+      left: field.xOffset() + col * metrics.cellW + "px",
+      top: at * metrics.cellH + "px",
+      width: text.length * metrics.cellW + "px",
+      height: metrics.cellH + "px",
+      fontSize: metrics.fontSize + "px",
+      lineHeight: metrics.cellH + "px",
+      letterSpacing: metrics.spacing + "px",
+      paddingLeft: metrics.pad + "px",
+    });
+  };
+  // the status row lives in the margins. A screen too narrow for that keeps
+  // only the sound switch, in the bottom right corner, over the document and
+  // a row up from the edge, where a thumb reaches it; a blank cell either
+  // side keeps its label clear of the text passing under
+  const col = 2;
+  const room = layoutResult.left - col - 2 >= "sound off".length;
+  themeButton.hidden = !room;
+  if (!room) {
+    // room for the longer label, so the words stay put when it changes
+    const at = field.cols() - "sound off".length - 1;
+    place(soundButton, sound, row - 1, at);
+    field.setStatus({ left: "", upper: ` ${sound} `, leftCol: at - 1, upperInk: ink(soundButton), right: "" });
     return;
   }
-  const section = currentSection();
-  const position = String(camera).padStart(3, "0");
-  field.setHud(section.label ? `${position} · ${section.label}` : position);
+  place(soundButton, sound, row, col);
+  place(themeButton, theme, row - 1, col);
+  field.setStatus({
+    left: sound, leftCol: col, leftInk: ink(soundButton),
+    upper: theme, upperInk: ink(themeButton),
+  });
+}
+let hoveredSwitch = null;
+
+function setTheme(next) {
+  dark = next;
+  themeButton.setAttribute("aria-pressed", String(dark));
+  applyCssVars();
+  field.applyParams(look(), ["paper", "ink", "accent"]);
+  if (layoutResult) placeSwitches();
 }
 
 function bindLinks(links) {
   for (const a of links) {
     if (a.dataset.bound) continue;
     a.dataset.bound = "1";
-    const on = () => field.hoverLink(layoutResult.links.indexOf(a), true);
-    const off = () => field.hoverLink(layoutResult.links.indexOf(a), false);
-    a.addEventListener("mouseenter", on);
-    a.addEventListener("mouseleave", off);
-    a.addEventListener("focus", on);
-    a.addEventListener("blur", off);
+    const id = () => layoutResult.links.indexOf(a);
+    a.addEventListener("mouseenter", () => field.hoverLink(id(), true));
+    a.addEventListener("mouseleave", () => field.hoverLink(id(), false));
+    a.addEventListener("focus", () => field.focusLink(id(), true));
+    a.addEventListener("blur", () => field.focusLink(id(), false));
   }
 }
 
 const anim = { raf: 0, target: null, lastWrite: -1 };
 
 function syncFromScroll() {
-  const before = field.camera();
   field.setScroll(scroller.scrollTop);
-  const passed = field.camera() - before;
-  if (passed) {
-    updateHud();
-    ticker.tick(passed, performance.now());
-  }
 }
 
-function animateScrollTo(target, duration) {
-  target = Math.max(0, Math.min(target, scroller.scrollHeight - scroller.clientHeight));
+// A jump (a key, a wheel notch, a section link) moves the real document at
+// once; the board flips to it.
+function jumpTo(px) {
+  const max = scroller.scrollHeight - scroller.clientHeight;
+  const target = Math.max(0, Math.min(max, Math.round(px / metrics.cellH) * metrics.cellH));
+  window.cancelAnimationFrame(anim.raf);
+  anim.target = null;
+  scroller.scrollTop = target;
+  syncFromScroll();
+}
+
+// The settle after a trackpad scroll: the page eases onto the nearest whole
+// row, and the finger's half-turned flaps finish their turn.
+function settleTo(target, duration) {
   window.cancelAnimationFrame(anim.raf);
   anim.target = target;
-  if (reducedMotion.matches || !duration) {
+  const start = scroller.scrollTop;
+  const dist = target - start;
+  if (reducedMotion.matches || !duration || Math.abs(dist) < 0.5) {
     anim.lastWrite = target;
     scroller.scrollTop = target;
     anim.target = null;
     syncFromScroll();
     return;
   }
-  const start = scroller.scrollTop;
-  const dist = target - start;
-  if (Math.abs(dist) < 0.5) {
-    anim.target = null;
-    return;
-  }
+  // a scroll event still on its way from before this began is not the
+  // reader taking the page back
+  anim.lastWrite = start;
   const t0 = performance.now();
   const step = (now) => {
     const p = Math.min(1, (now - t0) / duration);
@@ -186,28 +291,102 @@ function onScroll() {
   }
   syncFromScroll();
   window.clearTimeout(scrollEndTimer);
-  scrollEndTimer = window.setTimeout(onScrollSettled, 160);
+  scrollEndTimer = window.setTimeout(onScrollSettled, 140);
 }
 
 function onScrollSettled() {
+  // a finger resting on the glass has not let go of the page yet
+  if (touching) return;
   if (anim.target === null) {
     const target = Math.round(scroller.scrollTop / metrics.cellH) * metrics.cellH;
-    if (Math.abs(scroller.scrollTop - target) > 1) animateScrollTo(target, P.settleMs);
+    // dots need no ease onto the row; the text settles once the page is on it
+    if (Math.abs(scroller.scrollTop - target) > 0.5) settleTo(target, field.settling() ? 0 : P.settleMs);
   }
   const section = currentSection();
   const hash = section.id ? `#${section.id}` : "";
-  if (hash && window.location.hash !== hash) {
-    history.replaceState(null, "", hash);
-    track("section_reached", { section: section.id });
+  if (window.location.hash !== hash) {
+    history.replaceState(null, "", hash || window.location.pathname + window.location.search);
+    if (hash) track("section_reached", { section: section.id });
   }
   try {
-    sessionStorage.setItem("glyph-camera", String(field.camera()));
+    sessionStorage.setItem(`glyph-camera:${location.pathname}`, String(field.camera()));
   } catch { /* private mode */ }
 }
+
+let touching = false;
+
+// A finger moves the page directly, and once it lifts the page carries on
+// only a little: the browser's own momentum takes a page of cells many rows
+// past where the finger left it.
+const drag = { id: null, y: 0, top: 0, moved: false, samples: [] };
+
+function onTouchStart(event) {
+  touching = true;
+  drag.moved = false;
+  // two fingers are a pinch, not a scroll
+  if (event.touches.length !== 1) {
+    drag.id = null;
+    return;
+  }
+  window.cancelAnimationFrame(anim.raf);
+  anim.target = null;
+  const touch = event.touches[0];
+  Object.assign(drag, { id: touch.identifier, y: touch.clientY, top: scroller.scrollTop, samples: [] });
+}
+
+function onTouchMove(event) {
+  const touch = event.touches.length === 1 && event.touches[0].identifier === drag.id ? event.touches[0] : null;
+  if (!touch) return;
+  if (!drag.moved) {
+    // a tap may wander a few pixels
+    if (Math.abs(drag.y - touch.clientY) < 6) return;
+    drag.moved = true;
+    drag.y = touch.clientY;
+    field.pointerLeft();
+  }
+  if (event.cancelable) event.preventDefault();
+  scroller.scrollTop = drag.top + drag.y - touch.clientY;
+  syncFromScroll();
+  drag.samples.push({ t: event.timeStamp, y: touch.clientY });
+  while (event.timeStamp - drag.samples[0].t > 100) drag.samples.shift();
+}
+
+function onTouchEnd(event) {
+  if (event.touches.length) return;
+  touching = false;
+  if (drag.id !== null && drag.moved) {
+    // the finger's speed as it left, in px per ms; a finger that stopped
+    // before lifting leaves the page where it is
+    const first = drag.samples[0];
+    const last = drag.samples[drag.samples.length - 1];
+    const moving = last && last.t > first.t && event.timeStamp - last.t < 60;
+    const speed = moving ? (first.y - last.y) / (last.t - first.t) : 0;
+    const max = scroller.scrollHeight - scroller.clientHeight;
+    const rest = Math.round((scroller.scrollTop + speed * P.glideMs) / metrics.cellH) * metrics.cellH;
+    // an ease-out that starts at the finger's speed takes three times as
+    // long as that speed would need to cover the distance
+    settleTo(Math.max(0, Math.min(max, rest)), speed ? 3 * P.glideMs : field.settling() ? 0 : P.settleMs);
+  }
+  drag.id = null;
+  drag.moved = false;
+  window.clearTimeout(scrollEndTimer);
+  scrollEndTimer = window.setTimeout(onScrollSettled, 140);
+}
+let lastSize = { w: 0, dpr: 0 };
 
 function onResize() {
   window.clearTimeout(resizeTimer);
   resizeTimer = window.setTimeout(() => {
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    // A change of height alone (a browser toolbar, a phone keyboard) keeps
+    // the typesetting and the scroll; only the grid gains or loses rows.
+    if (window.innerWidth === lastSize.w && dpr === lastSize.dpr) {
+      field.resize(window.innerWidth, window.innerHeight);
+      fitHeight();
+      placeSwitches();
+      field.setScroll(scroller.scrollTop, true);
+      return;
+    }
     const camera = field.camera();
     let anchor = null;
     for (const section of layoutResult ? layoutResult.sections : []) {
@@ -218,39 +397,49 @@ function onResize() {
       const section = layoutResult.sections.find((s) => s.id === anchor.id);
       if (section) scroller.scrollTop = (section.row + anchor.offset) * metrics.cellH;
     }
-    field.setScroll(scroller.scrollTop);
+    field.setScroll(scroller.scrollTop, true);
   }, 140);
 }
 
 function onKey(event) {
   if (event.target.closest("textarea, input, button, a")) return;
   if (event.metaKey || event.ctrlKey || event.altKey) return;
-  const page = (field.rows() - 3) * metrics.cellH;
-  let delta = null;
-  if (event.key === "ArrowDown") delta = metrics.cellH;
-  else if (event.key === "ArrowUp") delta = -metrics.cellH;
-  else if (event.key === "PageDown" || (event.key === " " && !event.shiftKey)) delta = page;
-  else if (event.key === "PageUp" || (event.key === " " && event.shiftKey)) delta = -page;
-  else if (event.key === "Home") { animateScrollTo(0, 420); event.preventDefault(); return; }
-  else if (event.key === "End") { animateScrollTo(scroller.scrollHeight, 420); event.preventDefault(); return; }
-  if (delta !== null) {
-    const base = anim.target !== null ? anim.target : scroller.scrollTop;
-    animateScrollTo(base + delta, 200);
+  const page = (field.rows() - 4) * metrics.cellH;
+  let to = null;
+  if (event.key === "ArrowDown") to = scroller.scrollTop + metrics.cellH;
+  else if (event.key === "ArrowUp") to = scroller.scrollTop - metrics.cellH;
+  else if (event.key === "PageDown" || (event.key === " " && !event.shiftKey)) to = scroller.scrollTop + page;
+  else if (event.key === "PageUp" || (event.key === " " && event.shiftKey)) to = scroller.scrollTop - page;
+  else if (event.key === "Home") to = 0;
+  else if (event.key === "End") to = scroller.scrollHeight;
+  if (to !== null) {
+    jumpTo(to);
     event.preventDefault();
   }
 }
 
 function onPointerMove(event) {
+  // a finger that is moving the page is not pressing on the lattice
+  if (event.pointerType === "touch" && drag.moved) return;
   const now = performance.now();
   const dt = Math.min(120, now - lastPointer.t);
   const px = lastPointer.t === 0 ? event.clientX : lastPointer.x;
   const py = lastPointer.t === 0 ? event.clientY : lastPointer.y;
   lastPointer = { x: event.clientX, y: event.clientY, t: now };
   field.touch(event.clientX, event.clientY, px, py, dt);
-  if (event.pointerType !== "touch") {
-    field.shimmerWordAt(event.clientX, event.clientY);
-    field.pointerAt(event.clientX, event.clientY);
-  }
+  field.pointerAt(event.clientX, event.clientY);
+}
+
+// A finger on a phone presses the lattice while it rests there; once it
+// starts to move the page, the lens lets go.
+function onPointerDown(event) {
+  if (event.pointerType !== "touch") return;
+  lastPointer = { x: event.clientX, y: event.clientY, t: performance.now() };
+  field.pointerAt(event.clientX, event.clientY);
+}
+
+function onPointerUp(event) {
+  if (event.pointerType === "touch") field.pointerLeft();
 }
 
 function onClick(event) {
@@ -258,33 +447,46 @@ function onClick(event) {
   field.strike(event.clientX, event.clientY);
 }
 
+// Wait for the face, but not forever. If it arrives after the page has
+// been laid out with a fallback, lay it out again with the real metrics.
 async function loadFont() {
-  const font = FONTS[P.font];
-  if (!font.local && font.family !== "IBM Plex Mono" && !document.querySelector(`link[data-font="${P.font}"]`)) {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.dataset.font = P.font;
-    link.href = `https://fonts.googleapis.com/css2?family=${font.css}&display=swap`;
-    document.head.appendChild(link);
+  const loaded = document.fonts.load(`16px "${FONT.family}"`).catch(() => null);
+  const timedOut = await Promise.race([
+    loaded.then(() => false),
+    new Promise((resolve) => setTimeout(() => resolve(true), 2500)),
+  ]);
+  if (timedOut) {
+    loaded.then(() => {
+      if (!metrics || computeMetrics().adv === metrics.adv) return;
+      const top = scroller.scrollTop;
+      layout();
+      scroller.scrollTop = top;
+      field.setScroll(scroller.scrollTop, true);
+    });
   }
-  try {
-    await Promise.race([
-      Promise.all([document.fonts.load(`16px "${font.family}"`), document.fonts.ready]),
-      new Promise((resolve) => setTimeout(resolve, 2500)),
-    ]);
-  } catch { /* fall back to whatever monospace we have */ }
 }
 
 function applyCssVars() {
   document.documentElement.classList.toggle("embed-cursor", !!P.cursorEmbed);
+  const { paper, ink, accent } = look();
   const style = document.documentElement.style;
-  style.setProperty("--paper", P.paper);
-  style.setProperty("--ink", P.ink);
-  style.setProperty("--accent", P.accent);
+  style.setProperty("--paper", paper);
+  style.setProperty("--ink", ink);
+  style.setProperty("--accent", accent);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  for (const meta of document.querySelectorAll('meta[name="theme-color"]')) meta.content = paper;
+}
+
+// The name on the grid, for the opening: its row as the screen shows it.
+function heroOnScreen(startRow) {
+  const hero = layoutResult.hero;
+  if (!hero || startRow > 0) return null;
+  return { row: hero.row, col: hero.col, length: hero.length };
 }
 
 async function boot() {
   await loadFont();
+  document.documentElement.classList.add("js");
   applyCssVars();
 
   blocks = parseArticle(article);
@@ -298,63 +500,100 @@ async function boot() {
     if (section) startRow = section.row;
   } else {
     try {
-      startRow = parseInt(sessionStorage.getItem("glyph-camera") ?? "0", 10) || 0;
+      startRow = parseInt(sessionStorage.getItem(`glyph-camera:${location.pathname}`) ?? "0", 10) || 0;
     } catch { /* private mode */ }
   }
-  if (startRow > 0) {
-    scroller.scrollTop = startRow * metrics.cellH;
-    field.setScroll(scroller.scrollTop);
+  if (startRow > 0) scroller.scrollTop = startRow * metrics.cellH;
+  field.setScroll(scroller.scrollTop, true);
+  field.onTurn((rows) => {
+    ticker.tick(rows, performance.now());
     updateHud();
-  } else {
-    field.crystallize();
-  }
+  });
+  field.onLand((now) => ticker.land(now));
+  // the full opening once per visit; a reload in the same visit is brief
+  let seen = false;
+  try {
+    seen = sessionStorage.getItem("glyph-seen") === "1";
+    sessionStorage.setItem("glyph-seen", "1");
+  } catch { /* private mode */ }
+  field.crystallize(heroOnScreen(startRow), seen || startRow > 0, startRow > 0 ? null : layoutResult.hint);
 
-  if (!reducedMotion.matches) field.start();
+  field.start();
 
   scroller.addEventListener("scroll", onScroll, { passive: true });
   window.addEventListener("resize", onResize);
   window.addEventListener("keydown", onKey);
   window.addEventListener("pointermove", onPointerMove, { passive: true });
+  window.addEventListener("pointerdown", onPointerDown, { passive: true });
+  window.addEventListener("pointerup", onPointerUp, { passive: true });
+  window.addEventListener("pointercancel", onPointerUp, { passive: true });
+  scroller.addEventListener("touchstart", onTouchStart, { passive: true });
+  scroller.addEventListener("touchmove", onTouchMove, { passive: false });
+  scroller.addEventListener("touchend", onTouchEnd, { passive: true });
+  scroller.addEventListener("touchcancel", onTouchEnd, { passive: true });
   document.documentElement.addEventListener("mouseleave", () => field.pointerLeft());
   window.addEventListener("blur", () => field.pointerLeft());
   scroller.addEventListener("click", onClick);
-  scroller.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-sound]");
-    if (!button) return;
-    const on = ticker.toggle();
-    button.setAttribute("aria-pressed", String(on));
-    track("sound_toggled", { on });
-    const nav = blocks.find((b) => b.type === "nav");
-    const run = nav?.runs.find((r) => r.a === button);
-    if (run) run.text = on ? "[ sound on ]" : "[ sound off ]";
-    const top = scroller.scrollTop;
-    layout();
-    scroller.scrollTop = top;
-    syncFromScroll();
+  soundButton.addEventListener("click", () => {
+    soundOn = ticker.toggle();
+    try {
+      localStorage.setItem("glyph-sound", soundOn ? "on" : "off");
+    } catch { /* private mode */ }
+    track("sound_toggled", { on: soundOn });
+    placeSwitches();
   });
+  // browsers hold a page's sound until the visitor's first click, tap, or key
+  for (const type of ["pointerdown", "pointerup", "touchend", "keydown"]) {
+    window.addEventListener(type, () => ticker.unlock(), { capture: true, passive: true });
+  }
+  themeButton.setAttribute("aria-pressed", String(dark));
+  themeButton.addEventListener("click", () => {
+    setTheme(!dark);
+    try {
+      localStorage.setItem("glyph-theme", dark ? "dark" : "light");
+    } catch { /* private mode */ }
+    track("theme_toggled", { dark });
+  });
+  // the system's theme leads until the visitor has chosen one
+  darkQuery.addEventListener("change", () => {
+    if (P.theme === "auto" && !storedTheme()) setTheme(darkQuery.matches);
+  });
+  for (const button of [soundButton, themeButton]) {
+    const hover = (on) => () => {
+      hoveredSwitch = on ? button : hoveredSwitch === button ? null : hoveredSwitch;
+      placeSwitches();
+    };
+    button.addEventListener("pointerenter", hover(true));
+    button.addEventListener("pointerleave", hover(false));
+    button.addEventListener("focus", hover(true));
+    button.addEventListener("blur", hover(false));
+  }
 
-  // Discrete wheels jump ~100px per notch, which teleports the pour. Route
-  // coarse deltas through the animator; trackpads keep their native feel.
+  // A mouse wheel moves in notches; each notch is one flip of the board.
+  // Trackpads keep their native feel and turn the flaps continuously.
   scroller.addEventListener("wheel", (event) => {
-    if (event.ctrlKey || !P.wheelMs) return;
+    if (event.ctrlKey) return;
     const coarse = event.deltaMode === 1 || Math.abs(event.deltaY) >= 80;
     if (!coarse) return;
     event.preventDefault();
     const delta = event.deltaMode === 1 ? event.deltaY * metrics.cellH : event.deltaY;
-    const base = anim.target !== null ? anim.target : scroller.scrollTop;
-    animateScrollTo(base + delta, P.wheelMs);
+    jumpTo(scroller.scrollTop + delta);
   }, { passive: false });
 
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && !reducedMotion.matches) field.start();
+    if (document.visibilityState === "visible") field.start();
     else field.stop();
   });
 
   reducedMotion.addEventListener("change", () => field.setReducedMotion(reducedMotion.matches));
 
   function navigateHash() {
-    const section = layoutResult.sections.find((s) => s.id === decodeURIComponent(location.hash.slice(1)));
-    if (section) animateScrollTo(section.row * metrics.cellH, 420);
+    let id = location.hash.slice(1);
+    try {
+      id = decodeURIComponent(id);
+    } catch { /* a malformed hash is used as written */ }
+    const section = layoutResult.sections.find((s) => s.id === id);
+    if (section) jumpTo(section.row * metrics.cellH);
   }
   window.addEventListener("hashchange", navigateHash);
   scroller.addEventListener("click", (event) => {
@@ -371,42 +610,37 @@ async function boot() {
     defaults,
     get: () => ({ ...P }),
     query: () => toQuery(P),
-    renderAt: (now, dt) => field.renderAt(now, dt),
+    renderAt: (now) => field.renderAt(now),
     probe: (row, col) => field.probe(row, col),
-    planeCount: () => field.planeCount(),
     inbox: () => inbox?.state() ?? null,
     sound: () => ticker.enabled(),
     stats: () => field.stats(),
-    glyphCount: () => field.glyphCount(),
+    view: () => ({ scrollTop: scroller.scrollTop, cellH: metrics.cellH, cols: field.cols(), rows: field.rows() }),
     touch: (x, y, px, py, dt) => field.touch(x, y, px, py, dt),
     strike: (x, y) => field.strike(x, y),
-    reveal: () => field.crystallize(),
+    reveal: () => field.crystallize(heroOnScreen(field.camera()), false),
     set(patch) {
       const changed = Object.keys(patch);
       P = { ...P, ...patch };
+      if (changed.includes("theme")) dark = wantsDark();
       applyCssVars();
       if (needsRelayout(patch)) {
-        if (patch.font) {
-          loadFont().then(() => {
-            const top = scroller.scrollTop;
-            layout();
-            scroller.scrollTop = top;
-            field.applyParams(P, changed);
-          });
-          return;
-        }
         const top = scroller.scrollTop;
+        field.applyParams(look(), changed);
         layout();
         scroller.scrollTop = top;
+        syncFromScroll();
+        return;
       }
-      field.applyParams(P, changed);
+      field.applyParams(look(), changed);
+      placeSwitches();
     },
   };
   window.dispatchEvent(new CustomEvent("glyph-ready"));
 
   startAnalytics(POSTHOG, {
-    font: P.font,
     grid: `${field.cols()}x${field.rows()}`,
+    renderer: field.renderer,
     reduced_motion: reducedMotion.matches,
   });
 }

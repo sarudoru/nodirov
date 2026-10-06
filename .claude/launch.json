@@ -2,24 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "glyph",
-      "runtimeExecutable": "sh",
-      "runtimeArgs": [
-        "-c",
-        "python3 -m http.server \"${PORT:-4180}\" --bind 127.0.0.1"
-      ],
-      "port": 4180,
-      "autoPort": true
-    },
-    {
-      "name": "ascii-cards",
-      "runtimeExecutable": "sh",
-      "runtimeArgs": [
-        "-c",
-        "python3 -m http.server \"${PORT:-4182}\" --bind 127.0.0.1"
-      ],
-      "port": 4182,
-      "autoPort": true
+      "name": "v8",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-c", "import http.server as h\nclass H(h.SimpleHTTPRequestHandler):\n    def end_headers(self):\n        self.send_header('Cache-Control', 'no-store')\n        super().end_headers()\nh.ThreadingHTTPServer(('127.0.0.1', 4193), H).serve_forever()"],
+      "port": 4193
     }
   ]
 }

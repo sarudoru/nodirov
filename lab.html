@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Glyph Field / Workbench</title>
     <meta name="robots" content="noindex">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <style>
-      @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap");
+      @font-face {
+        font-family: "Geist Mono";
+        src: url("assets/fonts/GeistMono-Regular.woff2") format("woff2");
+      }
 
       :root {
         --paper: #fdfdfb;
@@ -26,7 +27,7 @@
         grid-template-columns: var(--panel) minmax(0, 1fr);
         background: var(--paper);
         color: var(--ink);
-        font-family: "IBM Plex Mono", Menlo, monospace;
+        font-family: "Geist Mono", ui-monospace, Menlo, monospace;
         font-size: 11px;
       }
 
@@ -44,7 +45,7 @@
       .panel-head h1 {
         margin: 0 0 3px;
         font-size: 11px;
-        font-weight: 500;
+        font-weight: 400;
         letter-spacing: 0.14em;
         text-transform: uppercase;
       }
@@ -246,7 +247,7 @@
       </div>
       <div id="controls"></div>
       <div class="presets">
-        <select id="presetList"><option value="">— presets —</option></select>
+        <select id="presetList"><option value="">presets</option></select>
         <button id="presetSave">save</button>
         <button id="presetDelete">del</button>
       </div>
@@ -514,9 +515,9 @@
         if (!s) return;
         statsEl.innerHTML =
           `<div><b>${s.cells}</b>cells</div>` +
-          `<div><b>${s.moving}</b>morphing</div>` +
           `<div><b>${s.hot}</b>warm</div>` +
-          `<div><b>${(api.glyphCount ? api.glyphCount() : 0)}</b>glyphs</div>`;
+          `<div><b>${s.glyphs}</b>glyphs</div>` +
+          `<div><b>${s.renderer}</b>renderer</div>`;
       }, 300);
 
       document.getElementById("copyLink").addEventListener("click", () => {
@@ -550,7 +551,7 @@
 
       function refreshPresets(selected = "") {
         const all = readPresets();
-        presetList.innerHTML = '<option value="">— presets —</option>';
+        presetList.innerHTML = '<option value="">presets</option>';
         for (const name of Object.keys(all).sort()) {
           const option = document.createElement("option");
           option.value = name;
