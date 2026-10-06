@@ -16,7 +16,7 @@ export function createInbox(form, { invalidate = () => {}, onSend, onType } = {}
   const textarea = form.querySelector("textarea");
   const status = form.querySelector("[aria-live]");
   const mirror = document.createElement("div");
-  mirror.className = "inbox-mirror";
+  mirror.className = "inbox-mirror ph-no-capture";
   mirror.setAttribute("aria-hidden", "true");
   form.appendChild(mirror);
 
@@ -152,18 +152,16 @@ export function createInbox(form, { invalidate = () => {}, onSend, onType } = {}
     }
     sending = true;
     if (status) status.textContent = "Sending.";
-    const result = await onSend?.(text);
+    const sent = await onSend?.(text);
     sending = false;
-    if (result === "sent") {
+    if (sent) {
       textarea.value = "";
       textarea.blur();
       layoutText();
       setNotice("sent. thank you.");
-    } else if (result === "failed") {
+    } else {
       // the text stays in the box, under the notice, for another try
       setNotice("not sent. try again.");
-    } else if (status) {
-      status.textContent = "Your mail app should open with the message.";
     }
     invalidate();
   });

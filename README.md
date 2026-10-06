@@ -25,6 +25,7 @@ work. The workbench is at <http://localhost:4193/lab.html>.
 
 ```
 index.html          the real, semantic document (SEO, no-JS, screen readers)
+404.html            the not-found page, on the same engine
 style.css           the no-JS document and the transparent grid-aligned text layer
 src/main.js         boot and wiring: metrics, scroll, keys, pointer, sound switch
 src/typesetter.js   semantic HTML -> grid lines + positioned transparent DOM spans
@@ -37,7 +38,7 @@ src/cousins.js      each letter's cousins, for the hovered word
 src/tick.js         the sound: one synthesized thock per row
 src/params.js       every tunable: schema, defaults, URL codec, workbench controls
 src/analytics.js    PostHog, off until a key is set
-src/messages.js     the message box's delivery, off until a key is set
+src/messages.js     the message box's delivery through Web3Forms, off until a key is set
 lab.html            the workbench: every knob live on the real page
 tests/browser.cjs   browser checks
 ```
@@ -116,13 +117,12 @@ autocapture, heatmaps, web vitals, session replay with inputs masked, person
 profiles, and GeoIP on the PostHog side. The page adds `section_reached`,
 `sound_toggled`, `theme_toggled`, and `message_sent`.
 
-The message box sends from the page itself. `src/messages.js` posts each
-message to Web3Forms, which forwards it to the inbox its access key belongs
-to; an address in the text becomes the reply-to. Create a key at
-web3forms.com with the inbox's address and set `MESSAGES.key`. The key is
-public by design. Until it is set, the visitor's mail client opens with the
-text filled in (or, with analytics on, the message arrives as a PostHog
-event only).
+The message box sends from the page itself, never through the visitor's
+mail client. `src/messages.js` posts each message to Web3Forms, which
+forwards it to the inbox its access key belongs to; an address in the text
+becomes the reply-to. Create a key at web3forms.com with the inbox's
+address and set `MESSAGES.key`. The key is public by design. Until it is
+set, nothing is sent: the box keeps the text and says it was not sent.
 
 ## Theme
 
@@ -148,8 +148,10 @@ PLAYWRIGHT_MODULE=~/.playwright/node_modules/playwright node tests/browser.cjs
 ```
 
 Headless Chromium needs a GPU backend for WebGL2; the checks pass
-`--use-angle=metal` by default (macOS). `BROWSER_ARGS=" "` runs them on the
-Canvas 2D fallback instead. `BROWSER_PATH` overrides the Chromium binary,
-`SITE_URL` the server. The checks cover boot, keyboard order, selection, the
-scroll flaps and settling, the message box, the sound switch, four viewport
-widths, reduced motion, the no-JS document, and the workbench.
+`--use-angle=metal` by default (macOS). `BROWSER_ARGS="--disable-webgl2"`
+runs them on the Canvas 2D fallback instead (`?canvas2d` forces it in any
+browser). `BROWSER_PATH` overrides the Chromium binary, `SITE_URL` the
+server. The checks cover boot, keyboard order, selection, the scroll flaps
+and settling, the message box, the sound and theme switches, four viewport
+widths, the hovered word, reduced motion, the no-JS document, the 404 page,
+one render loop after the page is hidden and shown, and the workbench.

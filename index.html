@@ -30,6 +30,9 @@
     <link rel="stylesheet" href="style.css">
     <script>
       document.documentElement.classList.add("js");
+      setTimeout(() => {
+        if (!document.querySelector("#article.ready")) document.documentElement.classList.remove("js");
+      }, 6000);
       // a theme chosen on an earlier visit, before the first paint
       try {
         const theme = localStorage.getItem("glyph-theme");

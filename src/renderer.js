@@ -116,7 +116,7 @@ void main() {
       float cx = 0.0;
       float cy = 0.0;
 
-      if (phase <= 0.0 || (Y == X && a.x == a.y && underX == underY)) {
+      if (phase <= 0.0 || (Y == X && a.x == a.y && underX == underY && colorX == colorY)) {
         cx = faceExact(X, underX, inner) * a.x;
       } else if (phase >= 1.0) {
         cy = faceExact(Y, underY, inner) * a.y;

@@ -73,8 +73,8 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
     assert.ok(Math.abs(settled.rows - Math.round(settled.rows)) < 0.05, "the page settles on a whole row");
 
     // The message box: typing lands in cells and flaps in, the caret follows,
-    // the box refuses more lines than it has rows, and sending without
-    // analytics keeps the text and opens the mail client.
+    // the box refuses more lines than it has rows, and the page sends the
+    // message itself; without an access key nothing is sent.
     await page.evaluate(() => { location.hash = "message"; });
     await page.waitForTimeout(900);
     await page.locator("#note").click();
@@ -90,15 +90,25 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
     const rows = Number(await page.locator("form[data-inbox]").getAttribute("data-rows"));
     await page.keyboard.type("\n".repeat(rows + 2));
     assert.ok((await page.locator("#note").inputValue()).split("\n").length <= rows);
-    await page.route("mailto:**", (route) => route.abort());
+    const notice = () => page.evaluate(() => document.querySelector("form[data-inbox] [aria-live]").textContent);
+    const posts = [];
+    await page.route("https://api.web3forms.com/**", (route) => {
+      posts.push(route.request().postDataJSON());
+      return route.fulfill({ status: 200, contentType: "application/json", body: '{"success":true}' });
+    });
     const before = await page.locator("#note").inputValue();
     await page.keyboard.press("Meta+Enter");
     await page.waitForTimeout(200);
+    assert.equal(posts.length, 0);
     assert.equal(await page.locator("#note").inputValue(), before);
-    assert.match(
-      await page.evaluate(() => document.querySelector("form[data-inbox] [aria-live]").textContent),
-      /mail/,
-    );
+    assert.match(await notice(), /not sent/);
+    await page.evaluate(async () => { (await import("/src/messages.js")).MESSAGES.key = "test-key"; });
+    await page.keyboard.press("Meta+Enter");
+    await page.waitForFunction(() => document.getElementById("note").value === "");
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0].access_key, "test-key");
+    assert.equal(posts[0].message, before.trim());
+    assert.match(await notice(), /^sent/);
 
     // Reviewer regressions.
     // 1. Scrolling during the opening does not show text the ring has not
@@ -233,7 +243,7 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
         for (let c = 0; c < v.cols; c++) {
           const q = __glyph.probe(r, c);
           if (q.lattice) continue;
-          if (q.phase !== 0 || q.x === " ") continue;
+          if (q.phase !== 0 || /^\s$/.test(q.x)) continue;
           // body text rests at full ink and moves at the moving ink (0.7)
           if (q.inkX > 0.9) letters++;
           else if (q.inkX > 0.6 && q.inkX < 0.8) dots++;
@@ -269,6 +279,7 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
       }
       return text;
     });
+    await settle.mouse.move(2, 2);
     await scrollToRow(settle, 0);
     await settle.waitForTimeout(2500);
     const unhovered = await nameRow();
@@ -325,6 +336,52 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
     assert.ok(await plain.locator("#note").isVisible());
     await plain.close();
 
+    // The 404 page runs on the same engine.
+    const missing = await browser.newPage();
+    watch(missing);
+    await missing.goto(base + "/404.html");
+    await ready(missing);
+    assert.equal(await missing.locator("h1").innerText(), "404");
+    await missing.close();
+
+    // Hiding the page, moving it, and showing it again leaves one render loop.
+    const loops = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    watch(loops);
+    await loops.addInitScript(() => {
+      sessionStorage.setItem("glyph-seen", "1");
+      const raf = window.requestAnimationFrame.bind(window);
+      window.__count = { frames: 0, ticks: 0 };
+      const frame = () => { window.__count.frames++; raf(frame); };
+      raf(frame);
+      window.requestAnimationFrame = (callback) => raf((now) => {
+        if (callback.name === "tick") window.__count.ticks++;
+        callback(now);
+      });
+    });
+    await loops.goto(base);
+    await ready(loops);
+    await loops.waitForTimeout(1500);
+    await loops.evaluate(() => {
+      const visibility = (state) => {
+        Object.defineProperty(document, "visibilityState", { value: state, configurable: true });
+        document.dispatchEvent(new Event("visibilitychange"));
+      };
+      visibility("hidden");
+      const s = document.getElementById("scroller");
+      s.scrollTop = 10 * __glyph.view().cellH;
+      s.dispatchEvent(new Event("scroll"));
+      visibility("visible");
+    });
+    await loops.waitForTimeout(300);
+    await loops.evaluate(() => { window.__count = { frames: 0, ticks: 0 }; });
+    for (let k = 0; k < 30; k++) {
+      await loops.mouse.move(100 + k * 3, 700);
+      await loops.waitForTimeout(30);
+    }
+    const count = await loops.evaluate(() => window.__count);
+    assert.ok(count.ticks <= count.frames * 1.2, `one render loop (${count.ticks} ticks in ${count.frames} frames)`);
+    await loops.close();
+
     await page.goto(base + "/lab.html");
     await page.waitForFunction(() => document.querySelector("#frame")?.contentWindow.__glyph);
     const labFrame = page.frames().find((frame) => frame.parentFrame());
@@ -333,7 +390,7 @@ const base = process.env.SITE_URL || "http://127.0.0.1:4193";
     await labFrame.waitForFunction(() => __glyph.get().restAlpha === 0.3);
 
     assert.deepEqual(errors, []);
-    console.log("PASS: boot, keyboard order, selection, scroll flaps, message box, sound, theme, layouts, settle scroll, hovered word, reduced motion, no-JS, lab.");
+    console.log("PASS: boot, keyboard order, selection, scroll flaps, message box, sound, theme, layouts, settle scroll, hovered word, reduced motion, no-JS, 404, one render loop, lab.");
   } finally {
     await browser.close();
   }

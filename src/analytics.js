@@ -22,8 +22,6 @@ let pending = [];
 function run(call) {
   if (ph) call(ph);
   else if (configured) pending.push(call);
-  else return false;
-  return true;
 }
 
 export function startAnalytics(config = POSTHOG, traits = {}) {
@@ -65,10 +63,9 @@ export function startAnalytics(config = POSTHOG, traits = {}) {
   document.head.appendChild(script);
 }
 
-// true when analytics is configured: the event goes out now, or as soon as
-// the script is up
+// the event goes out now, or as soon as the script is up
 export function track(event, properties = {}) {
-  return run((p) => p.capture(event, properties));
+  run((p) => p.capture(event, properties));
 }
 
 // A visitor who leaves an address becomes a person we can answer.

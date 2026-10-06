@@ -734,9 +734,9 @@ export function createField(canvasElement, params) {
         if (i === caretCell) glyphs[o + 2] |= F_CARET;
 
         if (i === cursorCell && P.cursorEmbed) {
-          if (glyphs[o] && glyphs[o] !== blank && !(glyphs[o + 2] & F_LATTICE) && inks[o + 2] === 0) {
-            glyphs[o + 2] |= F_ACCENT_X;
-          } else if (glyphs[o + 2] & F_LATTICE) {
+          if (glyphs[o] && glyphs[o] !== blank && !(glyphs[o + 2] & F_LATTICE)) {
+            glyphs[o + 2] |= F_ACCENT_X | F_ACCENT_Y;
+          } else {
             put(o, cursorGlyph, 1, 0, 0, 0, 0);
           }
         }
@@ -860,6 +860,7 @@ export function createField(canvasElement, params) {
     if (running || !metrics) return;
     running = true;
     lastFrame = 0;
+    if (rafId) cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(tick);
   }
 

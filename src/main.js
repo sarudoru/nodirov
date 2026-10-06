@@ -7,7 +7,7 @@ import { createTicker } from "./tick.js";
 import { parseArticle, typeset } from "./typesetter.js";
 import { fromQuery, toQuery, defaults, needsRelayout, withTheme, FONT, SCHEMA } from "./params.js";
 import { POSTHOG, startAnalytics, track, identify } from "./analytics.js";
-import { MESSAGES, deliver } from "./messages.js";
+import { deliver } from "./messages.js";
 
 const scroller = document.getElementById("scroller");
 const article = document.getElementById("article");
@@ -35,28 +35,19 @@ const look = () => withTheme(P, dark);
 
 const field = createField(document.getElementById("field"), look());
 
-// The page sends a message itself. Analytics, when on, keeps a copy as an
-// event. With neither set up, the mail client opens with the text filled
-// in; the box keeps the text then, since a mail handler may be missing.
+// The page sends a message itself, never through the visitor's mail client.
+// Analytics, when on, keeps a copy of a sent message as an event.
 async function sendMessage(text) {
-  const contact = text.match(/[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)*\.[a-z]{2,}/i)?.[0];
-  identify(contact);
-  const tracked = track("message_sent", { message: text, contact });
-  if (MESSAGES.key) {
-    try {
-      await deliver(text, contact);
-      return "sent";
-    } catch (error) {
-      console.warn("The message was not sent:", error.message);
-      return "failed";
-    }
+  const contact = text.match(/[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/i)?.[0];
+  try {
+    await deliver(text, contact);
+  } catch (error) {
+    console.warn("The message was not sent:", error.message);
+    return false;
   }
-  if (tracked) return "sent";
-  window.open(
-    `mailto:sardor@nodirov.com?subject=${encodeURIComponent("From nodirov.com")}&body=${encodeURIComponent(text)}`,
-    "_self",
-  );
-  return "mail";
+  identify(contact);
+  track("message_sent", { message: text, contact });
+  return true;
 }
 
 // Sound is on unless the visitor turned it off on an earlier visit.
@@ -495,6 +486,7 @@ function heroOnScreen(startRow) {
 
 async function boot() {
   await loadFont();
+  document.documentElement.classList.add("js");
   applyCssVars();
 
   blocks = parseArticle(article);
