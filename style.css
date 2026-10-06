@@ -1,0 +1,250 @@
+/* Geist Mono, vendored so the grid never waits on a third party to know
+   its own metrics. */
+@font-face {
+  font-family: "Geist Mono";
+  src: url("assets/fonts/GeistMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: block;
+}
+
+:root {
+  color-scheme: light;
+  --paper: #fdfdfb;
+  --ink: #1a1a1a;
+  --accent: #c8401f;
+}
+
+/* The dark theme: the system's, unless the visitor chose otherwise. The
+   same colours live in src/params.js, which sets them once the page runs. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #131312;
+    --ink: #e9e7e1;
+    --accent: #ec6a45;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #131312;
+  --ink: #e9e7e1;
+  --accent: #ec6a45;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  background: var(--paper);
+  overscroll-behavior: none;
+}
+
+body {
+  color: var(--ink);
+  font-family: "Geist Mono", ui-monospace, Menlo, monospace;
+}
+
+#field {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+
+#scroller {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  outline: none;
+  scrollbar-width: none;
+  /* a finger moves the page through src/main.js, which keeps the glide short */
+  touch-action: pinch-zoom;
+}
+
+#scroller::-webkit-scrollbar { display: none; }
+
+/* ---- No-JS fallback: a plain, readable document ---- */
+
+html:not(.js) #field { display: none; }
+
+html:not(.js) #article {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 64px 24px 96px;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+html:not(.js) h1,
+html:not(.js) h2 { font-size: inherit; font-weight: 400; margin: 2.5em 0 1em; }
+html:not(.js) h1 { margin-top: 0; }
+html:not(.js) .tagline,
+html:not(.js) .hint,
+html:not(.js) .colophon,
+html:not(.js) time,
+html:not(.js) small { opacity: 0.55; }
+html:not(.js) ul { list-style: none; padding: 0; }
+html:not(.js) li { display: grid; grid-template-columns: 1fr auto; column-gap: 2em; margin-bottom: 1em; }
+html:not(.js) li small { grid-column: 1 / -1; font-size: inherit; }
+html:not(.js) a { color: inherit; text-underline-offset: 0.25em; text-decoration-thickness: 1px; }
+html:not(.js) a:hover { color: var(--accent); }
+
+/* ---- Field mode: article becomes a transparent, grid-aligned text layer ---- */
+
+html.js #article {
+  position: relative;
+  visibility: hidden;           /* until typeset */
+}
+
+html.js #article.ready { visibility: visible; }
+
+html.js #article.ready,
+html.js #article.ready * {
+  color: transparent;
+}
+
+html.js #article.ready :is(h1, h2, p, ul, li, time, small, header, section, footer, form) {
+  display: contents;
+}
+
+/* Controls get a real box for focus and hit testing; only their text spans
+   take the pointer, so the field underneath keeps receiving it. */
+html.js #article.ready :is(a, button) {
+  display: block;
+  pointer-events: none;
+}
+html.js #article.ready :is(a, button) .gl {
+  pointer-events: auto;
+}
+html.js #article.ready button {
+  font: inherit;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+html.js #article.ready :is(a, button):focus {
+  outline: none;
+}
+html.js #article.ready :is(a, button):focus-visible .gl {
+  outline: 1px dotted var(--accent);
+  outline-offset: 3px;
+}
+
+/* The message box: a transparent textarea over its cells, and a hidden
+   mirror with the same metrics that reports the browser's line breaks. */
+html.js #article.ready form[data-inbox] textarea,
+html.js #article.ready .inbox-mirror {
+  position: absolute;
+  box-sizing: content-box;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  font-family: "Geist Mono", ui-monospace, Menlo, monospace;
+  font-weight: 400;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+html.js #article.ready form[data-inbox] textarea {
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+  resize: none;
+  overflow: hidden;
+  outline: none;
+}
+html.js #article.ready form[data-inbox] textarea::selection {
+  background: transparent;
+}
+html.js #article.ready .inbox-mirror {
+  visibility: hidden;
+  pointer-events: none;
+}
+html:not(.js) form[data-inbox] textarea {
+  display: block;
+  width: 100%;
+  min-height: 8em;
+  font: inherit;
+}
+
+html.js #article.ready ul { padding: 0; margin: 0; list-style: none; }
+
+html.js #article.ready .gl {
+  position: absolute;
+  margin: 0;
+  white-space: pre;
+  font-family: "Geist Mono", ui-monospace, Menlo, monospace;
+  font-weight: 400;
+  -webkit-text-size-adjust: none;
+}
+
+html.js #article.ready a {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: transparent;
+}
+
+html:not(.js) ::selection { color: inherit; }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* The embedded cursor: the pointer itself is invisible; the cell under it
+   becomes the cursor glyph. Links still work - the hand just isn't drawn. */
+html.embed-cursor #scroller,
+html.embed-cursor #scroller * { cursor: none !important; }
+
+/* The sound and theme switches: fixed to the screen on the status rows. The
+   field draws their labels; the buttons are only the hit target and the
+   focus. */
+#sound, #theme {
+  position: fixed;
+  z-index: 2;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  font-family: "Geist Mono", ui-monospace, Menlo, monospace;
+  text-align: left;
+  white-space: pre;
+  cursor: pointer;
+}
+/* a row of cells is a small target for a finger: the hit area reaches past it */
+:is(#sound, #theme)::before { content: ""; position: absolute; inset: -10px -8px; }
+:is(#sound, #theme):focus { outline: none; }
+:is(#sound, #theme):focus-visible { outline: 1px dotted var(--accent); outline-offset: 3px; }
+html:not(.js) :is(#sound, #theme) { display: none; }
+
+/* Forced colours (Windows High Contrast): the canvas cannot follow the
+   system palette, so the real document is shown instead. */
+@media (forced-colors: active) {
+  #field, #sound, #theme { display: none; }
+  html.js #article.ready,
+  html.js #article.ready * { color: CanvasText; }
+  html.js #article.ready a,
+  html.js #article.ready a * { color: LinkText; }
+}
+
+/* If the GPU gives up the canvas, the real text shows until it comes back. */
+html.field-lost #field { visibility: hidden; }
+html.field-lost #article.ready,
+html.field-lost #article.ready * { color: var(--ink); }

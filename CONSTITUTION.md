@@ -1,0 +1,111 @@
+# The Field Constitution
+
+The design law of this site. Every feature, effect, and future idea is tested
+against these articles. If it violates one, it does not ship.
+
+## I. The cell is the atom
+
+The viewport is a fixed grid of character cells (`columns × rows`, derived
+from the font's metrics and snapped to whole device pixels). Everything
+visible is the state of a cell. There are no other visual primitives: no
+images, no shapes, no pixels addressed directly. The light box-drawing
+strokes (and the dots of the optional dot lattice) are drawn as exact cell
+geometry so they join and scale cleanly, but they are still glyphs in the
+atlas, held by cells. The one tolerated decoration is the link underline,
+which belongs to the cell it sits under, and turns with it.
+
+## II. Nothing moves; cells change
+
+The page never scrolls. The real document scrolls invisibly underneath, and
+each cell shows which character the scroll position puts in it. Between two
+rows, every cell the document touches is a split-flap whose angle is the
+scroll's fraction: half a row of scroll is every flap half turned, and
+scrolling back turns them back. Nothing about a scroll is on a timer; the
+reader's finger turns the flaps. A detent holds each row still for part of
+the scroll, the way a picker wheel clicks into place, and the page settles
+on whole rows.
+
+Faster than a flap can be seen (a flick, a wheel notch, a key, a link), the
+board flips instead: it turns over to where the page now is, in a cascade
+across the words and down the rows.
+
+Changes that happen while the page rests (a typed letter, a hovered link)
+turn on a clock instead, one short turn per cell. No pixel ever leaves its
+cell.
+
+Every change is the same turn: a split-flap, the card of a departure board
+falling over its hinge. The document's text, the resting characters, a
+moving cell running through its characters, a label on the status row: all
+of them flap. The other turns the renderer can draw (roll up, drum, fold,
+slide, fade) stay in the workbench as options, not as defaults.
+
+## III. What a cell can hold
+
+1. **Resting.** A cell the document does not use holds a character of its
+   own, picked at random from every letter, figure, and mark the face
+   draws, in faint ink. The characters stay in their cells; now and then one
+   turns into another. A slow weather makes patches more restless in place,
+   and never drifts. When the document arrives, the resting character turns
+   into the letter the document needs, and back when it leaves.
+2. **Warm.** Touch warms cells. A warm cell draws darker and turns over
+   sooner, then cools. The document leaves warmth behind as it passes, so a
+   scrolled line leaves a brief darkening of the cells it held.
+3. **Turning.** A cell between two faces, mid-flap.
+4. **Committed.** Content: the document's character at full ink, calm.
+   Committed text never animates at rest. Reading is sacred.
+
+## IV. The document is real
+
+The content is one semantic HTML document, readable without JavaScript,
+visible to crawlers, screen readers, and view-source. The field is a
+renderer of that document, never a replacement. Selection, find-in-page,
+links, focus, and history are the browser's own: a transparent text layer
+sits in the real scroll container, aligned cell for cell with the grid. If a
+browser power must be sacrificed for a visual idea, the visual idea loses.
+
+## V. Motion is meaning
+
+Animation communicates a change of state or answers the reader; it is never
+texture. The lattice's weather is the only permanent motion, and it stays
+below conscious notice. Everything else is caused by the reader or by first
+contact, and it ends. `prefers-reduced-motion` silences all of it without
+loss of content: the grid shows whole rows, and nothing turns.
+
+## VI. Inhabitants obey the physics
+
+The field has no mascots, no set pieces, and no buttons that perform tricks.
+Whatever lives here must be a formation of cells obeying the same physics,
+and must earn its place by making the field more itself, not by being a
+demonstration. A personal site is not a toy chest.
+
+## VII. One typeface, one ink
+
+Geist Mono, regular, one size per breakpoint. Hierarchy comes from
+composition: position, space, faint secondary ink, and rules made of `─`.
+Never from weight, size, or colour changes, and never from small letter-spaced
+capital labels. Ink is near-black (`#1a1a1a`) on warm white (`#fdfdfb`); the
+dark theme turns the same page over, warm white ink on near-black. The
+one accent (`#c8401f`) marks what the reader is touching: a hovered link, a
+selection, a notice. Every visual constant is a tuned default, not a magic
+number: all of them live in `src/params.js` and are auditioned in `lab.html`
+on the live field. Taste is decided with eyes and sliders, not argument.
+
+## VIII. Interaction rewards, never obstructs
+
+The pointer is a cell: the cell under it becomes the cursor mark, and the
+characters around it darken and turn over as if stirred. Over the document's
+text the stirring stops, so nothing competes with the words. Over a letter it
+colours that letter, and the word it belongs to turns through its letters'
+cousins, the same letters as other languages write them, for as long as the
+pointer stays; it is still the same readable word. A click sends a
+round ring of turning characters outward. A hovered link turns over to the accent, one
+letter after another. None of this may ever make reading harder, and every
+effect must be discoverable by accident.
+
+## IX. The revelation is progressive
+
+First contact: the field of characters comes up, the name writes itself,
+a ring leaves the name and the document turns in behind it, and the one
+line that states the rule writes itself last. Then: scrolling shows the document is part of
+the field. Then: touch shows the field is disturbable. The site says its rule
+once, in one faint line, and never needs to be understood to be read.

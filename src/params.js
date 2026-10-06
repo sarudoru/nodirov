@@ -1,0 +1,187 @@
+// Every tunable of the field, in one schema.
+//
+// The schema is the single source of truth: it produces the defaults, the
+// URL codec (so any tuning is a shareable link), and the workbench controls
+// in lab.html. Add a knob here and it appears everywhere.
+
+export const SCHEMA = [
+  // ---- type: the grid is derived from the face ----
+  { key: "size", group: "Type", label: "size", type: "range", min: 11, max: 32, step: 1, def: 17, unit: "px", layout: true },
+  { key: "tracking", group: "Type", label: "tracking", type: "range", min: 0, max: 0.4, step: 0.01, def: 0.1, layout: true,
+    help: "extra space per cell, as a share of the font size" },
+  { key: "leading", group: "Type", label: "leading", type: "range", min: 1.1, max: 2, step: 0.02, def: 1.5, layout: true },
+  { key: "measure", group: "Type", label: "measure", type: "range", min: 40, max: 96, step: 1, def: 60, unit: "cols", layout: true },
+
+  // ---- the lattice: what a cell holds when the document is not using it ----
+  { key: "lattice", group: "Lattice", label: "resting cells", type: "select", def: "glyphs",
+    options: [["glyphs", "restless characters"], ["dots", "a grid of dots"]] },
+  { key: "glyphInk", group: "Lattice", label: "character ink", type: "range", min: 0.02, max: 0.5, step: 0.005, def: 0.065 },
+  { key: "ambientRate", group: "Lattice", label: "restlessness", type: "range", min: 0, max: 0.3, step: 0.002, def: 0.018, unit: "/cell/s",
+    help: "how often a resting character turns into another" },
+  { key: "ambientMs", group: "Lattice", label: "resting turn", type: "range", min: 60, max: 1200, step: 10, def: 360, unit: "ms" },
+  { key: "ambientTurn", group: "Lattice", label: "resting turn style", type: "select", def: "flap",
+    options: [["mix", "mixed"], ["flap", "split-flap"], ["roll", "roll up"], ["drum", "drum"], ["fold", "fold"], ["slide", "slide"], ["fade", "fade"]] },
+  { key: "heatRate", group: "Lattice", label: "touch restlessness", type: "range", min: 0, max: 40, step: 0.5, def: 9, unit: "/s",
+    help: "extra turns a second in a cell the pointer or a ripple has warmed" },
+  { key: "weatherRate", group: "Lattice", label: "weather restlessness", type: "range", min: 0, max: 30, step: 0.5, def: 8 },
+  { key: "latticeStride", group: "Lattice", label: "dot spacing", type: "range", min: 1, max: 3, step: 1, def: 2, unit: "cols",
+    help: "dots only: a dot in every column, or every second or third" },
+  { key: "restAlpha", group: "Lattice", label: "dot ink", type: "range", min: 0.02, max: 0.5, step: 0.01, def: 0.26 },
+  { key: "heatInk", group: "Lattice", label: "warm ink", type: "range", min: 0, max: 6, step: 0.05, def: 2.4,
+    help: "how much darker a warm cell draws" },
+  { key: "warmThreshold", group: "Lattice", label: "warm threshold", type: "range", min: 0.02, max: 0.6, step: 0.01, def: 0.12 },
+  { key: "levelStep", group: "Lattice", label: "level step", type: "range", min: 0.05, max: 0.8, step: 0.01, def: 0.16 },
+  { key: "fadeMs", group: "Lattice", label: "mark change", type: "range", min: 0, max: 500, step: 10, def: 110, unit: "ms" },
+  { key: "weather", group: "Lattice", label: "weather", type: "range", min: 0, max: 1, step: 0.01, def: 0.3,
+    help: "a slow field that swells marks in place" },
+  { key: "weatherScale", group: "Lattice", label: "weather size", type: "range", min: 3, max: 40, step: 1, def: 11, unit: "cells" },
+  { key: "weatherSpeed", group: "Lattice", label: "weather pace", type: "range", min: 0, max: 1, step: 0.01, def: 0.12 },
+  { key: "vignette", group: "Lattice", label: "vignette", type: "range", min: 0, max: 1, step: 0.05, def: 0.5 },
+
+  // ---- scrolling: the scroll position turns every cell's flap ----
+  { key: "scroll", group: "Scroll", label: "while scrolling", type: "select", def: "flap",
+    options: [["flap", "the text turns with the scroll"], ["settle", "changing characters while moving, text settles at rest"]] },
+  { key: "dotsAfter", group: "Scroll", label: "text leaves after", type: "range", min: 0, max: 12, step: 0.5, def: 2, unit: "rows",
+    help: "settle: a scroll shorter than this keeps the text" },
+  { key: "moving", group: "Scroll", label: "a moving letter is", type: "select", def: "glyphs",
+    options: [["glyphs", "a character that keeps changing"], ["dots", "a dot"]] },
+  { key: "scrambleMs", group: "Scroll", label: "character change", type: "range", min: 20, max: 400, step: 10, def: 160, unit: "ms",
+    help: "settle: how often a moving cell flaps over to another character" },
+  { key: "dotSize", group: "Scroll", label: "letter dot", type: "range", min: 0, max: 6, step: 1, def: 4,
+    help: "settle, dots: the size of the dot a letter becomes" },
+  { key: "dotInk", group: "Scroll", label: "moving ink", type: "range", min: 0.1, max: 1, step: 0.02, def: 0.7,
+    help: "settle: the ink of a moving letter, as a share of its own" },
+  { key: "restWait", group: "Scroll", label: "rest before settling", type: "range", min: 0, max: 800, step: 10, def: 50, unit: "ms" },
+  { key: "resolveMs", group: "Scroll", label: "settle time", type: "range", min: 100, max: 3000, step: 50, def: 1300, unit: "ms",
+    help: "settle: how long the whole screen takes to turn back into text, the last flap included" },
+  { key: "resolveGrain", group: "Scroll", label: "settle grain", type: "range", min: 0, max: 1, step: 0.05, def: 0.85,
+    help: "settle: 0 settles the screen top to bottom; 1 gives every cell its own moment, most early and a few late" },
+  { key: "resolveFlips", group: "Scroll", label: "letters passed", type: "range", min: 0, max: 12, step: 1, def: 0,
+    help: "settle: at most this many letters before its own, in alphabet order; 0 turns the dot straight into its letter" },
+  { key: "searchMs", group: "Scroll", label: "settle flap", type: "range", min: 20, max: 900, step: 10, def: 420, unit: "ms",
+    help: "settle: how long a cell's flap takes to turn over to its letter, slow enough to watch, like a departure board" },
+  { key: "searchInk", group: "Scroll", label: "passing ink", type: "range", min: 0.1, max: 1, step: 0.02, def: 0.5,
+    help: "settle: the ink of the letters a cell passes on the way to its own" },
+  { key: "turn", group: "Scroll", label: "text turn style", type: "select", def: "flap",
+    options: [["flap", "split-flap"], ["roll", "roll up"], ["drum", "drum"], ["fold", "fold"], ["slide", "slide"], ["fade", "fade"], ["mix", "mixed"]] },
+  { key: "clockTurn", group: "Scroll", label: "typing and hover style", type: "select", def: "flap",
+    options: [["flap", "split-flap"], ["roll", "roll up"], ["drum", "drum"], ["fold", "fold"], ["slide", "slide"], ["fade", "fade"], ["mix", "mixed"]] },
+  { key: "detent", group: "Scroll", label: "detent", type: "range", min: 0, max: 0.9, step: 0.01, def: 0.3,
+    help: "how much of each row of scroll the flaps hold still" },
+  { key: "sweep", group: "Scroll", label: "sweep", type: "range", min: 0, max: 0.8, step: 0.01, def: 0.35,
+    help: "across the words, left cells turn a little before right ones" },
+  { key: "fingerSpeed", group: "Scroll", label: "finger speed", type: "range", min: 2, max: 40, step: 0.5, def: 9, unit: "rows/s",
+    help: "slower than this the finger turns the flaps; faster, the board flips to keep up" },
+  { key: "cascadeX", group: "Scroll", label: "flip across", type: "range", min: 0, max: 300, step: 5, def: 70, unit: "ms",
+    help: "how long a flip takes to cross the words" },
+  { key: "cascadeY", group: "Scroll", label: "flip down", type: "range", min: 0, max: 400, step: 5, def: 110, unit: "ms",
+    help: "how long a flip takes to travel down the screen" },
+  { key: "flipMs", group: "Scroll", label: "flap", type: "range", min: 40, max: 600, step: 10, def: 110, unit: "ms",
+    help: "how long one flap takes when it runs on a clock: a flip, a typed letter, a hover" },
+  { key: "flipStagger", group: "Scroll", label: "word stagger", type: "range", min: 0, max: 80, step: 1, def: 22, unit: "ms/letter",
+    help: "a hovered link turns over one letter after another" },
+  { key: "shade", group: "Scroll", label: "fold shade", type: "range", min: 0, max: 1, step: 0.05, def: 0.6,
+    help: "how much a face dims as it turns edge-on" },
+  { key: "body", group: "Scroll", label: "flap body", type: "range", min: 0, max: 0.2, step: 0.005, def: 0.055,
+    help: "a faint tint on the moving flap, so a turning cell reads as a card" },
+  { key: "wake", group: "Scroll", label: "wake", type: "range", min: 0, max: 1.5, step: 0.05, def: 1,
+    help: "warmth a passing letter leaves in its cell" },
+  { key: "wakeInk", group: "Scroll", label: "wake ink", type: "range", min: 0, max: 4, step: 0.05, def: 2.5,
+    help: "how much darker a cell's mark draws while it is still warm" },
+  { key: "wakeRate", group: "Scroll", label: "wake restlessness", type: "range", min: 0, max: 12, step: 0.1, def: 1.2, unit: "/s",
+    help: "extra turns a second in a cell the document has just left" },
+  { key: "wakeMs", group: "Scroll", label: "wake cooling", type: "range", min: 40, max: 1500, step: 10, def: 420, unit: "ms" },
+  { key: "glideMs", group: "Scroll", label: "touch glide", type: "range", min: 0, max: 600, step: 10, def: 400, unit: "ms",
+    help: "how far the page carries on after a finger lifts, as time at the finger's speed; 0 stops it dead" },
+  { key: "settleMs", group: "Scroll", label: "settle ease", type: "range", min: 0, max: 700, step: 10, def: 220, unit: "ms" },
+
+  // ---- touch: the cursor warms the lattice ----
+  { key: "lens", group: "Touch", label: "lens", type: "range", min: 0, max: 3, step: 0.05, def: 1.35,
+    help: "how much the marks swell around the pointer" },
+  { key: "lensRadius", group: "Touch", label: "lens radius", type: "range", min: 1, max: 16, step: 0.5, def: 4, unit: "cells" },
+  { key: "warmRadius", group: "Touch", label: "wake radius", type: "range", min: 1, max: 12, step: 0.5, def: 2.5, unit: "cells" },
+  { key: "warmGain", group: "Touch", label: "wake strength", type: "range", min: 0, max: 3, step: 0.02, def: 1.2 },
+  { key: "coolMs", group: "Touch", label: "cooling", type: "range", min: 60, max: 3000, step: 20, def: 520, unit: "ms" },
+  { key: "rippleSpeed", group: "Touch", label: "ripple speed", type: "range", min: 5, max: 200, step: 1, def: 48, unit: "cols/s" },
+  { key: "rippleWidth", group: "Touch", label: "ripple width", type: "range", min: 0.5, max: 8, step: 0.25, def: 3, unit: "cols" },
+  { key: "rippleEnergy", group: "Touch", label: "ripple energy", type: "range", min: 0, max: 3, step: 0.05, def: 1.1 },
+  { key: "rippleLife", group: "Touch", label: "ripple life", type: "range", min: 0.2, max: 4, step: 0.1, def: 1.4, unit: "s" },
+  { key: "cousinMs", group: "Touch", label: "hovered word", type: "range", min: 0, max: 1500, step: 10, def: 320, unit: "ms",
+    help: "how often a hovered word's letters turn into their cousins (the same letter as other languages write it); 0 leaves the word alone" },
+  { key: "cursorEmbed", group: "Touch", label: "embedded cursor", type: "bool", def: true,
+    help: "hide the pointer; the cell under it becomes the cursor" },
+  { key: "cursorGlyph", group: "Touch", label: "cursor glyph", type: "select", def: "+",
+    options: [["+", "+"], ["×", "×"], ["•", "•"], ["○", "○"]] },
+
+  // ---- first contact ----
+  { key: "revealBoardMs", group: "Reveal", label: "board up", type: "range", min: 0, max: 1500, step: 10, def: 380, unit: "ms",
+    help: "the empty board comes up before anything is written" },
+  { key: "revealLetterMs", group: "Reveal", label: "name letter", type: "range", min: 0, max: 200, step: 5, def: 42, unit: "ms" },
+  { key: "revealSpeed", group: "Reveal", label: "ring speed", type: "range", min: 10, max: 300, step: 5, def: 85, unit: "cols/s" },
+  { key: "revealRing", group: "Reveal", label: "ring energy", type: "range", min: 0, max: 2, step: 0.05, def: 1 },
+
+  // ---- ink ----
+  { key: "textAlpha", group: "Ink", label: "content ink", type: "range", min: 0.5, max: 1, step: 0.02, def: 1 },
+  { key: "faintAlpha", group: "Ink", label: "secondary ink", type: "range", min: 0.1, max: 0.9, step: 0.02, def: 0.46 },
+  { key: "paper", group: "Ink", label: "paper", type: "color", def: "#fdfdfb" },
+  { key: "ink", group: "Ink", label: "ink", type: "color", def: "#1a1a1a" },
+  { key: "accent", group: "Ink", label: "accent", type: "color", def: "#c8401f" },
+  { key: "theme", group: "Ink", label: "theme", type: "select", def: "auto",
+    options: [["auto", "the visitor's choice, else the system's"], ["light", "light"], ["dark", "dark"]] },
+  { key: "paperDark", group: "Ink", label: "dark paper", type: "color", def: "#131312" },
+  { key: "inkDark", group: "Ink", label: "dark ink", type: "color", def: "#e9e7e1" },
+  { key: "accentDark", group: "Ink", label: "dark accent", type: "color", def: "#ec6a45" },
+];
+
+export const FONT = { family: "Geist Mono" };
+
+export const BY_KEY = new Map(SCHEMA.map((entry) => [entry.key, entry]));
+
+export function defaults() {
+  const out = {};
+  for (const entry of SCHEMA) out[entry.key] = entry.def;
+  return out;
+}
+
+// The colours in use: the dark set stands in for the light one.
+export function withTheme(params, dark) {
+  if (!dark) return params;
+  return { ...params, paper: params.paperDark, ink: params.inkDark, accent: params.accentDark };
+}
+
+export function fromQuery(search = window.location.search) {
+  const query = new URLSearchParams(search);
+  const out = defaults();
+  for (const [key, raw] of query) {
+    const entry = BY_KEY.get(key);
+    if (!entry) continue;
+    if (entry.type === "range") {
+      const value = parseFloat(raw);
+      if (Number.isFinite(value)) out[key] = Math.min(entry.max, Math.max(entry.min, value));
+    } else if (entry.type === "bool") {
+      out[key] = raw === "1" || raw === "true";
+    } else if (entry.type === "color") {
+      if (/^#?[0-9a-fA-F]{6}$/.test(raw)) out[key] = raw.startsWith("#") ? raw : "#" + raw;
+    } else if (entry.type === "select") {
+      if (entry.options.some(([v]) => v === raw)) out[key] = raw;
+    }
+  }
+  return out;
+}
+
+// Only non-default values reach the URL, so a tuned link stays readable.
+export function toQuery(params) {
+  const query = new URLSearchParams();
+  for (const entry of SCHEMA) {
+    const value = params[entry.key];
+    if (value === entry.def) continue;
+    query.set(entry.key, entry.type === "bool" ? (value ? "1" : "0")
+      : entry.type === "color" ? String(value).replace("#", "")
+      : String(value));
+  }
+  return query.toString();
+}
+
+export function needsRelayout(patch) {
+  return Object.keys(patch).some((key) => BY_KEY.get(key)?.layout);
+}
