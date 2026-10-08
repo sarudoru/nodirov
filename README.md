@@ -62,21 +62,26 @@ tests/browser.cjs   browser checks
    turning cell is drawn in its style: a flap folding over its hinge, a roll
    up through the cell, a fold on its middle, and so on.
 
-By default every change of character anywhere on the page is a split-flap
-turn; `turn`, `clockTurn`, and `ambientTurn` can audition the other styles.
+Every turn on the page is a split-flap by default; `turn`, `clockTurn`,
+and `ambientTurn` can audition the other styles. A moving page does not
+turn: its characters shift a row at a time.
 
 ### The settle scroll
 
-`?scroll=settle` swaps the flaps for another scroll. A scroll longer than a
-couple of rows turns every letter into a character that flaps over to
-another on its cell's own beat (or, with `moving=dots`, into a dot), so
-while the page moves only those change. When the page rests, the characters hold still and each
-cell's flap turns over to its letter, slowly enough to watch, the way a
-departure board does; each cell at its own moment, many early, a few late.
-The workbench's Scroll group tunes it (`dotsAfter`, `scrambleMs`,
+This is the scroll the page uses. A scroll longer than a couple of rows
+turns every letter into a character of its own (or, with `moving=dots`,
+into a dot), held still while the page moves, so a moving screen is a
+screen of standing characters sliding by in the shape of the words. When
+the page rests, each cell's flap turns over to its letter, slowly enough to
+watch, the way a departure board does; each cell at its own moment, many
+early, a few late. The workbench's Scroll group tunes it (`dotsAfter`,
+`scrambleMs` to have a moving cell run through characters on a beat,
 `restWait`, `searchMs` for one flap, `resolveMs` for the whole screen,
 `resolveGrain` for how much each cell keeps its own time, `resolveFlips`
 for letters passed on the way, and the moving ink).
+
+`?scroll=flap` is the other scroll: the text itself turns with the finger,
+and a fast scroll flips the board to where the page is, in a cascade.
 
 ### The wake, and a finger
 

@@ -39,14 +39,14 @@ export const SCHEMA = [
   { key: "vignette", group: "Lattice", label: "vignette", type: "range", min: 0, max: 1, step: 0.05, def: 0.5 },
 
   // ---- scrolling: the scroll position turns every cell's flap ----
-  { key: "scroll", group: "Scroll", label: "while scrolling", type: "select", def: "flap",
+  { key: "scroll", group: "Scroll", label: "while scrolling", type: "select", def: "settle",
     options: [["flap", "the text turns with the scroll"], ["settle", "changing characters while moving, text settles at rest"]] },
   { key: "dotsAfter", group: "Scroll", label: "text leaves after", type: "range", min: 0, max: 12, step: 0.5, def: 2, unit: "rows",
     help: "settle: a scroll shorter than this keeps the text" },
   { key: "moving", group: "Scroll", label: "a moving letter is", type: "select", def: "glyphs",
     options: [["glyphs", "a character that keeps changing"], ["dots", "a dot"]] },
-  { key: "scrambleMs", group: "Scroll", label: "character change", type: "range", min: 20, max: 400, step: 10, def: 160, unit: "ms",
-    help: "settle: how often a moving cell flaps over to another character" },
+  { key: "scrambleMs", group: "Scroll", label: "character change", type: "range", min: 0, max: 400, step: 10, def: 0, unit: "ms",
+    help: "settle: how often a moving character gives way to another; 0 keeps each one until the page rests" },
   { key: "dotSize", group: "Scroll", label: "letter dot", type: "range", min: 0, max: 6, step: 1, def: 4,
     help: "settle, dots: the size of the dot a letter becomes" },
   { key: "dotInk", group: "Scroll", label: "moving ink", type: "range", min: 0.1, max: 1, step: 0.02, def: 0.7,
