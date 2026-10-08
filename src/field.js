@@ -20,8 +20,8 @@
 // clock, one cell at a time.
 //
 // The other scroll, "settle": a real scroll turns the document's letters
-// into characters of their own (or into dots) that travel with the page,
-// so while it moves only those change, a row at a time and with no turn.
+// into characters of their own (or into dots) that travel with the page
+// and keep changing, with no turn, so while it moves only those change.
 // When the page rests, each cell's flap turns over to its letter, slowly
 // enough to watch, the way a departure board does.
 //
@@ -504,8 +504,7 @@ export function createField(canvasElement, params) {
   }
 
   // What a letter is while the page moves: a character of its own, which
-  // travels with it and holds until the page rests (or, on a beat, gives
-  // way to another); or the dot.
+  // travels with it and gives way to another on its own beat; or the dot.
   function movingGlyph(worldRow, c, at) {
     if (P.moving === "dots") return dotGlyph;
     const pool = substrate.pool();

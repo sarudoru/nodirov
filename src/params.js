@@ -45,7 +45,7 @@ export const SCHEMA = [
     help: "settle: a scroll shorter than this keeps the text" },
   { key: "moving", group: "Scroll", label: "a moving letter is", type: "select", def: "glyphs",
     options: [["glyphs", "a character that keeps changing"], ["dots", "a dot"]] },
-  { key: "scrambleMs", group: "Scroll", label: "character change", type: "range", min: 0, max: 400, step: 10, def: 0, unit: "ms",
+  { key: "scrambleMs", group: "Scroll", label: "character change", type: "range", min: 0, max: 400, step: 10, def: 90, unit: "ms",
     help: "settle: how often a moving character gives way to another; 0 keeps each one until the page rests" },
   { key: "dotSize", group: "Scroll", label: "letter dot", type: "range", min: 0, max: 6, step: 1, def: 4,
     help: "settle, dots: the size of the dot a letter becomes" },

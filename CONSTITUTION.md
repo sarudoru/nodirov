@@ -25,9 +25,9 @@ reader's finger turns the flaps. A detent holds each row still for part of
 the scroll, the way a picker wheel clicks into place, and the page settles
 on whole rows.
 
-Past a couple of rows the text lets go: every letter becomes a character of
-its own, held still while the page moves, so a moving screen is standing
-characters sliding by in the shape of the words, never a smear. When the
+Past a couple of rows the text lets go: every letter becomes a character
+that travels with the page and keeps changing, so a moving screen is
+restless characters sliding by in the shape of the words, never a smear. When the
 page rests, each cell's flap turns over to its letter, slowly enough to
 watch, each at its own moment. (The other scroll, `?scroll=flap`, flips the
 board to where the page now is in a cascade across the words and down the
@@ -40,8 +40,8 @@ cell.
 Every turn is the same turn: a split-flap, the card of a departure board
 falling over its hinge. The document's text, the resting characters, a
 label on the status row: all of them flap. A moving page is the one
-exception, and it is not a turn: its characters shift a row at a time, as
-they would on paper. The other turns the renderer can draw (roll up, drum, fold,
+exception: its characters change in place and shift a row at a time, with
+no turn, so a fast scroll never becomes a blur of half-turned cards. The other turns the renderer can draw (roll up, drum, fold,
 slide, fade) stay in the workbench as options, not as defaults.
 
 ## III. What a cell can hold

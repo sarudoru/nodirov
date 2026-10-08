@@ -69,13 +69,13 @@ turn: its characters shift a row at a time.
 ### The settle scroll
 
 This is the scroll the page uses. A scroll longer than a couple of rows
-turns every letter into a character of its own (or, with `moving=dots`,
-into a dot), held still while the page moves, so a moving screen is a
-screen of standing characters sliding by in the shape of the words. When
+turns every letter into a character that travels with the page and keeps
+changing (or, with `moving=dots`, into a dot), so a moving screen is
+restless characters sliding by in the shape of the words. When
 the page rests, each cell's flap turns over to its letter, slowly enough to
 watch, the way a departure board does; each cell at its own moment, many
 early, a few late. The workbench's Scroll group tunes it (`dotsAfter`,
-`scrambleMs` to have a moving cell run through characters on a beat,
+`scrambleMs` for how often a moving character changes, 0 to hold it,
 `restWait`, `searchMs` for one flap, `resolveMs` for the whole screen,
 `resolveGrain` for how much each cell keeps its own time, `resolveFlips`
 for letters passed on the way, and the moving ink).
